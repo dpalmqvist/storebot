@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "storebot"
+version = "0.1.0"
+description = "AI-powered agent for managing a Swedish country shop"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic",
+    "python-telegram-bot>=20",
+    "zeep",
+    "requests",
+    "sqlalchemy>=2.0",
+    "sqlite-vec",
+    "pillow",
+    "pydantic-settings",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[project.scripts]
+storebot = "storebot.bot.handlers:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/storebot"]
+
+[tool.ruff]
+line-length = 99
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

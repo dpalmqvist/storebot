@@ -1,0 +1,16 @@
+[Unit]
+Description=Storebot Telegram Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=storebot
+WorkingDirectory=/opt/storebot
+EnvironmentFile=/opt/storebot/.env
+ExecStart=/opt/storebot/.venv/bin/storebot
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
