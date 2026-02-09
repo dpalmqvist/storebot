@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     # Tradera
     tradera_app_id: str = ""
     tradera_app_key: str = ""
+    tradera_sandbox: bool = True
 
     # Fortnox (OAuth2)
     fortnox_client_id: str = ""

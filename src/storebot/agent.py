@@ -132,6 +132,7 @@ class Agent:
         self.tradera = TraderaClient(
             app_id=self.settings.tradera_app_id,
             app_key=self.settings.tradera_app_key,
+            sandbox=self.settings.tradera_sandbox,
         )
         self.blocket = BlocketClient(bearer_token=self.settings.blocket_bearer_token)
         self.fortnox = FortnoxClient(
