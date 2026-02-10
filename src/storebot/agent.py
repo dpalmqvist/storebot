@@ -5,7 +5,7 @@ import anthropic
 
 from storebot.config import get_settings
 from storebot.tools.blocket import BlocketClient
-from storebot.tools.fortnox import FortnoxClient
+from storebot.tools.accounting import AccountingService
 from storebot.tools.image import encode_image_base64
 from storebot.tools.listing import ListingService
 from storebot.tools.pricing import PricingService
@@ -177,7 +177,7 @@ TOOLS = [
     },
     {
         "name": "create_voucher",
-        "description": "Create a bookkeeping voucher in Fortnox.",
+        "description": "Skapa en bokföringsverifikation och spara lokalt. Debet och kredit måste balansera.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -187,15 +187,35 @@ TOOLS = [
                     "items": {
                         "type": "object",
                         "properties": {
-                            "account": {"type": "integer"},
+                            "account": {"type": "integer", "description": "BAS account number"},
                             "debit": {"type": "number"},
                             "credit": {"type": "number"},
                         },
                     },
                     "description": "Voucher rows (debit/credit per account)",
                 },
+                "order_id": {
+                    "type": "integer",
+                    "description": "Link to order ID (optional)",
+                },
+                "transaction_date": {
+                    "type": "string",
+                    "description": "Transaction date ISO format (default today)",
+                },
             },
             "required": ["description", "rows"],
+        },
+    },
+    {
+        "name": "export_vouchers",
+        "description": "Exportera verifikationer som PDF. Ange datumintervall.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "from_date": {"type": "string", "description": "Start date (ISO format, e.g. 2026-01-01)"},
+                "to_date": {"type": "string", "description": "End date (ISO format, e.g. 2026-12-31)"},
+            },
+            "required": ["from_date", "to_date"],
         },
     },
     {
@@ -280,7 +300,7 @@ Du kan:
 - Skapa utkast till annonser (alla annonser börjar som utkast)
 - Visa, redigera, godkänna och avvisa annonsutkast
 - Hantera ordrar och leveranser
-- Skapa verifikationer i Fortnox
+- Skapa bokföringsverifikationer och exportera som PDF
 - Söka i produktdatabasen
 
 När användaren skickar en bild:
@@ -310,11 +330,10 @@ class Agent:
             sandbox=self.settings.tradera_sandbox,
         )
         self.blocket = BlocketClient(bearer_token=self.settings.blocket_bearer_token)
-        self.fortnox = FortnoxClient(
-            client_id=self.settings.fortnox_client_id,
-            client_secret=self.settings.fortnox_client_secret,
-            access_token=self.settings.fortnox_access_token,
-        )
+        self.accounting = AccountingService(
+            engine=self.engine,
+            export_path=self.settings.voucher_export_path,
+        ) if self.engine else None
         self.pricing = PricingService(
             tradera=self.tradera,
             blocket=self.blocket,
@@ -425,7 +444,14 @@ class Agent:
                 case "get_orders":
                     return self.tradera.get_orders(**tool_input)
                 case "create_voucher":
-                    return self.fortnox.create_voucher(**tool_input)
+                    if not self.accounting:
+                        return {"error": "AccountingService not available (no database engine)"}
+                    return self.accounting.create_voucher(**tool_input)
+                case "export_vouchers":
+                    if not self.accounting:
+                        return {"error": "AccountingService not available (no database engine)"}
+                    path = self.accounting.export_vouchers_pdf(**tool_input)
+                    return {"pdf_path": path}
                 case "search_products":
                     if not self.listing:
                         return {"error": "ListingService not available (no database engine)"}

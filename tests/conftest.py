@@ -36,8 +36,5 @@ def settings():
         telegram_bot_token="test-token",
         tradera_app_id="test-app-id",
         tradera_app_key="test-app-key",
-        fortnox_client_id="test-client-id",
-        fortnox_client_secret="test-client-secret",
-        fortnox_access_token="test-access-token",
         database_path=":memory:",
     )

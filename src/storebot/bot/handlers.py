@@ -27,7 +27,7 @@ async def help_command(update: Update, context) -> None:
         "- Söka efter liknande produkter på Tradera och Blocket\n"
         "- Skapa annonser\n"
         "- Hantera ordrar\n"
-        "- Bokföring via Fortnox\n\n"
+        "- Bokföring (verifikationer som PDF)\n\n"
         "Skicka foton på en produkt eller beskriv vad du vill göra."
     )
 

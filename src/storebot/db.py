@@ -93,7 +93,7 @@ class Order(Base):
     status: Mapped[str] = mapped_column(
         String, default="pending"
     )  # pending/shipped/delivered/returned
-    fortnox_voucher_id: Mapped[str | None] = mapped_column(String)
+    voucher_id: Mapped[int | None] = mapped_column(ForeignKey("vouchers.id"))
     ordered_at: Mapped[datetime | None] = mapped_column(DateTime)
     shipped_at: Mapped[datetime | None] = mapped_column(DateTime)
 
@@ -123,6 +123,32 @@ class Notification(Base):
     telegram_user_id: Mapped[str | None] = mapped_column(String)
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class Voucher(Base):
+    __tablename__ = "vouchers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    voucher_number: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    transaction_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+    rows: Mapped[list["VoucherRow"]] = relationship(back_populates="voucher")
+
+
+class VoucherRow(Base):
+    __tablename__ = "voucher_rows"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    voucher_id: Mapped[int] = mapped_column(ForeignKey("vouchers.id"), nullable=False)
+    account_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    account_name: Mapped[str] = mapped_column(String, nullable=False)
+    debit: Mapped[float] = mapped_column(Float, default=0.0)
+    credit: Mapped[float] = mapped_column(Float, default=0.0)
+
+    voucher: Mapped["Voucher"] = relationship(back_populates="rows")
 
 
 def _enable_foreign_keys(dbapi_connection, connection_record):

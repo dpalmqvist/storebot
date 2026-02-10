@@ -15,16 +15,14 @@ class Settings(BaseSettings):
     tradera_app_key: str = ""
     tradera_sandbox: bool = True
 
-    # Fortnox (OAuth2)
-    fortnox_client_id: str = ""
-    fortnox_client_secret: str = ""
-    fortnox_access_token: str = ""
-
     # Blocket (unofficial, bearer token from browser session)
     blocket_bearer_token: str = ""
 
     # Database
     database_path: str = "data/storebot.db"
+
+    # Voucher PDF export
+    voucher_export_path: str = "data/vouchers"
 
     # Logging
     log_level: str = "INFO"
