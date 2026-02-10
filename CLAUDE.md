@@ -69,10 +69,46 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Using `create_all()` 
 - Every transaction requires a verifikation (voucher) — the agent must ensure none are missed
 - SIE file export for Skatteverket compliance handled by Fortnox
 
+## Implementation Status
+
+### Done
+
+- **Database layer** — SQLAlchemy 2.0 models for all core tables (`products`, `product_images`, `platform_listings`, `orders`, `agent_actions`, `notifications`). Foreign keys, JSON columns, `create_all()` init.
+- **Tradera search** — SOAP via zeep, `SearchAdvanced` with category/price filters, result parsing (bids, buy-now, images). `create_listing`, `get_orders`, `get_item` are stubbed.
+- **Blocket search** — Unofficial REST API, read-only price research. `get_ad` is stubbed.
+- **Pricing Agent** — `PricingService.price_check()` searches both Tradera + Blocket, computes stats (min/max/mean/median), suggests price range via quartiles, logs `AgentAction`.
+- **Listing Agent** — `ListingService` with full draft workflow: `create_draft`, `list_drafts`, `get_draft`, `update_draft`, `approve_draft`, `reject_draft`, `search_products`. All with validation and `AgentAction` audit logging.
+- **Product management** — `create_product` (with all optional fields: condition, materials, era, dimensions, source, acquisition_cost) and `save_product_image` (with is_primary logic).
+- **Image processing** — `resize_for_listing` (1200px), `resize_for_analysis` (800px), `optimize_for_upload` (JPEG compress), `encode_image_base64`. All handle EXIF rotation and RGBA conversion.
+- **Agent loop** — `agent.py` with Claude API tool loop, 14 tool definitions, vision support (base64 image content blocks), Swedish system prompt with image workflow guidance.
+- **Telegram bot** — `handlers.py` with `/start`, `/help`, text message handling, and photo handling (download, resize, forward to agent with vision).
+- **Config** — Pydantic Settings from `.env`, all service credentials.
+- **Deployment** — systemd service file, SQLite backup script with cron rotation.
+- **Tests** — 113 tests covering db, tradera, blocket, pricing, listing, and image modules.
+
+### Stubbed (not yet implemented)
+
+- **Fortnox** — `FortnoxClient` class exists but all methods (`create_voucher`, `get_vouchers`, `upload_receipt`, `create_customer`) raise `NotImplementedError`.
+- **PostNord** — `PostNordClient` class exists but `create_shipment` and `get_label` raise `NotImplementedError`.
+- **Tradera write operations** — `create_listing`, `get_orders`, `get_item` are stubbed.
+- **Blocket ad detail** — `get_ad` is stubbed.
+
+### Not started
+
+- Order Agent (monitor sales, update inventory, shipping labels, Fortnox vouchers)
+- Scout Agent (scheduled sourcing searches, daily digests)
+- Marketing Agent (listing performance tracking, strategy suggestions)
+- MCP server wrappers for tool modules
+- Conversation history persistence (currently stateless per message)
+- Alembic migrations (using `create_all()` during development)
+- sqlite-vec embeddings for semantic product search
+- Social media cross-posting
+- Crop management, custom webshop, wishlist matching
+
 ## Build Phases
 
-1. **Phase 1 (MVP):** SQLite schema + SQLAlchemy ORM, Tradera/Blocket search tools, Pricing Agent, Listing Agent
-2. **Phase 2:** Telegram bot, Order Agent, Fortnox voucher automation, receipt capture
+1. **Phase 1 (MVP):** SQLite schema + SQLAlchemy ORM, Tradera/Blocket search tools, Pricing Agent, Listing Agent — **DONE**
+2. **Phase 2:** Telegram bot, Order Agent, Fortnox voucher automation, receipt capture — **IN PROGRESS** (bot done, Order Agent + Fortnox remaining)
 3. **Phase 3:** Scout Agent (scheduled), Marketing Agent, MCP server wrappers, social media cross-posting
 4. **Phase 4:** Crop management, custom webshop, wishlist matching, advanced analytics
 
