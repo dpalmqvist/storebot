@@ -6,6 +6,7 @@ import anthropic
 from storebot.config import get_settings
 from storebot.tools.blocket import BlocketClient
 from storebot.tools.fortnox import FortnoxClient
+from storebot.tools.image import encode_image_base64
 from storebot.tools.listing import ListingService
 from storebot.tools.pricing import PricingService
 from storebot.tools.tradera import TraderaClient
@@ -233,12 +234,47 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "create_product",
+        "description": "Create a new product in the database. Use when the user wants to register a new item.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Product title in Swedish"},
+                "description": {"type": "string", "description": "Product description in Swedish"},
+                "category": {"type": "string", "description": "Category (e.g. möbler, inredning, kuriosa, antikviteter)"},
+                "condition": {"type": "string", "description": "Condition (e.g. renoverad, bra skick, slitage)"},
+                "materials": {"type": "string", "description": "Materials (e.g. ek, mässing, glas)"},
+                "era": {"type": "string", "description": "Era or period (e.g. 1940-tal, jugend, art deco)"},
+                "dimensions": {"type": "string", "description": "Dimensions (e.g. 60x40x80 cm)"},
+                "source": {"type": "string", "description": "Where it was acquired (e.g. loppis, dödsbo, tradera)"},
+                "acquisition_cost": {"type": "number", "description": "Purchase cost in SEK"},
+            },
+            "required": ["title"],
+        },
+    },
+    {
+        "name": "save_product_image",
+        "description": "Save an image to a product. Use after create_product to attach photos.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "product_id": {"type": "integer", "description": "Product ID to attach image to"},
+                "image_path": {"type": "string", "description": "File path to the image"},
+                "is_primary": {"type": "boolean", "description": "Set as primary product image (default false)"},
+            },
+            "required": ["product_id", "image_path"],
+        },
+    },
 ]
 
 SYSTEM_PROMPT = """Du är en AI-assistent för en svensk lanthandel som säljer renoverade möbler, \
 inredning, kuriosa, antikviteter och grödor. Du hjälper ägaren att hantera butiken via Telegram.
 
 Du kan:
+- Analysera bilder som användaren skickar (möbler, inredning, kuriosa, etc.)
+- Skapa nya produkter i databasen
+- Spara bilder till produkter
 - Söka efter liknande produkter på Tradera och Blocket för prisundersökning
 - Göra priskoll som söker båda plattformarna och ger prisstatistik med föreslagen prisintervall
 - Skapa utkast till annonser (alla annonser börjar som utkast)
@@ -246,6 +282,12 @@ Du kan:
 - Hantera ordrar och leveranser
 - Skapa verifikationer i Fortnox
 - Söka i produktdatabasen
+
+När användaren skickar en bild:
+1. Beskriv vad du ser i bilden.
+2. Fråga om du ska skapa en ny produkt eller koppla bilden till en befintlig.
+3. Använd create_product och/eller save_product_image.
+4. Föreslå priskoll eller annons som nästa steg.
 
 VIKTIGT — Annonseringsflöde:
 1. Alla annonser skapas som utkast (status=draft) och kräver ägarens godkännande.
@@ -281,12 +323,32 @@ class Agent:
         self.listing = ListingService(engine=self.engine) if self.engine else None
 
     def handle_message(
-        self, user_message: str, conversation_history: list[dict] | None = None
+        self,
+        user_message: str,
+        image_paths: list[str] | None = None,
+        conversation_history: list[dict] | None = None,
     ) -> str:
         if conversation_history is None:
             conversation_history = []
 
-        messages = conversation_history + [{"role": "user", "content": user_message}]
+        if image_paths:
+            content = []
+            for path in image_paths:
+                data, media_type = encode_image_base64(path)
+                content.append({
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": media_type, "data": data},
+                })
+            text = user_message or (
+                "Användaren skickade dessa bilder. "
+                "Beskriv vad du ser och fråga hur du kan hjälpa till."
+            )
+            paths_info = ", ".join(image_paths)
+            text += f"\n\n[Bildernas sökvägar: {paths_info}]"
+            content.append({"type": "text", "text": text})
+            messages = conversation_history + [{"role": "user", "content": content}]
+        else:
+            messages = conversation_history + [{"role": "user", "content": user_message}]
 
         response = self.client.messages.create(
             model="claude-sonnet-4-5-20250929",
@@ -368,6 +430,14 @@ class Agent:
                     if not self.listing:
                         return {"error": "ListingService not available (no database engine)"}
                     return self.listing.search_products(**tool_input)
+                case "create_product":
+                    if not self.listing:
+                        return {"error": "ListingService not available (no database engine)"}
+                    return self.listing.create_product(**tool_input)
+                case "save_product_image":
+                    if not self.listing:
+                        return {"error": "ListingService not available (no database engine)"}
+                    return self.listing.save_product_image(**tool_input)
                 case _:
                     return {"error": f"Unknown tool: {name}"}
         except NotImplementedError:

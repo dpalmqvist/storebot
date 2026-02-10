@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy.orm import Session
 
-from storebot.db import AgentAction, PlatformListing, Product
+from storebot.db import AgentAction, PlatformListing, Product, ProductImage
 from storebot.tools.listing import ListingService, _validate_draft
 
 
@@ -394,3 +394,98 @@ class TestValidateDraft:
 
     def test_none_duration_ok(self):
         assert _validate_draft("auction", 100.0, None, None) == []
+
+
+class TestCreateProduct:
+    def test_creates_product(self, service, engine):
+        result = service.create_product(title="Ektaburett 1940-tal")
+
+        assert "error" not in result
+        assert result["product_id"] is not None
+        assert result["title"] == "Ektaburett 1940-tal"
+        assert result["status"] == "draft"
+
+    def test_with_optional_fields(self, service, engine):
+        result = service.create_product(
+            title="Mässingsljusstake",
+            description="Fin ljusstake i mässing",
+            category="inredning",
+            condition="bra skick",
+            materials="mässing",
+            era="1920-tal",
+            dimensions="15x15x30 cm",
+            source="dödsbo",
+            acquisition_cost=50.0,
+        )
+
+        assert "error" not in result
+
+        with Session(engine) as session:
+            p = session.get(Product, result["product_id"])
+            assert p.description == "Fin ljusstake i mässing"
+            assert p.category == "inredning"
+            assert p.condition == "bra skick"
+            assert p.materials == "mässing"
+            assert p.era == "1920-tal"
+            assert p.acquisition_cost == 50.0
+
+    def test_logs_agent_action(self, service, engine):
+        service.create_product(title="Teststol")
+
+        with Session(engine) as session:
+            action = session.query(AgentAction).filter_by(action_type="create_product").one()
+            assert action.agent_name == "listing"
+            assert action.details["title"] == "Teststol"
+
+
+class TestSaveProductImage:
+    def test_save_image(self, service, product, tmp_path, engine):
+        img_path = tmp_path / "photo.jpg"
+        img_path.write_bytes(b"fake-jpeg-data")
+
+        result = service.save_product_image(product, str(img_path))
+
+        assert "error" not in result
+        assert result["product_id"] == product
+        assert result["image_id"] is not None
+        assert result["total_images"] == 1
+
+    def test_product_not_found(self, service, tmp_path):
+        img_path = tmp_path / "photo.jpg"
+        img_path.write_bytes(b"fake-jpeg-data")
+
+        result = service.save_product_image(9999, str(img_path))
+        assert "error" in result
+        assert "9999" in result["error"]
+
+    def test_file_not_found(self, service, product):
+        result = service.save_product_image(product, "/nonexistent/photo.jpg")
+        assert "error" in result
+        assert "not found" in result["error"].lower()
+
+    def test_is_primary_unsets_previous(self, service, product, tmp_path, engine):
+        img1 = tmp_path / "photo1.jpg"
+        img1.write_bytes(b"fake1")
+        img2 = tmp_path / "photo2.jpg"
+        img2.write_bytes(b"fake2")
+
+        service.save_product_image(product, str(img1), is_primary=True)
+        service.save_product_image(product, str(img2), is_primary=True)
+
+        with Session(engine) as session:
+            images = session.query(ProductImage).filter_by(product_id=product).all()
+            primary_images = [i for i in images if i.is_primary]
+            assert len(primary_images) == 1
+            assert primary_images[0].file_path == str(img2)
+
+    def test_logs_agent_action(self, service, product, tmp_path, engine):
+        img_path = tmp_path / "photo.jpg"
+        img_path.write_bytes(b"fake-jpeg-data")
+
+        service.save_product_image(product, str(img_path))
+
+        with Session(engine) as session:
+            action = session.query(AgentAction).filter_by(action_type="save_product_image").one()
+            assert action.agent_name == "listing"
+            assert action.product_id == product
+            assert action.details["file_path"] == str(img_path)

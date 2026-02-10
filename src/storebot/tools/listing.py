@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from storebot.db import AgentAction, PlatformListing, Product
+from storebot.db import AgentAction, PlatformListing, Product, ProductImage
 
 logger = logging.getLogger(__name__)
 
@@ -271,6 +271,102 @@ class ListingService:
                     }
                     for p in products
                 ],
+            }
+
+    def create_product(
+        self,
+        title: str,
+        description: str | None = None,
+        category: str | None = None,
+        status: str = "draft",
+        condition: str | None = None,
+        materials: str | None = None,
+        era: str | None = None,
+        dimensions: str | None = None,
+        source: str | None = None,
+        acquisition_cost: float | None = None,
+    ) -> dict:
+        """Create a new product in the database."""
+        with Session(self.engine) as session:
+            product = Product(
+                title=title,
+                description=description,
+                category=category,
+                status=status,
+                condition=condition,
+                materials=materials,
+                era=era,
+                dimensions=dimensions,
+                source=source,
+                acquisition_cost=acquisition_cost,
+            )
+            session.add(product)
+            session.flush()
+
+            action = AgentAction(
+                agent_name="listing",
+                action_type="create_product",
+                product_id=product.id,
+                details={"title": title},
+                executed_at=datetime.now(UTC),
+            )
+            session.add(action)
+            session.commit()
+
+            return {
+                "product_id": product.id,
+                "title": product.title,
+                "status": product.status,
+            }
+
+    def save_product_image(
+        self,
+        product_id: int,
+        image_path: str,
+        is_primary: bool = False,
+    ) -> dict:
+        """Save an image record for a product."""
+        from pathlib import Path
+
+        if not Path(image_path).exists():
+            return {"error": f"File not found: {image_path}"}
+
+        with Session(self.engine) as session:
+            product = session.get(Product, product_id)
+            if product is None:
+                return {"error": f"Product {product_id} not found"}
+
+            if is_primary:
+                session.query(ProductImage).filter_by(
+                    product_id=product_id, is_primary=True
+                ).update({"is_primary": False})
+
+            img = ProductImage(
+                product_id=product_id,
+                file_path=image_path,
+                is_primary=is_primary,
+            )
+            session.add(img)
+            session.flush()
+
+            total = session.query(ProductImage).filter_by(product_id=product_id).count()
+
+            action = AgentAction(
+                agent_name="listing",
+                action_type="save_product_image",
+                product_id=product_id,
+                details={"image_id": img.id, "file_path": image_path, "is_primary": is_primary},
+                executed_at=datetime.now(UTC),
+            )
+            session.add(action)
+            session.commit()
+
+            return {
+                "image_id": img.id,
+                "product_id": product_id,
+                "file_path": image_path,
+                "is_primary": is_primary,
+                "total_images": total,
             }
 
 

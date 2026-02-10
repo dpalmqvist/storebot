@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
@@ -6,6 +7,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from storebot.agent import Agent
 from storebot.config import get_settings
 from storebot.db import init_db
+from storebot.tools.image import resize_for_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +33,29 @@ async def help_command(update: Update, context) -> None:
 
 
 async def handle_photo(update: Update, context) -> None:
+    agent: Agent = context.bot_data["agent"]
     photo = update.message.photo[-1]  # Highest resolution
     file = await photo.get_file()
 
-    # TODO: Download photo to data/photos/{file.file_id}.jpg, pass to agent with vision
-    logger.info("Received photo: %s", file.file_id)
-    await update.message.reply_text("Foto mottaget! Bearbetning kommer snart.")
+    photos_dir = Path("data/photos")
+    photos_dir.mkdir(parents=True, exist_ok=True)
+
+    file_path = photos_dir / f"{file.file_unique_id}.jpg"
+    await file.download_to_drive(str(file_path))
+    logger.info("Downloaded photo: %s", file_path)
+
+    analysis_path = resize_for_analysis(str(file_path))
+    caption = update.message.caption or ""
+
+    try:
+        response = agent.handle_message(
+            caption,
+            image_paths=[analysis_path],
+        )
+        await update.message.reply_text(response)
+    except Exception:
+        logger.exception("Error handling photo")
+        await update.message.reply_text("Något gick fel vid bildanalysen. Försök igen.")
 
 
 async def handle_text(update: Update, context) -> None:
