@@ -58,9 +58,20 @@ class PlatformListing(Base):
     platform: Mapped[str] = mapped_column(String, nullable=False)  # tradera/blocket
     external_id: Mapped[str | None] = mapped_column(String)
     listing_url: Mapped[str | None] = mapped_column(String)
-    status: Mapped[str] = mapped_column(String, default="active")  # active/ended/sold
+    status: Mapped[str] = mapped_column(
+        String, default="draft"
+    )  # draft/approved/active/ended/sold
+    listing_type: Mapped[str | None] = mapped_column(String)  # auction/buy_it_now
+    listing_title: Mapped[str | None] = mapped_column(String)
+    listing_description: Mapped[str | None] = mapped_column(Text)
+    start_price: Mapped[float | None] = mapped_column(Float)
+    buy_it_now_price: Mapped[float | None] = mapped_column(Float)
+    duration_days: Mapped[int | None] = mapped_column(Integer)
+    tradera_category_id: Mapped[int | None] = mapped_column(Integer)
+    details: Mapped[dict | None] = mapped_column(JSON)
     listed_at: Mapped[datetime | None] = mapped_column(DateTime)
     ends_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     views: Mapped[int | None] = mapped_column(Integer)
     watchers: Mapped[int | None] = mapped_column(Integer)
 

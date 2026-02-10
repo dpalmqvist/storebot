@@ -47,6 +47,41 @@ def test_product_image_foreign_key(session):
     assert result.product.title == "Mässingsljusstake"
 
 
+def test_platform_listing_draft_columns(session):
+    """PlatformListing supports draft workflow columns."""
+    product = Product(title="Ektaburett", status="draft")
+    session.add(product)
+    session.flush()
+
+    listing = PlatformListing(
+        product_id=product.id,
+        platform="tradera",
+        status="draft",
+        listing_type="auction",
+        listing_title="Ektaburett 1940-tal, renoverad",
+        listing_description="Vacker ektaburett i fint skick.",
+        start_price=300.0,
+        buy_it_now_price=800.0,
+        duration_days=7,
+        tradera_category_id=344,
+        details={"condition": "good", "shipping": "buyer_pays"},
+    )
+    session.add(listing)
+    session.commit()
+
+    result = session.query(PlatformListing).filter_by(id=listing.id).one()
+    assert result.status == "draft"
+    assert result.listing_type == "auction"
+    assert result.listing_title == "Ektaburett 1940-tal, renoverad"
+    assert result.listing_description == "Vacker ektaburett i fint skick."
+    assert result.start_price == 300.0
+    assert result.buy_it_now_price == 800.0
+    assert result.duration_days == 7
+    assert result.tradera_category_id == 344
+    assert result.details == {"condition": "good", "shipping": "buyer_pays"}
+    assert result.created_at is not None
+
+
 def test_product_cascade_relationships(session):
     """Product relationships load correctly."""
     product = Product(title="Antikt skåp", status="listed", listing_price=2500.0)

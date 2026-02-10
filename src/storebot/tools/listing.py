@@ -1,0 +1,325 @@
+import logging
+from datetime import UTC, datetime
+
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
+
+from storebot.db import AgentAction, PlatformListing, Product
+
+logger = logging.getLogger(__name__)
+
+VALID_LISTING_TYPES = {"auction", "buy_it_now"}
+VALID_DURATION_DAYS = {3, 5, 7, 10, 14}
+
+
+class ListingService:
+    """Compound tool for managing draft listings with human-in-the-loop approval.
+
+    All listings start as drafts and require explicit approval before
+    they can be published to a marketplace.
+    """
+
+    def __init__(self, engine):
+        self.engine = engine
+
+    def create_draft(
+        self,
+        product_id: int,
+        listing_type: str,
+        listing_title: str,
+        listing_description: str,
+        platform: str = "tradera",
+        start_price: float | None = None,
+        buy_it_now_price: float | None = None,
+        duration_days: int = 7,
+        tradera_category_id: int | None = None,
+        details: dict | None = None,
+    ) -> dict:
+        """Create a draft listing for a product. Requires approval before publishing."""
+        with Session(self.engine) as session:
+            product = session.get(Product, product_id)
+            if product is None:
+                return {"error": f"Product {product_id} not found"}
+
+            errors = _validate_draft(
+                listing_type=listing_type,
+                start_price=start_price,
+                buy_it_now_price=buy_it_now_price,
+                duration_days=duration_days,
+            )
+            if errors:
+                return {"error": "Validation failed", "details": errors}
+
+            listing = PlatformListing(
+                product_id=product_id,
+                platform=platform,
+                status="draft",
+                listing_type=listing_type,
+                listing_title=listing_title,
+                listing_description=listing_description,
+                start_price=start_price,
+                buy_it_now_price=buy_it_now_price,
+                duration_days=duration_days,
+                tradera_category_id=tradera_category_id,
+                details=details,
+            )
+            session.add(listing)
+            session.flush()
+
+            action = AgentAction(
+                agent_name="listing",
+                action_type="create_draft",
+                product_id=product_id,
+                details={"listing_id": listing.id, "listing_type": listing_type},
+                requires_approval=True,
+                executed_at=datetime.now(UTC),
+            )
+            session.add(action)
+            session.commit()
+
+            preview = _format_draft_preview(listing, product)
+            return {"listing_id": listing.id, "status": "draft", "preview": preview}
+
+    def list_drafts(self, status: str = "draft") -> dict:
+        """List listings filtered by status."""
+        with Session(self.engine) as session:
+            listings = (
+                session.query(PlatformListing)
+                .filter(PlatformListing.status == status)
+                .order_by(PlatformListing.created_at.desc())
+                .all()
+            )
+            return {
+                "count": len(listings),
+                "listings": [
+                    {
+                        "id": listing.id,
+                        "product_id": listing.product_id,
+                        "listing_title": listing.listing_title,
+                        "listing_type": listing.listing_type,
+                        "platform": listing.platform,
+                        "status": listing.status,
+                        "start_price": listing.start_price,
+                        "buy_it_now_price": listing.buy_it_now_price,
+                    }
+                    for listing in listings
+                ],
+            }
+
+    def get_draft(self, listing_id: int) -> dict:
+        """Get full details for a single listing."""
+        with Session(self.engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            if listing is None:
+                return {"error": f"Listing {listing_id} not found"}
+
+            product = session.get(Product, listing.product_id)
+            return {
+                "id": listing.id,
+                "product_id": listing.product_id,
+                "product_title": product.title if product else None,
+                "platform": listing.platform,
+                "status": listing.status,
+                "listing_type": listing.listing_type,
+                "listing_title": listing.listing_title,
+                "listing_description": listing.listing_description,
+                "start_price": listing.start_price,
+                "buy_it_now_price": listing.buy_it_now_price,
+                "duration_days": listing.duration_days,
+                "tradera_category_id": listing.tradera_category_id,
+                "details": listing.details,
+                "created_at": listing.created_at.isoformat() if listing.created_at else None,
+            }
+
+    def update_draft(self, listing_id: int, **fields) -> dict:
+        """Update allowed fields on a draft listing."""
+        with Session(self.engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            if listing is None:
+                return {"error": f"Listing {listing_id} not found"}
+
+            if listing.status != "draft":
+                return {"error": f"Cannot edit listing with status '{listing.status}', only drafts"}
+
+            allowed = {
+                "listing_title",
+                "listing_description",
+                "listing_type",
+                "start_price",
+                "buy_it_now_price",
+                "duration_days",
+                "tradera_category_id",
+                "details",
+                "platform",
+            }
+            unknown = set(fields) - allowed
+            if unknown:
+                return {"error": f"Unknown fields: {', '.join(sorted(unknown))}"}
+
+            for key, value in fields.items():
+                setattr(listing, key, value)
+
+            errors = _validate_draft(
+                listing_type=listing.listing_type,
+                start_price=listing.start_price,
+                buy_it_now_price=listing.buy_it_now_price,
+                duration_days=listing.duration_days,
+            )
+            if errors:
+                session.rollback()
+                return {"error": "Validation failed", "details": errors}
+
+            action = AgentAction(
+                agent_name="listing",
+                action_type="update_draft",
+                product_id=listing.product_id,
+                details={"listing_id": listing.id, "updated_fields": list(fields.keys())},
+                executed_at=datetime.now(UTC),
+            )
+            session.add(action)
+            session.commit()
+
+            product = session.get(Product, listing.product_id)
+            preview = _format_draft_preview(listing, product)
+            return {"listing_id": listing.id, "status": "draft", "preview": preview}
+
+    def approve_draft(self, listing_id: int) -> dict:
+        """Approve a draft listing, moving it to 'approved' status."""
+        with Session(self.engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            if listing is None:
+                return {"error": f"Listing {listing_id} not found"}
+
+            if listing.status != "draft":
+                return {"error": f"Cannot approve listing with status '{listing.status}'"}
+
+            listing.status = "approved"
+            now = datetime.now(UTC)
+
+            action = AgentAction(
+                agent_name="listing",
+                action_type="approve_draft",
+                product_id=listing.product_id,
+                details={"listing_id": listing.id},
+                approved_at=now,
+                executed_at=now,
+            )
+            session.add(action)
+            session.commit()
+
+            return {"listing_id": listing.id, "status": "approved"}
+
+    def reject_draft(self, listing_id: int, reason: str = "") -> dict:
+        """Reject and delete a draft listing."""
+        with Session(self.engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            if listing is None:
+                return {"error": f"Listing {listing_id} not found"}
+
+            if listing.status != "draft":
+                return {"error": f"Cannot reject listing with status '{listing.status}'"}
+
+            product_id = listing.product_id
+            session.delete(listing)
+
+            action = AgentAction(
+                agent_name="listing",
+                action_type="reject_draft",
+                product_id=product_id,
+                details={"listing_id": listing_id, "reason": reason},
+                executed_at=datetime.now(UTC),
+            )
+            session.add(action)
+            session.commit()
+
+            return {"listing_id": listing_id, "status": "rejected", "reason": reason}
+
+    def search_products(
+        self, query: str | None = None, status: str | None = None
+    ) -> dict:
+        """Search the local product database."""
+        with Session(self.engine) as session:
+            q = session.query(Product)
+
+            if query:
+                pattern = f"%{query}%"
+                q = q.filter(
+                    or_(
+                        Product.title.ilike(pattern),
+                        Product.description.ilike(pattern),
+                        Product.category.ilike(pattern),
+                    )
+                )
+
+            if status:
+                q = q.filter(Product.status == status)
+
+            products = q.order_by(Product.created_at.desc()).all()
+
+            return {
+                "count": len(products),
+                "products": [
+                    {
+                        "id": p.id,
+                        "title": p.title,
+                        "category": p.category,
+                        "status": p.status,
+                        "acquisition_cost": p.acquisition_cost,
+                        "listing_price": p.listing_price,
+                        "condition": p.condition,
+                        "era": p.era,
+                    }
+                    for p in products
+                ],
+            }
+
+
+def _validate_draft(
+    listing_type: str,
+    start_price: float | None,
+    buy_it_now_price: float | None,
+    duration_days: int | None,
+) -> list[str]:
+    """Validate draft listing fields. Returns list of error messages (empty = valid)."""
+    errors = []
+
+    if listing_type not in VALID_LISTING_TYPES:
+        errors.append(f"listing_type must be one of: {', '.join(sorted(VALID_LISTING_TYPES))}")
+
+    if listing_type == "auction":
+        if start_price is None or start_price <= 0:
+            errors.append("Auctions require a positive start_price")
+
+    if listing_type == "buy_it_now":
+        if buy_it_now_price is None or buy_it_now_price <= 0:
+            errors.append("Buy-it-now listings require a positive buy_it_now_price")
+
+    if duration_days is not None and duration_days not in VALID_DURATION_DAYS:
+        errors.append(f"duration_days must be one of: {sorted(VALID_DURATION_DAYS)}")
+
+    return errors
+
+
+def _format_draft_preview(listing: PlatformListing, product: Product | None) -> str:
+    """Format a human-readable preview of a draft listing."""
+    lines = [
+        f"📦 Produkt: {product.title if product else 'Okänd'} (#{listing.product_id})",
+        f"📝 Titel: {listing.listing_title}",
+        f"📋 Beskrivning: {listing.listing_description}",
+        f"🏷️ Typ: {listing.listing_type}",
+        f"🌐 Plattform: {listing.platform}",
+    ]
+
+    if listing.listing_type == "auction":
+        lines.append(f"💰 Startpris: {listing.start_price} kr")
+        if listing.buy_it_now_price:
+            lines.append(f"🛒 Köp nu-pris: {listing.buy_it_now_price} kr")
+    else:
+        lines.append(f"🛒 Pris: {listing.buy_it_now_price} kr")
+
+    lines.append(f"⏱️ Varaktighet: {listing.duration_days} dagar")
+
+    if listing.tradera_category_id:
+        lines.append(f"📂 Tradera-kategori: {listing.tradera_category_id}")
+
+    return "\n".join(lines)
