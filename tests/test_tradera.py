@@ -8,9 +8,17 @@ from storebot.tools.tradera import TraderaClient
 @pytest.fixture
 def client():
     with patch("storebot.tools.tradera.zeep.Client") as mock_zeep:
-        c = TraderaClient(app_id="12345", app_key="testkey", sandbox=True)
-        # Force the lazy property to use our mock
+        c = TraderaClient(
+            app_id="12345",
+            app_key="testkey",
+            sandbox=True,
+            user_id="67890",
+            user_token="usertoken",
+        )
+        # Force the lazy properties to use our mock
         c._search_client = mock_zeep.return_value
+        c._order_client = MagicMock()
+        c._public_client = MagicMock()
         yield c
 
 
@@ -146,3 +154,152 @@ class TestTraderaSearch:
             c = TraderaClient(app_id="123", app_key="key")
             mock_zeep.assert_not_called()
             assert c._search_client is None
+
+
+def _make_seller_order(order_id=1, item_id=100, price=500, shipping=50):
+    order = MagicMock()
+    order.OrderId = order_id
+    order.BuyerName = "Anna Svensson"
+    order.BuyerAddress = "Storgatan 1"
+    order.SubTotal = price
+    order.ShippingCost = shipping
+
+    item = MagicMock()
+    item.ItemId = item_id
+    item.Title = "Antik stol"
+    item.Price = price
+    item.Quantity = 1
+    items_obj = MagicMock()
+    items_obj.SellerOrderItem = [item]
+    order.Items = items_obj
+
+    payment = MagicMock()
+    payment.PaymentType = "DirectPayment"
+    payment.Amount = price + shipping
+    payments_obj = MagicMock()
+    payments_obj.Payment = [payment]
+    order.Payments = payments_obj
+
+    return order
+
+
+def _make_orders_response(orders=None):
+    resp = MagicMock()
+    orders_obj = MagicMock()
+    orders_obj.SellerOrder = orders or []
+    resp.Orders = orders_obj
+    return resp
+
+
+class TestTraderaGetOrders:
+    def test_returns_parsed_orders(self, client):
+        order = _make_seller_order(order_id=42, item_id=100, price=500)
+        response = _make_orders_response([order])
+        client._order_client.service.GetSellerOrders.return_value = response
+
+        result = client.get_orders()
+
+        assert result["count"] == 1
+        assert result["orders"][0]["order_id"] == 42
+        assert result["orders"][0]["buyer_name"] == "Anna Svensson"
+        assert result["orders"][0]["sub_total"] == 500
+        assert len(result["orders"][0]["items"]) == 1
+        assert result["orders"][0]["items"][0]["item_id"] == 100
+
+    def test_empty_orders(self, client):
+        response = _make_orders_response([])
+        client._order_client.service.GetSellerOrders.return_value = response
+
+        result = client.get_orders()
+
+        assert result["count"] == 0
+        assert result["orders"] == []
+
+    def test_handles_api_error(self, client):
+        client._order_client.service.GetSellerOrders.side_effect = Exception("Timeout")
+
+        result = client.get_orders()
+
+        assert result["error"] == "Timeout"
+        assert result["count"] == 0
+
+    def test_date_parameters_passed(self, client):
+        response = _make_orders_response([])
+        client._order_client.service.GetSellerOrders.return_value = response
+
+        client.get_orders(from_date="2026-01-01", to_date="2026-01-31")
+
+        call_kwargs = client._order_client.service.GetSellerOrders.call_args
+        assert call_kwargs.kwargs["DateFrom"].year == 2026
+        assert call_kwargs.kwargs["DateFrom"].month == 1
+        assert call_kwargs.kwargs["DateTo"].month == 1
+        assert call_kwargs.kwargs["DateTo"].day == 31
+
+
+class TestTraderaGetItem:
+    def test_returns_item_details(self, client):
+        item_resp = MagicMock()
+        item_resp.Id = 42
+        item_resp.Title = "Antik byrå"
+        item_resp.Description = "Vacker byrå från 1920-talet"
+        item_resp.BuyItNowPrice = 1500
+        item_resp.MaxBid = 0
+        item_resp.Status = "Ended"
+        item_resp.EndDate = "2026-02-01T12:00:00"
+        item_resp.ItemUrl = "https://www.tradera.com/item/42"
+        client._public_client.service.GetItem.return_value = item_resp
+
+        result = client.get_item(42)
+
+        assert result["id"] == 42
+        assert result["title"] == "Antik byrå"
+        assert result["price"] == 1500
+
+    def test_handles_api_error(self, client):
+        client._public_client.service.GetItem.side_effect = Exception("Not found")
+
+        result = client.get_item(999)
+
+        assert result["error"] == "Not found"
+
+
+class TestTraderaMarkOrderShipped:
+    def test_success(self, client):
+        client._order_client.service.SetSellerOrderAsShipped.return_value = None
+
+        result = client.mark_order_shipped(42)
+
+        assert result["order_id"] == 42
+        assert result["status"] == "shipped"
+
+    def test_handles_api_error(self, client):
+        client._order_client.service.SetSellerOrderAsShipped.side_effect = Exception("Auth failed")
+
+        result = client.mark_order_shipped(42)
+
+        assert result["error"] == "Auth failed"
+
+
+class TestAuthHeaders:
+    def test_without_authorization(self, client):
+        mock_client = MagicMock()
+        mock_client.get_element.side_effect = [
+            lambda **kw: MagicMock(),
+            lambda **kw: MagicMock(),
+        ]
+
+        headers = client._auth_headers(mock_client, include_authorization=False)
+
+        assert len(headers["_soapheaders"]) == 2
+
+    def test_with_authorization(self, client):
+        mock_client = MagicMock()
+        mock_client.get_element.side_effect = [
+            lambda **kw: MagicMock(),
+            lambda **kw: MagicMock(),
+            lambda **kw: MagicMock(),
+        ]
+
+        headers = client._auth_headers(mock_client, include_authorization=True)
+
+        assert len(headers["_soapheaders"]) == 3

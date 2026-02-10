@@ -8,6 +8,7 @@ from storebot.tools.blocket import BlocketClient
 from storebot.tools.accounting import AccountingService
 from storebot.tools.image import encode_image_base64
 from storebot.tools.listing import ListingService
+from storebot.tools.order import OrderService
 from storebot.tools.pricing import PricingService
 from storebot.tools.tradera import TraderaClient
 
@@ -163,16 +164,62 @@ TOOLS = [
         },
     },
     {
-        "name": "get_orders",
-        "description": "Retrieve orders from Tradera.",
+        "name": "check_new_orders",
+        "description": "Poll Tradera for new orders and import them locally. Creates order records and updates product/listing status.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "list_orders",
+        "description": "List local orders, optionally filtered by status (pending/shipped/delivered/returned).",
         "input_schema": {
             "type": "object",
             "properties": {
                 "status": {
                     "type": "string",
-                    "description": "Filter by status (optional)",
+                    "enum": ["pending", "shipped", "delivered", "returned"],
+                    "description": "Filter by order status (optional)",
                 },
             },
+        },
+    },
+    {
+        "name": "get_order",
+        "description": "Get full details of a specific order including product title.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "integer", "description": "Order ID"},
+            },
+            "required": ["order_id"],
+        },
+    },
+    {
+        "name": "create_sale_voucher",
+        "description": "Create an accounting voucher for a completed sale. Calculates VAT, revenue, and platform fees automatically.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "integer", "description": "Order ID to create voucher for"},
+            },
+            "required": ["order_id"],
+        },
+    },
+    {
+        "name": "mark_order_shipped",
+        "description": "Mark an order as shipped. Updates local status and notifies Tradera. NEVER use without explicit owner confirmation.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "integer", "description": "Order ID to mark as shipped"},
+                "tracking_number": {
+                    "type": "string",
+                    "description": "Tracking number (optional)",
+                },
+            },
+            "required": ["order_id"],
         },
     },
     {
@@ -323,9 +370,14 @@ Du kan:
 - Göra priskoll som söker båda plattformarna och ger prisstatistik med föreslagen prisintervall
 - Skapa utkast till annonser (alla annonser börjar som utkast)
 - Visa, redigera, godkänna och avvisa annonsutkast
-- Hantera ordrar och leveranser
+- Hantera ordrar: kolla efter nya ordrar, visa ordrar, skapa försäljningsverifikation, markera som skickad
 - Skapa bokföringsverifikationer och exportera som PDF
 - Söka i produktdatabasen
+
+VIKTIGT — Orderhantering:
+1. Markera ALDRIG en order som skickad utan ägarens uttryckliga bekräftelse.
+2. Skapa alltid en försäljningsverifikation (create_sale_voucher) för varje ny order.
+3. Informera ägaren om nya ordrar med köpare, belopp och produkt.
 
 När användaren skickar en bild:
 1. Beskriv vad du ser i bilden.
@@ -352,6 +404,8 @@ class Agent:
             app_id=self.settings.tradera_app_id,
             app_key=self.settings.tradera_app_key,
             sandbox=self.settings.tradera_sandbox,
+            user_id=self.settings.tradera_user_id,
+            user_token=self.settings.tradera_user_token,
         )
         self.blocket = BlocketClient(bearer_token=self.settings.blocket_bearer_token)
         self.accounting = (
@@ -368,6 +422,15 @@ class Agent:
             engine=self.engine,
         )
         self.listing = ListingService(engine=self.engine) if self.engine else None
+        self.order = (
+            OrderService(
+                engine=self.engine,
+                tradera=self.tradera,
+                accounting=self.accounting,
+            )
+            if self.engine
+            else None
+        )
 
     def handle_message(
         self,
@@ -471,8 +534,26 @@ class Agent:
                     if not self.listing:
                         return {"error": "ListingService not available (no database engine)"}
                     return self.listing.approve_draft(**tool_input)
-                case "get_orders":
-                    return self.tradera.get_orders(**tool_input)
+                case "check_new_orders":
+                    if not self.order:
+                        return {"error": "OrderService not available (no database engine)"}
+                    return self.order.check_new_orders()
+                case "list_orders":
+                    if not self.order:
+                        return {"error": "OrderService not available (no database engine)"}
+                    return self.order.list_orders(**tool_input)
+                case "get_order":
+                    if not self.order:
+                        return {"error": "OrderService not available (no database engine)"}
+                    return self.order.get_order(**tool_input)
+                case "create_sale_voucher":
+                    if not self.order:
+                        return {"error": "OrderService not available (no database engine)"}
+                    return self.order.create_sale_voucher(**tool_input)
+                case "mark_order_shipped":
+                    if not self.order:
+                        return {"error": "OrderService not available (no database engine)"}
+                    return self.order.mark_shipped(**tool_input)
                 case "create_voucher":
                     if not self.accounting:
                         return {"error": "AccountingService not available (no database engine)"}
