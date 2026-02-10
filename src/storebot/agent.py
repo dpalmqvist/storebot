@@ -212,8 +212,14 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "from_date": {"type": "string", "description": "Start date (ISO format, e.g. 2026-01-01)"},
-                "to_date": {"type": "string", "description": "End date (ISO format, e.g. 2026-12-31)"},
+                "from_date": {
+                    "type": "string",
+                    "description": "Start date (ISO format, e.g. 2026-01-01)",
+                },
+                "to_date": {
+                    "type": "string",
+                    "description": "End date (ISO format, e.g. 2026-12-31)",
+                },
             },
             "required": ["from_date", "to_date"],
         },
@@ -262,12 +268,27 @@ TOOLS = [
             "properties": {
                 "title": {"type": "string", "description": "Product title in Swedish"},
                 "description": {"type": "string", "description": "Product description in Swedish"},
-                "category": {"type": "string", "description": "Category (e.g. möbler, inredning, kuriosa, antikviteter)"},
-                "condition": {"type": "string", "description": "Condition (e.g. renoverad, bra skick, slitage)"},
-                "materials": {"type": "string", "description": "Materials (e.g. ek, mässing, glas)"},
-                "era": {"type": "string", "description": "Era or period (e.g. 1940-tal, jugend, art deco)"},
+                "category": {
+                    "type": "string",
+                    "description": "Category (e.g. möbler, inredning, kuriosa, antikviteter)",
+                },
+                "condition": {
+                    "type": "string",
+                    "description": "Condition (e.g. renoverad, bra skick, slitage)",
+                },
+                "materials": {
+                    "type": "string",
+                    "description": "Materials (e.g. ek, mässing, glas)",
+                },
+                "era": {
+                    "type": "string",
+                    "description": "Era or period (e.g. 1940-tal, jugend, art deco)",
+                },
                 "dimensions": {"type": "string", "description": "Dimensions (e.g. 60x40x80 cm)"},
-                "source": {"type": "string", "description": "Where it was acquired (e.g. loppis, dödsbo, tradera)"},
+                "source": {
+                    "type": "string",
+                    "description": "Where it was acquired (e.g. loppis, dödsbo, tradera)",
+                },
                 "acquisition_cost": {"type": "number", "description": "Purchase cost in SEK"},
             },
             "required": ["title"],
@@ -281,7 +302,10 @@ TOOLS = [
             "properties": {
                 "product_id": {"type": "integer", "description": "Product ID to attach image to"},
                 "image_path": {"type": "string", "description": "File path to the image"},
-                "is_primary": {"type": "boolean", "description": "Set as primary product image (default false)"},
+                "is_primary": {
+                    "type": "boolean",
+                    "description": "Set as primary product image (default false)",
+                },
             },
             "required": ["product_id", "image_path"],
         },
@@ -330,10 +354,14 @@ class Agent:
             sandbox=self.settings.tradera_sandbox,
         )
         self.blocket = BlocketClient(bearer_token=self.settings.blocket_bearer_token)
-        self.accounting = AccountingService(
-            engine=self.engine,
-            export_path=self.settings.voucher_export_path,
-        ) if self.engine else None
+        self.accounting = (
+            AccountingService(
+                engine=self.engine,
+                export_path=self.settings.voucher_export_path,
+            )
+            if self.engine
+            else None
+        )
         self.pricing = PricingService(
             tradera=self.tradera,
             blocket=self.blocket,
@@ -354,10 +382,12 @@ class Agent:
             content = []
             for path in image_paths:
                 data, media_type = encode_image_base64(path)
-                content.append({
-                    "type": "image",
-                    "source": {"type": "base64", "media_type": media_type, "data": data},
-                })
+                content.append(
+                    {
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": media_type, "data": data},
+                    }
+                )
             text = user_message or (
                 "Användaren skickade dessa bilder. "
                 "Beskriv vad du ser och fråga hur du kan hjälpa till."

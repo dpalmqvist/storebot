@@ -14,7 +14,9 @@ def service(engine):
 def product(engine):
     """Create a test product and return its ID."""
     with Session(engine) as session:
-        p = Product(title="Ektaburett 1940-tal", description="Renoverad ektaburett", status="draft")
+        p = Product(
+            title="Ektaburett 1940-tal", description="Renoverad ektaburett", status="draft"
+        )
         session.add(p)
         session.commit()
         return p.id
@@ -255,9 +257,7 @@ class TestUpdateDraft:
         service.update_draft(draft_listing["listing_id"], start_price=500.0)
 
         with Session(engine) as session:
-            action = (
-                session.query(AgentAction).filter_by(action_type="update_draft").one()
-            )
+            action = session.query(AgentAction).filter_by(action_type="update_draft").one()
             assert action.agent_name == "listing"
             assert "start_price" in action.details["updated_fields"]
 
@@ -283,9 +283,7 @@ class TestApproveDraft:
         service.approve_draft(draft_listing["listing_id"])
 
         with Session(engine) as session:
-            action = (
-                session.query(AgentAction).filter_by(action_type="approve_draft").one()
-            )
+            action = session.query(AgentAction).filter_by(action_type="approve_draft").one()
             assert action.approved_at is not None
 
 
@@ -304,9 +302,7 @@ class TestRejectDraft:
         service.reject_draft(draft_listing["listing_id"], reason="Dålig beskrivning")
 
         with Session(engine) as session:
-            action = (
-                session.query(AgentAction).filter_by(action_type="reject_draft").one()
-            )
+            action = session.query(AgentAction).filter_by(action_type="reject_draft").one()
             assert action.details["reason"] == "Dålig beskrivning"
 
     def test_cannot_reject_non_draft(self, service, draft_listing):

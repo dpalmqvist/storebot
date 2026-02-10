@@ -31,12 +31,12 @@ class TraderaClient:
         return self._search_client
 
     def _soap_headers(self) -> dict:
-        auth = self.search_client.get_element(
-            "{http://api.tradera.com}AuthenticationHeader"
-        )(AppId=int(self.app_id), AppKey=self.app_key)
-        config = self.search_client.get_element(
-            "{http://api.tradera.com}ConfigurationHeader"
-        )(Sandbox=1 if self.sandbox else 0)
+        auth = self.search_client.get_element("{http://api.tradera.com}AuthenticationHeader")(
+            AppId=int(self.app_id), AppKey=self.app_key
+        )
+        config = self.search_client.get_element("{http://api.tradera.com}ConfigurationHeader")(
+            Sandbox=1 if self.sandbox else 0
+        )
         return {"_soapheaders": [auth, config]}
 
     def _parse_item(self, item) -> dict:

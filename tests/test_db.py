@@ -21,7 +21,9 @@ def test_tables_created(engine):
 
 def test_insert_and_query_product(session):
     """Can insert and query a Product."""
-    product = Product(title="Ekmatstol 1940-tal", description="Renoverad ekmatstol", status="draft")
+    product = Product(
+        title="Ekmatstol 1940-tal", description="Renoverad ekmatstol", status="draft"
+    )
     session.add(product)
     session.commit()
 
@@ -88,7 +90,9 @@ def test_product_cascade_relationships(session):
     session.add(product)
     session.flush()
 
-    session.add(ProductImage(product_id=product.id, file_path="/photos/skap1.jpg", is_primary=True))
+    session.add(
+        ProductImage(product_id=product.id, file_path="/photos/skap1.jpg", is_primary=True)
+    )
     session.add(
         PlatformListing(
             product_id=product.id, platform="tradera", external_id="12345", status="active"
