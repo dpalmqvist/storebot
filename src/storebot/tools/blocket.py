@@ -4,14 +4,9 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-SEARCH_URL = (
-    "https://www.blocket.se/recommerce/forsale/search/api/search"
-    "/SEARCH_ID_BAP_COMMON"
-)
+SEARCH_URL = "https://www.blocket.se/recommerce/forsale/search/api/search/SEARCH_ID_BAP_COMMON"
 
-USER_AGENT = (
-    "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
-)
+USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
 
 
 class BlocketClient:

@@ -102,9 +102,7 @@ class TestTraderaSearch:
         assert "PriceMaximum" not in call_kwargs.kwargs
 
     def test_search_handles_api_error(self, client):
-        client.search_client.service.SearchAdvanced.side_effect = Exception(
-            "Connection refused"
-        )
+        client.search_client.service.SearchAdvanced.side_effect = Exception("Connection refused")
 
         result = client.search("test")
 

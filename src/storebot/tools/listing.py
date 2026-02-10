@@ -139,7 +139,9 @@ class ListingService:
                 return {"error": f"Listing {listing_id} not found"}
 
             if listing.status != "draft":
-                return {"error": f"Cannot edit listing with status '{listing.status}', only drafts"}
+                return {
+                    "error": f"Cannot edit listing with status '{listing.status}', only drafts"
+                }
 
             allowed = {
                 "listing_title",
@@ -234,9 +236,7 @@ class ListingService:
 
             return {"listing_id": listing_id, "status": "rejected", "reason": reason}
 
-    def search_products(
-        self, query: str | None = None, status: str | None = None
-    ) -> dict:
+    def search_products(self, query: str | None = None, status: str | None = None) -> dict:
         """Search the local product database."""
         with Session(self.engine) as session:
             q = session.query(Product)

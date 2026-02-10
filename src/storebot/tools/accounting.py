@@ -31,9 +31,7 @@ class AccountingService:
         self.export_path = Path(export_path)
 
     def _next_voucher_number(self, session: sa.orm.Session) -> str:
-        result = session.execute(
-            sa.select(sa.func.count()).select_from(Voucher)
-        ).scalar()
+        result = session.execute(sa.select(sa.func.count()).select_from(Voucher)).scalar()
         return f"V-{result + 1:03d}"
 
     def create_voucher(
@@ -68,7 +66,9 @@ class AccountingService:
 
             for row in rows:
                 account = row["account"]
-                account_name = row.get("account_name") or BAS_ACCOUNTS.get(account, f"Konto {account}")
+                account_name = row.get("account_name") or BAS_ACCOUNTS.get(
+                    account, f"Konto {account}"
+                )
                 voucher_row = VoucherRow(
                     voucher_id=voucher.id,
                     account_number=account,
@@ -97,9 +97,7 @@ class AccountingService:
                 ],
             }
 
-    def get_vouchers(
-        self, from_date: str | None = None, to_date: str | None = None
-    ) -> list[dict]:
+    def get_vouchers(self, from_date: str | None = None, to_date: str | None = None) -> list[dict]:
         with sa.orm.Session(self.engine) as session:
             query = sa.select(Voucher).order_by(Voucher.id)
 
@@ -133,51 +131,65 @@ class AccountingService:
         """Build reportlab story elements for a single voucher."""
         elements = []
 
-        elements.append(Paragraph(
-            f"Verifikation #{voucher.voucher_number}",
-            styles["Title"],
-        ))
+        elements.append(
+            Paragraph(
+                f"Verifikation #{voucher.voucher_number}",
+                styles["Title"],
+            )
+        )
         elements.append(Spacer(1, 4 * mm))
-        elements.append(Paragraph(
-            f"<b>Datum:</b> {voucher.transaction_date.strftime('%Y-%m-%d')}",
-            styles["Normal"],
-        ))
-        elements.append(Paragraph(
-            f"<b>Beskrivning:</b> {voucher.description}",
-            styles["Normal"],
-        ))
-        if voucher.order_id:
-            elements.append(Paragraph(
-                f"<b>Order:</b> #{voucher.order_id}",
+        elements.append(
+            Paragraph(
+                f"<b>Datum:</b> {voucher.transaction_date.strftime('%Y-%m-%d')}",
                 styles["Normal"],
-            ))
+            )
+        )
+        elements.append(
+            Paragraph(
+                f"<b>Beskrivning:</b> {voucher.description}",
+                styles["Normal"],
+            )
+        )
+        if voucher.order_id:
+            elements.append(
+                Paragraph(
+                    f"<b>Order:</b> #{voucher.order_id}",
+                    styles["Normal"],
+                )
+            )
         elements.append(Spacer(1, 6 * mm))
 
         table_data = [["Konto", "Kontonamn", "Debet", "Kredit"]]
         total_debit = 0.0
         total_credit = 0.0
         for row in voucher.rows:
-            table_data.append([
-                str(row.account_number),
-                row.account_name,
-                f"{row.debit:.2f}" if row.debit else "",
-                f"{row.credit:.2f}" if row.credit else "",
-            ])
+            table_data.append(
+                [
+                    str(row.account_number),
+                    row.account_name,
+                    f"{row.debit:.2f}" if row.debit else "",
+                    f"{row.credit:.2f}" if row.credit else "",
+                ]
+            )
             total_debit += row.debit
             total_credit += row.credit
         table_data.append(["", "Summa", f"{total_debit:.2f}", f"{total_credit:.2f}"])
 
         col_widths = [60, 200, 80, 80]
         table = Table(table_data, colWidths=col_widths)
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-            ("ALIGN", (2, 0), (3, -1), "RIGHT"),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("LINEABOVE", (0, -1), (-1, -1), 1, colors.black),
-        ]))
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+                    ("ALIGN", (2, 0), (3, -1), "RIGHT"),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                    ("LINEABOVE", (0, -1), (-1, -1), 1, colors.black),
+                ]
+            )
+        )
         elements.append(table)
         return elements
 
@@ -231,10 +243,12 @@ class AccountingService:
             styles = getSampleStyleSheet()
             story = []
 
-            story.append(Paragraph(
-                f"Verifikationer {from_date} — {to_date}",
-                styles["Title"],
-            ))
+            story.append(
+                Paragraph(
+                    f"Verifikationer {from_date} — {to_date}",
+                    styles["Title"],
+                )
+            )
             story.append(Spacer(1, 8 * mm))
 
             for i, voucher in enumerate(vouchers):
