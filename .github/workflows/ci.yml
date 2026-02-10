@@ -30,6 +30,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -37,7 +38,7 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           use_sticky_comment: true
-          direct_prompt: |
+          prompt: |
             Review this PR focusing on:
             - Code quality and Python best practices
             - Potential bugs or logic errors

@@ -83,17 +83,17 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Using `create_all()` 
 - **Telegram bot** — `handlers.py` with `/start`, `/help`, text message handling, and photo handling (download, resize, forward to agent with vision).
 - **Config** — Pydantic Settings from `.env`, all service credentials.
 - **Deployment** — systemd service file, SQLite backup script with cron rotation.
-- **Tests** — 113 tests covering db, tradera, blocket, pricing, listing, and image modules.
+- **Order Agent** — `OrderService` with full order workflow: `check_new_orders` (polls Tradera, imports orders, updates listings/products), `get_order`, `list_orders`, `create_sale_voucher` (automatic VAT/revenue/fee calculation), `mark_shipped` (with Tradera notification). Scheduled polling via Telegram `job_queue`.
+- **Tests** — 171 tests covering db, tradera, blocket, pricing, listing, image, order, and accounting modules.
 
 ### Stubbed (not yet implemented)
 
 - **PostNord** — `PostNordClient` class exists but `create_shipment` and `get_label` raise `NotImplementedError`.
-- **Tradera write operations** — `create_listing`, `get_orders`, `get_item` are stubbed.
+- **Tradera write operations** — `create_listing` is stubbed.
 - **Blocket ad detail** — `get_ad` is stubbed.
 
 ### Not started
 
-- Order Agent (monitor sales, update inventory, shipping labels, voucher creation)
 - Scout Agent (scheduled sourcing searches, daily digests)
 - Marketing Agent (listing performance tracking, strategy suggestions)
 - MCP server wrappers for tool modules
@@ -106,7 +106,7 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Using `create_all()` 
 ## Build Phases
 
 1. **Phase 1 (MVP):** SQLite schema + SQLAlchemy ORM, Tradera/Blocket search tools, Pricing Agent, Listing Agent — **DONE**
-2. **Phase 2:** Telegram bot, Order Agent, local voucher/PDF export — **IN PROGRESS** (bot + accounting done, Order Agent remaining)
+2. **Phase 2:** Telegram bot, Order Agent, local voucher/PDF export — **DONE**
 3. **Phase 3:** Scout Agent (scheduled), Marketing Agent, MCP server wrappers, social media cross-posting
 4. **Phase 4:** Crop management, custom webshop, wishlist matching, advanced analytics
 
