@@ -6,6 +6,7 @@ import anthropic
 from storebot.config import get_settings
 from storebot.tools.blocket import BlocketClient
 from storebot.tools.fortnox import FortnoxClient
+from storebot.tools.pricing import PricingService
 from storebot.tools.tradera import TraderaClient
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,28 @@ TOOLS = [
         },
     },
     {
+        "name": "price_check",
+        "description": "Search both Tradera and Blocket for comparable items and compute price statistics with a suggested price range. Use for pricing research before listing a product.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query describing the item to price",
+                },
+                "product_id": {
+                    "type": "integer",
+                    "description": "Local product ID to link analysis to (optional)",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Category filter — Tradera int or Blocket string (optional)",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
         "name": "search_products",
         "description": "Search the local product database.",
         "input_schema": {
@@ -116,6 +139,7 @@ inredning, kuriosa, antikviteter och grödor. Du hjälper ägaren att hantera bu
 
 Du kan:
 - Söka efter liknande produkter på Tradera och Blocket för prisundersökning
+- Göra priskoll som söker båda plattformarna och ger prisstatistik med föreslagen prisintervall
 - Skapa annonser på Tradera
 - Hantera ordrar och leveranser
 - Skapa verifikationer i Fortnox
@@ -139,6 +163,10 @@ class Agent:
             client_id=self.settings.fortnox_client_id,
             client_secret=self.settings.fortnox_client_secret,
             access_token=self.settings.fortnox_access_token,
+        )
+        self.pricing = PricingService(
+            tradera=self.tradera,
+            blocket=self.blocket,
         )
 
     def handle_message(
@@ -194,6 +222,8 @@ class Agent:
                     return self.tradera.search(**tool_input)
                 case "search_blocket":
                     return self.blocket.search(**tool_input)
+                case "price_check":
+                    return self.pricing.price_check(**tool_input)
                 case "create_listing":
                     return self.tradera.create_listing(**tool_input)
                 case "get_orders":
