@@ -226,7 +226,33 @@ def create_engine(database_path: str | None = None) -> sa.Engine:
     return engine
 
 
+def _find_alembic_ini() -> Path | None:
+    """Locate alembic.ini relative to the project root (two levels above src/storebot/)."""
+    candidate = Path(__file__).resolve().parents[2] / "alembic.ini"
+    if candidate.exists():
+        return candidate
+    return None
+
+
 def init_db(database_path: str | None = None) -> sa.Engine:
+    """Initialize the database, applying Alembic migrations if available.
+
+    Falls back to create_all() when alembic.ini is not found (e.g. in
+    deployed environments without migration files).
+    """
     engine = create_engine(database_path)
-    Base.metadata.create_all(engine)
+
+    alembic_ini = _find_alembic_ini()
+    if alembic_ini is None:
+        Base.metadata.create_all(engine)
+        return engine
+
+    from alembic import command
+    from alembic.config import Config
+
+    alembic_cfg = Config(str(alembic_ini))
+    if database_path:
+        alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{database_path}")
+    command.upgrade(alembic_cfg, "head")
+
     return engine
