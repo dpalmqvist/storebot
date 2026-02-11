@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     # Order polling
     order_poll_interval_minutes: int = 30
 
+    # Conversation history
+    max_history_messages: int = 20
+    conversation_timeout_minutes: int = 60
+
     # Database
     database_path: str = "data/storebot.db"
 

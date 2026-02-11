@@ -1,5 +1,6 @@
 import json
 import logging
+from dataclasses import dataclass, field
 
 import anthropic
 
@@ -13,6 +14,13 @@ from storebot.tools.pricing import PricingService
 from storebot.tools.tradera import TraderaClient
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AgentResponse:
+    text: str
+    messages: list[dict] = field(default_factory=list)
+
 
 TOOLS = [
     {
@@ -437,7 +445,7 @@ class Agent:
         user_message: str,
         image_paths: list[str] | None = None,
         conversation_history: list[dict] | None = None,
-    ) -> str:
+    ) -> AgentResponse:
         if conversation_history is None:
             conversation_history = []
 
@@ -495,8 +503,11 @@ class Agent:
                 tools=TOOLS,
             )
 
+        messages.append({"role": "assistant", "content": response.content})
+
         text_blocks = [b for b in response.content if b.type == "text"]
-        return text_blocks[0].text if text_blocks else ""
+        text = text_blocks[0].text if text_blocks else ""
+        return AgentResponse(text=text, messages=messages)
 
     def execute_tool(self, name: str, tool_input: dict) -> dict:
         logger.info("Executing tool: %s with input: %s", name, tool_input)

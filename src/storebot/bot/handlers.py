@@ -7,6 +7,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 from storebot.agent import Agent
 from storebot.config import get_settings
 from storebot.db import init_db
+from storebot.tools.conversation import ConversationService
 from storebot.tools.image import resize_for_analysis
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Kommandon:\n"
         "/help — Visa hjälp\n"
         "/orders — Kolla efter nya ordrar\n"
+        "/new — Starta en ny konversation\n"
     )
 
 
@@ -31,18 +33,26 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "- Hantera ordrar och leveranser\n"
         "- Bokföring (verifikationer som PDF)\n\n"
         "Kommandon:\n"
-        "/orders — Kolla efter nya ordrar\n\n"
+        "/orders — Kolla efter nya ordrar\n"
+        "/new — Starta en ny konversation\n\n"
         "Skicka foton på en produkt eller beskriv vad du vill göra."
     )
+
+
+async def new_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    conversation: ConversationService = context.bot_data["conversation"]
+    chat_id = str(update.effective_chat.id)
+    conversation.clear_history(chat_id)
+    await update.message.reply_text("Konversationen är nollställd. Vad kan jag hjälpa dig med?")
 
 
 async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     agent: Agent = context.bot_data["agent"]
     try:
-        response = agent.handle_message(
+        result = agent.handle_message(
             "Kolla efter nya ordrar och visa en sammanfattning av alla väntande ordrar."
         )
-        await update.message.reply_text(response)
+        await update.message.reply_text(result.text)
     except Exception:
         logger.exception("Error handling orders command")
         await update.message.reply_text("Något gick fel vid orderkollen. Försök igen.")
@@ -50,6 +60,9 @@ async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     agent: Agent = context.bot_data["agent"]
+    conversation: ConversationService = context.bot_data["conversation"]
+    chat_id = str(update.effective_chat.id)
+
     photo = update.message.photo[-1]  # Highest resolution
     file = await photo.get_file()
 
@@ -63,12 +76,17 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     analysis_path = resize_for_analysis(str(file_path))
     caption = update.message.caption or ""
 
+    history = conversation.load_history(chat_id)
+
     try:
-        response = agent.handle_message(
+        result = agent.handle_message(
             caption,
             image_paths=[analysis_path],
+            conversation_history=history,
         )
-        await update.message.reply_text(response)
+        new_messages = result.messages[len(history) :]
+        conversation.save_messages(chat_id, new_messages)
+        await update.message.reply_text(result.text)
     except Exception:
         logger.exception("Error handling photo")
         await update.message.reply_text("Något gick fel vid bildanalysen. Försök igen.")
@@ -76,13 +94,22 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     agent: Agent = context.bot_data["agent"]
+    conversation: ConversationService = context.bot_data["conversation"]
+    chat_id = str(update.effective_chat.id)
     user_message = update.message.text
 
     logger.info("Received message: %s", user_message[:100])
 
+    history = conversation.load_history(chat_id)
+
     try:
-        response = agent.handle_message(user_message)
-        await update.message.reply_text(response)
+        result = agent.handle_message(
+            user_message,
+            conversation_history=history,
+        )
+        new_messages = result.messages[len(history) :]
+        conversation.save_messages(chat_id, new_messages)
+        await update.message.reply_text(result.text)
     except Exception:
         logger.exception("Error handling message")
         await update.message.reply_text("Något gick fel. Försök igen.")
@@ -130,9 +157,15 @@ def main() -> None:
     app = Application.builder().token(settings.telegram_bot_token).build()
 
     app.bot_data["agent"] = Agent(settings, engine=engine)
+    app.bot_data["conversation"] = ConversationService(
+        engine=engine,
+        max_messages=settings.max_history_messages,
+        timeout_minutes=settings.conversation_timeout_minutes,
+    )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("new", new_conversation))
     app.add_handler(CommandHandler("orders", orders_command))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
