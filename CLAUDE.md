@@ -53,7 +53,7 @@ SQLite + sqlite-vec (operational + financial: inventory, listings, orders, vouch
 
 `products`, `product_images`, `platform_listings`, `orders`, `vouchers`, `voucher_rows`, `agent_actions`, `notifications`, `conversation_messages`, `saved_searches`, `seen_items`
 
-SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Using `create_all()` during early development (no Alembic yet).
+SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Alembic migrations (SQLite batch mode).
 
 ## External API Notes
 
@@ -72,7 +72,8 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Using `create_all()` 
 
 ### Done
 
-- **Database layer** — SQLAlchemy 2.0 models for all core tables (`products`, `product_images`, `platform_listings`, `orders`, `vouchers`, `voucher_rows`, `agent_actions`, `notifications`, `conversation_messages`). Foreign keys, JSON columns, `create_all()` init.
+- **Database layer** — SQLAlchemy 2.0 models for all core tables (`products`, `product_images`, `platform_listings`, `orders`, `vouchers`, `voucher_rows`, `agent_actions`, `notifications`, `conversation_messages`). Foreign keys, JSON columns.
+- **Alembic migrations** — Versioned schema migrations with SQLite batch mode. Auto-runs on bot startup via `init_db()`. Falls back to `create_all()` when `alembic.ini` absent (tests). For existing databases: `alembic stamp head`.
 - **Tradera search** — SOAP via zeep, `SearchAdvanced` with category/price filters, result parsing (bids, buy-now, images). `create_listing`, `get_orders`, `get_item` are stubbed.
 - **Blocket search** — Unofficial REST API, read-only price research. `get_ad` is stubbed.
 - **Pricing Agent** — `PricingService.price_check()` searches both Tradera + Blocket, computes stats (min/max/mean/median), suggests price range via quartiles, logs `AgentAction`.
@@ -99,7 +100,6 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Using `create_all()` 
 
 - Marketing Agent (listing performance tracking, strategy suggestions)
 - MCP server wrappers for tool modules
-- Alembic migrations (using `create_all()` during development)
 - sqlite-vec embeddings for semantic product search
 - Social media cross-posting
 - Crop management, custom webshop, wishlist matching
@@ -128,3 +128,6 @@ cp .env.example .env  # fill in API keys
 - **Lint:** `ruff check src/ tests/`
 - **Format:** `ruff format src/ tests/`
 - **Init database:** `python -c "from storebot.db import init_db; init_db()"`
+- **Run migrations:** `alembic upgrade head`
+- **Create migration:** `alembic revision --autogenerate -m "description"`
+- **Stamp existing DB:** `alembic stamp head` (mark existing schema as current, no changes applied)
