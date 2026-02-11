@@ -33,10 +33,7 @@ def test_max_history_messages_limit(engine):
     """Only the most recent N messages are returned."""
     svc = ConversationService(engine, max_messages=3)
 
-    messages = [
-        {"role": "user", "content": f"Message {i}"}
-        for i in range(5)
-    ]
+    messages = [{"role": "user", "content": f"Message {i}"} for i in range(5)]
     svc.save_messages("chat1", messages)
 
     history = svc.load_history("chat1")
