@@ -6,6 +6,7 @@ class Settings(BaseSettings):
 
     # Claude API
     claude_api_key: str = ""
+    claude_model: str = "claude-sonnet-4-5-20250929"
 
     # Telegram
     telegram_bot_token: str = ""

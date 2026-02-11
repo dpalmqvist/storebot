@@ -539,6 +539,16 @@ class Agent:
             else None
         )
 
+    def _call_api(self, messages: list[dict]):
+        """Send messages to Claude and return the response."""
+        return self.client.messages.create(
+            model=self.settings.claude_model,
+            max_tokens=4096,
+            system=SYSTEM_PROMPT,
+            messages=messages,
+            tools=TOOLS,
+        )
+
     def handle_message(
         self,
         user_message: str,
@@ -569,13 +579,7 @@ class Agent:
         else:
             messages = conversation_history + [{"role": "user", "content": user_message}]
 
-        response = self.client.messages.create(
-            model="claude-sonnet-4-5-20250929",
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            messages=messages,
-            tools=TOOLS,
-        )
+        response = self._call_api(messages)
 
         while response.stop_reason == "tool_use":
             tool_blocks = [b for b in response.content if b.type == "tool_use"]
@@ -594,13 +598,7 @@ class Agent:
 
             messages.append({"role": "user", "content": tool_results})
 
-            response = self.client.messages.create(
-                model="claude-sonnet-4-5-20250929",
-                max_tokens=4096,
-                system=SYSTEM_PROMPT,
-                messages=messages,
-                tools=TOOLS,
-            )
+            response = self._call_api(messages)
 
         messages.append({"role": "assistant", "content": response.content})
 
