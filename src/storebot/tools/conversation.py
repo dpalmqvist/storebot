@@ -12,6 +12,28 @@ logger = logging.getLogger(__name__)
 IMAGE_PLACEHOLDER_TYPE = "image_from_path"
 
 
+def _is_base64_image_block(block: dict) -> bool:
+    """Check if a content block is a base64-encoded image."""
+    return (
+        block.get("type") == "image"
+        and isinstance(block.get("source"), dict)
+        and block["source"].get("type") == "base64"
+    )
+
+
+def _serialize_block(block):
+    """Serialize a single content block for JSON storage.
+
+    Anthropic SDK objects are converted via model_dump().
+    Base64 image data is replaced with a lightweight placeholder.
+    """
+    if hasattr(block, "model_dump"):
+        return block.model_dump()
+    if isinstance(block, dict) and _is_base64_image_block(block):
+        return {"type": IMAGE_PLACEHOLDER_TYPE}
+    return block
+
+
 def _serialize_content(content):
     """Serialize message content for JSON storage.
 
@@ -19,28 +41,8 @@ def _serialize_content(content):
     by calling .model_dump() on them. Strips base64 image data and replaces
     with a placeholder referencing the file path.
     """
-    if isinstance(content, str):
-        return content
     if isinstance(content, list):
-        serialized = []
-        for block in content:
-            # Anthropic SDK objects have model_dump()
-            if hasattr(block, "model_dump"):
-                serialized.append(block.model_dump())
-            elif isinstance(block, dict):
-                # Already a dict — check for base64 image data to strip
-                if (
-                    block.get("type") == "image"
-                    and isinstance(block.get("source"), dict)
-                    and block["source"].get("type") == "base64"
-                ):
-                    # Replace with placeholder — actual path stored in image_paths column
-                    serialized.append({"type": IMAGE_PLACEHOLDER_TYPE})
-                else:
-                    serialized.append(block)
-            else:
-                serialized.append(block)
-        return serialized
+        return [_serialize_block(block) for block in content]
     return content
 
 
@@ -66,38 +68,31 @@ def _extract_image_paths(content):
     return None
 
 
+def _encode_image_or_placeholder(path: str) -> dict:
+    """Re-encode an image from disk, or return a placeholder if the file is missing."""
+    try:
+        data, media_type = encode_image_base64(path)
+        return {
+            "type": "image",
+            "source": {"type": "base64", "media_type": media_type, "data": data},
+        }
+    except (FileNotFoundError, OSError):
+        logger.warning("Image file missing, using placeholder: %s", path)
+        return {"type": "text", "text": f"[Bild saknas: {path}]"}
+
+
 def _reconstruct_image_blocks(content, image_paths):
     """Replace image placeholders with re-encoded image data from disk."""
     if not isinstance(content, list) or not image_paths:
         return content
 
+    path_iter = iter(image_paths)
     result = []
-    path_idx = 0
     for block in content:
         if isinstance(block, dict) and block.get("type") == IMAGE_PLACEHOLDER_TYPE:
-            if path_idx < len(image_paths):
-                path = image_paths[path_idx]
-                path_idx += 1
-                try:
-                    data, media_type = encode_image_base64(path)
-                    result.append(
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": data,
-                            },
-                        }
-                    )
-                except (FileNotFoundError, OSError):
-                    logger.warning("Image file missing, using placeholder: %s", path)
-                    result.append(
-                        {
-                            "type": "text",
-                            "text": f"[Bild saknas: {path}]",
-                        }
-                    )
+            path = next(path_iter, None)
+            if path:
+                result.append(_encode_image_or_placeholder(path))
             else:
                 result.append({"type": "text", "text": "[Bild saknas]"})
         else:
@@ -144,18 +139,13 @@ class ConversationService:
                 .all()
             )
 
-        if not rows:
-            return []
-
-        # Take last N messages
-        rows = rows[-self.max_messages :]
-
-        messages = []
-        for row in rows:
-            content = row.content
-            if row.image_paths:
-                content = _reconstruct_image_blocks(content, row.image_paths)
-            messages.append({"role": row.role, "content": content})
+            # Take last N messages and build result while session is open
+            messages = []
+            for row in rows[-self.max_messages :]:
+                content = row.content
+                if row.image_paths:
+                    content = _reconstruct_image_blocks(content, row.image_paths)
+                messages.append({"role": row.role, "content": content})
 
         return messages
 
