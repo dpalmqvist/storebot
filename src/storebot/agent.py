@@ -11,6 +11,7 @@ from storebot.tools.image import encode_image_base64
 from storebot.tools.listing import ListingService
 from storebot.tools.order import OrderService
 from storebot.tools.pricing import PricingService
+from storebot.tools.scout import ScoutService
 from storebot.tools.tradera import TraderaClient
 
 logger = logging.getLogger(__name__)
@@ -365,6 +366,93 @@ TOOLS = [
             "required": ["product_id", "image_path"],
         },
     },
+    {
+        "name": "create_saved_search",
+        "description": "Create a saved search for periodic sourcing. Searches run daily and new finds are reported.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query (e.g. 'antik byrå')"},
+                "platform": {
+                    "type": "string",
+                    "enum": ["tradera", "blocket", "both"],
+                    "default": "both",
+                    "description": "Which platform(s) to search",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Category filter (Tradera int ID or Blocket category name)",
+                },
+                "max_price": {"type": "number", "description": "Maximum price in SEK"},
+                "region": {"type": "string", "description": "Region filter (Blocket only)"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "list_saved_searches",
+        "description": "List all saved searches. By default shows only active ones.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "include_inactive": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Include deactivated searches",
+                },
+            },
+        },
+    },
+    {
+        "name": "update_saved_search",
+        "description": "Update a saved search's query, platform, category, max_price, or region.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "search_id": {"type": "integer", "description": "Saved search ID"},
+                "query": {"type": "string", "description": "New search query"},
+                "platform": {
+                    "type": "string",
+                    "enum": ["tradera", "blocket", "both"],
+                    "description": "New platform filter",
+                },
+                "category": {"type": "string", "description": "New category filter"},
+                "max_price": {"type": "number", "description": "New max price in SEK"},
+                "region": {"type": "string", "description": "New region filter"},
+            },
+            "required": ["search_id"],
+        },
+    },
+    {
+        "name": "delete_saved_search",
+        "description": "Deactivate a saved search (soft delete).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "search_id": {"type": "integer", "description": "Saved search ID to deactivate"},
+            },
+            "required": ["search_id"],
+        },
+    },
+    {
+        "name": "run_saved_search",
+        "description": "Run a single saved search now and return new items found since last run.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "search_id": {"type": "integer", "description": "Saved search ID to run"},
+            },
+            "required": ["search_id"],
+        },
+    },
+    {
+        "name": "run_all_saved_searches",
+        "description": "Run all active saved searches and produce a digest of new finds.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
 ]
 
 SYSTEM_PROMPT = """Du är en AI-assistent för en svensk lanthandel som säljer renoverade möbler, \
@@ -381,6 +469,8 @@ Du kan:
 - Hantera ordrar: kolla efter nya ordrar, visa ordrar, skapa försäljningsverifikation, markera som skickad
 - Skapa bokföringsverifikationer och exportera som PDF
 - Söka i produktdatabasen
+- Hantera sparade sökningar (scout): skapa, lista, uppdatera, ta bort
+- Köra sparade sökningar manuellt eller alla på en gång för att hitta nya fynd
 
 VIKTIGT — Orderhantering:
 1. Markera ALDRIG en order som skickad utan ägarens uttryckliga bekräftelse.
@@ -435,6 +525,15 @@ class Agent:
                 engine=self.engine,
                 tradera=self.tradera,
                 accounting=self.accounting,
+            )
+            if self.engine
+            else None
+        )
+        self.scout = (
+            ScoutService(
+                engine=self.engine,
+                tradera=self.tradera,
+                blocket=self.blocket,
             )
             if self.engine
             else None
@@ -586,6 +685,31 @@ class Agent:
                     if not self.listing:
                         return {"error": "ListingService not available (no database engine)"}
                     return self.listing.save_product_image(**tool_input)
+                case "create_saved_search":
+                    if not self.scout:
+                        return {"error": "ScoutService not available (no database engine)"}
+                    return self.scout.create_search(**tool_input)
+                case "list_saved_searches":
+                    if not self.scout:
+                        return {"error": "ScoutService not available (no database engine)"}
+                    return self.scout.list_searches(**tool_input)
+                case "update_saved_search":
+                    if not self.scout:
+                        return {"error": "ScoutService not available (no database engine)"}
+                    search_id = tool_input.pop("search_id")
+                    return self.scout.update_search(search_id, **tool_input)
+                case "delete_saved_search":
+                    if not self.scout:
+                        return {"error": "ScoutService not available (no database engine)"}
+                    return self.scout.delete_search(**tool_input)
+                case "run_saved_search":
+                    if not self.scout:
+                        return {"error": "ScoutService not available (no database engine)"}
+                    return self.scout.run_search(**tool_input)
+                case "run_all_saved_searches":
+                    if not self.scout:
+                        return {"error": "ScoutService not available (no database engine)"}
+                    return self.scout.run_all_searches()
                 case _:
                     return {"error": f"Unknown tool: {name}"}
         except NotImplementedError:

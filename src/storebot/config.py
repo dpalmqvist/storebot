@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     max_history_messages: int = 20
     conversation_timeout_minutes: int = 60
 
+    # Scout
+    scout_digest_hour: int = 8  # Hour (0-23) for daily scout digest
+
     # Database
     database_path: str = "data/storebot.db"
 

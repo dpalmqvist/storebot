@@ -138,6 +138,38 @@ class ConversationMessage(Base):
     )
 
 
+class SavedSearch(Base):
+    __tablename__ = "saved_searches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    query: Mapped[str] = mapped_column(String, nullable=False)
+    platform: Mapped[str] = mapped_column(String, default="both")  # tradera/blocket/both
+    category: Mapped[str | None] = mapped_column(String)
+    max_price: Mapped[float | None] = mapped_column(Float)
+    region: Mapped[str | None] = mapped_column(String)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime)
+    details: Mapped[dict | None] = mapped_column(JSON)
+
+    seen_items: Mapped[list["SeenItem"]] = relationship(back_populates="saved_search")
+
+
+class SeenItem(Base):
+    __tablename__ = "seen_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    saved_search_id: Mapped[int] = mapped_column(ForeignKey("saved_searches.id"), nullable=False)
+    platform: Mapped[str] = mapped_column(String, nullable=False)  # tradera/blocket
+    external_id: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str | None] = mapped_column(String)
+    price: Mapped[float | None] = mapped_column(Float)
+    url: Mapped[str | None] = mapped_column(String)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+    saved_search: Mapped["SavedSearch"] = relationship(back_populates="seen_items")
+
+
 class Voucher(Base):
     __tablename__ = "vouchers"
 
