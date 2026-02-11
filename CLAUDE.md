@@ -25,6 +25,7 @@ Agent Tool Modules (plain Python, MCP-wrappable later)
     ├── tools/tradera.py     (SOAP via zeep)
     ├── tools/blocket.py     (REST, read-only/research)
     ├── tools/accounting.py  (local vouchers + PDF export)
+    ├── tools/scout.py       (saved searches, dedup, digest)
     ├── tools/postnord.py    (shipping labels)
     └── tools/image.py       (Pillow: resize, optimize)
     ↓
@@ -50,7 +51,7 @@ SQLite + sqlite-vec (operational + financial: inventory, listings, orders, vouch
 
 ## Database Schema (Core Tables)
 
-`products`, `product_images`, `platform_listings`, `orders`, `vouchers`, `voucher_rows`, `agent_actions`, `notifications`, `conversation_messages`
+`products`, `product_images`, `platform_listings`, `orders`, `vouchers`, `voucher_rows`, `agent_actions`, `notifications`, `conversation_messages`, `saved_searches`, `seen_items`
 
 SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Using `create_all()` during early development (no Alembic yet).
 
@@ -79,13 +80,14 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Using `create_all()` 
 - **Product management** — `create_product` (with all optional fields: condition, materials, era, dimensions, source, acquisition_cost) and `save_product_image` (with is_primary logic).
 - **Image processing** — `resize_for_listing` (1200px), `resize_for_analysis` (800px), `optimize_for_upload` (JPEG compress), `encode_image_base64`. All handle EXIF rotation and RGBA conversion.
 - **Accounting** — `AccountingService` with local voucher storage (SQLite), double-entry bookkeeping with BAS-kontoplan, PDF export (single + batch), debit/credit balance validation.
-- **Agent loop** — `agent.py` with Claude API tool loop, 15 tool definitions, vision support (base64 image content blocks), Swedish system prompt with image workflow guidance.
-- **Telegram bot** — `handlers.py` with `/start`, `/help`, text message handling, and photo handling (download, resize, forward to agent with vision).
+- **Agent loop** — `agent.py` with Claude API tool loop, 21 tool definitions, vision support (base64 image content blocks), Swedish system prompt with image workflow guidance.
+- **Telegram bot** — `handlers.py` with `/start`, `/help`, `/scout`, text message handling, and photo handling (download, resize, forward to agent with vision).
 - **Config** — Pydantic Settings from `.env`, all service credentials.
 - **Deployment** — systemd service file, SQLite backup script with cron rotation.
 - **Order Agent** — `OrderService` with full order workflow: `check_new_orders` (polls Tradera, imports orders, updates listings/products), `get_order`, `list_orders`, `create_sale_voucher` (automatic VAT/revenue/fee calculation), `mark_shipped` (with Tradera notification). Scheduled polling via Telegram `job_queue`.
 - **Conversation history** — `ConversationService` persists messages in SQLite per `chat_id`, with configurable message limit and timeout. Stores image file paths (not base64), re-encodes on load. `/new` command to reset. `AgentResponse` dataclass returns full message history from agent.
-- **Tests** — 186 tests covering db, tradera, blocket, pricing, listing, image, order, accounting, and conversation modules.
+- **Scout Agent** — `ScoutService` with saved search CRUD (`create_search`, `list_searches`, `update_search`, `delete_search`), per-search and batch execution (`run_search`, `run_all_searches`), deduplication via `SeenItem` table, Swedish digest formatting. Daily scheduled job via Telegram `job_queue` and `/scout` command for manual trigger.
+- **Tests** — 232 tests covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, and scout modules.
 
 ### Stubbed (not yet implemented)
 
@@ -95,7 +97,6 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Using `create_all()` 
 
 ### Not started
 
-- Scout Agent (scheduled sourcing searches, daily digests)
 - Marketing Agent (listing performance tracking, strategy suggestions)
 - MCP server wrappers for tool modules
 - Alembic migrations (using `create_all()` during development)
@@ -107,7 +108,7 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Using `create_all()` 
 
 1. **Phase 1 (MVP):** SQLite schema + SQLAlchemy ORM, Tradera/Blocket search tools, Pricing Agent, Listing Agent — **DONE**
 2. **Phase 2:** Telegram bot, Order Agent, local voucher/PDF export — **DONE**
-3. **Phase 3:** Scout Agent (scheduled), Marketing Agent, MCP server wrappers, social media cross-posting
+3. **Phase 3:** Scout Agent (scheduled) — **DONE**, Marketing Agent, MCP server wrappers, social media cross-posting
 4. **Phase 4:** Crop management, custom webshop, wishlist matching, advanced analytics
 
 ## Development Setup
