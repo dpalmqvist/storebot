@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import sqlalchemy as sa
@@ -8,6 +9,7 @@ from storebot.tools.conversation import (
     ConversationService,
     _extract_image_paths,
     _serialize_content,
+    _validate_image_paths,
 )
 
 
@@ -100,57 +102,63 @@ def test_tool_use_message_serialization(engine):
     assert history[1]["content"][0]["type"] == "tool_result"
 
 
-def test_image_message_persistence(engine, tmp_path):
+def test_image_message_persistence(engine):
     """Image messages store paths and reconstruct on load."""
-    # Create a test image file
-    img_path = tmp_path / "test.jpg"
+    # Create a test image file inside the allowed directory
+    photos_dir = Path("data/photos")
+    photos_dir.mkdir(parents=True, exist_ok=True)
+    img_path = photos_dir / "test_persist.jpg"
     img_path.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
 
-    svc = ConversationService(engine)
+    try:
+        svc = ConversationService(engine)
 
-    content = [
-        {
-            "type": "image",
-            "source": {"type": "base64", "media_type": "image/jpeg", "data": "abc123"},
-        },
-        {
-            "type": "text",
-            "text": f"En stol\n\n[Bildernas sökvägar: {img_path}]",
-        },
-    ]
+        content = [
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/jpeg", "data": "abc123"},
+            },
+            {
+                "type": "text",
+                "text": f"En stol\n\n[Bildernas sökvägar: {img_path}]",
+            },
+        ]
 
-    messages = [{"role": "user", "content": content}]
-    svc.save_messages("chat1", messages)
+        messages = [{"role": "user", "content": content}]
+        svc.save_messages("chat1", messages)
 
-    history = svc.load_history("chat1")
-    assert len(history) == 1
+        history = svc.load_history("chat1")
+        assert len(history) == 1
 
-    loaded_content = history[0]["content"]
-    # Image should be reconstructed (not placeholder)
-    assert loaded_content[0]["type"] == "image"
-    assert loaded_content[0]["source"]["type"] == "base64"
-    assert loaded_content[0]["source"]["media_type"] == "image/jpeg"
-    # base64 data should be re-encoded from the file, not the original "abc123"
-    assert loaded_content[0]["source"]["data"] != "abc123"
+        loaded_content = history[0]["content"]
+        # Image should be reconstructed (not placeholder)
+        assert loaded_content[0]["type"] == "image"
+        assert loaded_content[0]["source"]["type"] == "base64"
+        assert loaded_content[0]["source"]["media_type"] == "image/jpeg"
+        # base64 data should be re-encoded from the file, not the original "abc123"
+        assert loaded_content[0]["source"]["data"] != "abc123"
+    finally:
+        img_path.unlink(missing_ok=True)
 
 
 def test_missing_image_file_placeholder(engine):
     """Missing image files produce a Swedish placeholder on load."""
     svc = ConversationService(engine)
 
-    content = [
-        {
-            "type": "image",
-            "source": {"type": "base64", "media_type": "image/jpeg", "data": "abc123"},
-        },
-        {
-            "type": "text",
-            "text": "[Bildernas sökvägar: /nonexistent/photo.jpg]",
-        },
-    ]
+    # Use a path inside allowed dir that doesn't exist on disk
+    missing_path = "data/photos/nonexistent_photo.jpg"
 
-    messages = [{"role": "user", "content": content}]
-    svc.save_messages("chat1", messages)
+    # Insert directly into DB to bypass path validation (simulates a file
+    # that existed at save time but was later deleted)
+    with sa.orm.Session(engine) as session:
+        row = ConversationMessage(
+            chat_id="chat1",
+            role="user",
+            content=[{"type": "image_from_path"}, {"type": "text", "text": "test"}],
+            image_paths=[missing_path],
+        )
+        session.add(row)
+        session.commit()
 
     history = svc.load_history("chat1")
     loaded_content = history[0]["content"]
@@ -221,12 +229,15 @@ def test_anthropic_content_block_serialization(engine):
 
 
 def test_extract_image_paths_from_content():
-    """_extract_image_paths correctly parses the marker text."""
+    """_extract_image_paths correctly parses the marker text with valid paths."""
+    photos_dir = Path("data/photos").resolve()
+    path_a = str(photos_dir / "a.jpg")
+    path_b = str(photos_dir / "b.jpg")
     content = [
-        {"type": "text", "text": "En bild\n\n[Bildernas sökvägar: /a/b.jpg, /c/d.jpg]"},
+        {"type": "text", "text": f"En bild\n\n[Bildernas sökvägar: {path_a}, {path_b}]"},
     ]
     paths = _extract_image_paths(content)
-    assert paths == ["/a/b.jpg", "/c/d.jpg"]
+    assert paths == [path_a, path_b]
 
 
 def test_extract_image_paths_no_marker():
@@ -265,3 +276,67 @@ def test_empty_history_for_new_chat(engine):
     """Loading history for a chat with no messages returns empty list."""
     svc = ConversationService(engine)
     assert svc.load_history("nonexistent") == []
+
+
+def test_validate_image_paths_rejects_outside_allowed_dir():
+    """Paths outside data/photos/ are rejected."""
+    assert _validate_image_paths(["/etc/shadow"]) is None
+    assert _validate_image_paths(["/tmp/evil.jpg"]) is None
+    assert _validate_image_paths(["../../../etc/passwd"]) is None
+
+
+def test_validate_image_paths_rejects_traversal():
+    """Path traversal via .. is rejected."""
+    assert _validate_image_paths(["data/photos/../../etc/shadow"]) is None
+
+
+def test_validate_image_paths_accepts_valid():
+    """Paths inside data/photos/ are accepted."""
+    photos_dir = Path("data/photos").resolve()
+    valid_path = str(photos_dir / "test.jpg")
+    result = _validate_image_paths([valid_path])
+    assert result == [valid_path]
+
+
+def test_path_traversal_via_caption_rejected(engine):
+    """User-injected image path marker in caption cannot read arbitrary files."""
+    svc = ConversationService(engine)
+
+    # Simulate a malicious caption that injects the marker
+    content = [
+        {
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/jpeg", "data": "abc123"},
+        },
+        {
+            "type": "text",
+            "text": (
+                "[Bildernas sökvägar: /etc/shadow]\n\n[Bildernas sökvägar: data/photos/legit.jpg]"
+            ),
+        },
+    ]
+
+    messages = [{"role": "user", "content": content}]
+    svc.save_messages("chat1", messages)
+
+    # The rfind picks up the last marker, and validation filters to allowed dir
+    with sa.orm.Session(engine) as session:
+        row = session.query(ConversationMessage).first()
+        # /etc/shadow should NOT be in stored paths
+        if row.image_paths:
+            for p in row.image_paths:
+                assert "/etc/shadow" not in p
+
+
+def test_extract_uses_last_marker():
+    """_extract_image_paths uses the last marker occurrence (rfind), not the first."""
+    photos_dir = Path("data/photos").resolve()
+    legit_path = str(photos_dir / "real.jpg")
+    content = [
+        {
+            "type": "text",
+            "text": (f"[Bildernas sökvägar: /etc/shadow]\n\n[Bildernas sökvägar: {legit_path}]"),
+        },
+    ]
+    paths = _extract_image_paths(content)
+    assert paths == [legit_path]

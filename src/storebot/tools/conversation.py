@@ -1,5 +1,6 @@
 import logging
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import sqlalchemy as sa
 
@@ -59,13 +60,36 @@ def _extract_image_paths(content):
         if isinstance(block, dict) and block.get("type") == "text":
             text = block.get("text", "")
             marker = "[Bildernas sökvägar: "
-            idx = text.find(marker)
+            # Use rfind to get the LAST marker (the one appended by agent code),
+            # not a user-injected one earlier in the text
+            idx = text.rfind(marker)
             if idx != -1:
                 end = text.find("]", idx)
                 if end != -1:
                     paths_str = text[idx + len(marker) : end]
-                    return [p.strip() for p in paths_str.split(",") if p.strip()]
+                    paths = [p.strip() for p in paths_str.split(",") if p.strip()]
+                    return _validate_image_paths(paths)
     return None
+
+
+def _validate_image_paths(paths: list[str]) -> list[str] | None:
+    """Validate that image paths are within the allowed photos directory.
+
+    Prevents path traversal attacks where a user could inject arbitrary
+    file paths via the image path marker in message text.
+    """
+    allowed_dir = Path("data/photos").resolve()
+    validated = []
+    for p in paths:
+        try:
+            resolved = Path(p).resolve()
+            if resolved.is_relative_to(allowed_dir):
+                validated.append(p)
+            else:
+                logger.warning("Rejected image path outside allowed directory: %s", p)
+        except (ValueError, OSError):
+            logger.warning("Rejected invalid image path: %s", p)
+    return validated if validated else None
 
 
 def _encode_image_or_placeholder(path: str) -> dict:
