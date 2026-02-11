@@ -50,7 +50,7 @@ SQLite + sqlite-vec (operational + financial: inventory, listings, orders, vouch
 
 ## Database Schema (Core Tables)
 
-`products`, `product_images`, `platform_listings`, `orders`, `vouchers`, `voucher_rows`, `agent_actions`, `notifications`
+`products`, `product_images`, `platform_listings`, `orders`, `vouchers`, `voucher_rows`, `agent_actions`, `notifications`, `conversation_messages`
 
 SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Using `create_all()` during early development (no Alembic yet).
 
@@ -71,7 +71,7 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Using `create_all()` 
 
 ### Done
 
-- **Database layer** — SQLAlchemy 2.0 models for all core tables (`products`, `product_images`, `platform_listings`, `orders`, `vouchers`, `voucher_rows`, `agent_actions`, `notifications`). Foreign keys, JSON columns, `create_all()` init.
+- **Database layer** — SQLAlchemy 2.0 models for all core tables (`products`, `product_images`, `platform_listings`, `orders`, `vouchers`, `voucher_rows`, `agent_actions`, `notifications`, `conversation_messages`). Foreign keys, JSON columns, `create_all()` init.
 - **Tradera search** — SOAP via zeep, `SearchAdvanced` with category/price filters, result parsing (bids, buy-now, images). `create_listing`, `get_orders`, `get_item` are stubbed.
 - **Blocket search** — Unofficial REST API, read-only price research. `get_ad` is stubbed.
 - **Pricing Agent** — `PricingService.price_check()` searches both Tradera + Blocket, computes stats (min/max/mean/median), suggests price range via quartiles, logs `AgentAction`.
@@ -84,7 +84,8 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Using `create_all()` 
 - **Config** — Pydantic Settings from `.env`, all service credentials.
 - **Deployment** — systemd service file, SQLite backup script with cron rotation.
 - **Order Agent** — `OrderService` with full order workflow: `check_new_orders` (polls Tradera, imports orders, updates listings/products), `get_order`, `list_orders`, `create_sale_voucher` (automatic VAT/revenue/fee calculation), `mark_shipped` (with Tradera notification). Scheduled polling via Telegram `job_queue`.
-- **Tests** — 171 tests covering db, tradera, blocket, pricing, listing, image, order, and accounting modules.
+- **Conversation history** — `ConversationService` persists messages in SQLite per `chat_id`, with configurable message limit and timeout. Stores image file paths (not base64), re-encodes on load. `/new` command to reset. `AgentResponse` dataclass returns full message history from agent.
+- **Tests** — 186 tests covering db, tradera, blocket, pricing, listing, image, order, accounting, and conversation modules.
 
 ### Stubbed (not yet implemented)
 
@@ -97,7 +98,6 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Using `create_all()` 
 - Scout Agent (scheduled sourcing searches, daily digests)
 - Marketing Agent (listing performance tracking, strategy suggestions)
 - MCP server wrappers for tool modules
-- Conversation history persistence (currently stateless per message)
 - Alembic migrations (using `create_all()` during development)
 - sqlite-vec embeddings for semantic product search
 - Social media cross-posting

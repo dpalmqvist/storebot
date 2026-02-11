@@ -125,6 +125,19 @@ class Notification(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
+class ConversationMessage(Base):
+    __tablename__ = "conversation_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String, nullable=False)  # "user" or "assistant"
+    content: Mapped[dict | str | list | None] = mapped_column(JSON)
+    image_paths: Mapped[list | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), index=True
+    )
+
+
 class Voucher(Base):
     __tablename__ = "vouchers"
 
