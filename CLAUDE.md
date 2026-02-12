@@ -76,13 +76,13 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **Database layer** — SQLAlchemy 2.0 models for all core tables (`products`, `product_images`, `platform_listings`, `orders`, `vouchers`, `voucher_rows`, `agent_actions`, `notifications`, `conversation_messages`). Foreign keys, JSON columns.
 - **Alembic migrations** — Versioned schema migrations with SQLite batch mode. Auto-runs on bot startup via `init_db()`. Falls back to `create_all()` when `alembic.ini` absent (tests). For existing databases: `alembic stamp head`.
 - **Tradera search** — SOAP via zeep, `SearchAdvanced` with category/price filters, result parsing (bids, buy-now, images). `create_listing`, `get_orders`, `get_item` are stubbed.
-- **Blocket search** — Unofficial REST API, read-only price research. `get_ad` is stubbed.
+- **Blocket integration** — Unofficial REST API, read-only. `search` for price research/sourcing, `get_ad` for full ad details (description, images, seller, parameters). Agent tools: `search_blocket`, `get_blocket_ad`.
 - **Pricing Agent** — `PricingService.price_check()` searches both Tradera + Blocket, computes stats (min/max/mean/median), suggests price range via quartiles, logs `AgentAction`.
 - **Listing Agent** — `ListingService` with full draft workflow: `create_draft`, `list_drafts`, `get_draft`, `update_draft`, `approve_draft`, `reject_draft`, `search_products`. All with validation and `AgentAction` audit logging.
 - **Product management** — `create_product` (with all optional fields: condition, materials, era, dimensions, source, acquisition_cost) and `save_product_image` (with is_primary logic).
 - **Image processing** — `resize_for_listing` (1200px), `resize_for_analysis` (800px), `optimize_for_upload` (JPEG compress), `encode_image_base64`. All handle EXIF rotation and RGBA conversion.
 - **Accounting** — `AccountingService` with local voucher storage (SQLite), double-entry bookkeeping with BAS-kontoplan, PDF export (single + batch), debit/credit balance validation.
-- **Agent loop** — `agent.py` with Claude API tool loop, 21 tool definitions, vision support (base64 image content blocks), Swedish system prompt with image workflow guidance.
+- **Agent loop** — `agent.py` with Claude API tool loop, 22 tool definitions, vision support (base64 image content blocks), Swedish system prompt with image workflow guidance.
 - **Telegram bot** — `handlers.py` with `/start`, `/help`, `/scout`, text message handling, and photo handling (download, resize, forward to agent with vision).
 - **Config** — Pydantic Settings from `.env`, all service credentials.
 - **Deployment** — systemd service file, SQLite backup script with cron rotation.
@@ -98,7 +98,6 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 ### Stubbed (not yet implemented)
 
 - **PostNord** — `PostNordClient` class exists but `create_shipment` and `get_label` raise `NotImplementedError`.
-- **Blocket ad detail** — `get_ad` is stubbed.
 
 ### Not started
 
