@@ -544,3 +544,53 @@ class TraderaClient:
         except Exception as e:
             logger.exception("Tradera mark_order_shipped failed")
             return {"error": str(e)}
+
+    @retry_on_transient()
+    def _leave_feedback_api_call(self, order_number, comment, feedback_type, headers):
+        return self.restricted_client.service.LeaveOrderFeedbackToBuyer(
+            orderNumber=int(order_number), comment=comment, type=feedback_type, **headers
+        )
+
+    def leave_feedback(
+        self, order_number: int, comment: str, feedback_type: str = "Positive"
+    ) -> dict:
+        """Leave feedback for a buyer on a completed order.
+
+        Args:
+            order_number: Tradera order number (external_order_id).
+            comment: Feedback text (max 80 characters).
+            feedback_type: "Positive" or "Negative".
+        """
+        if len(comment) > 80:
+            return {"error": f"Comment too long ({len(comment)} chars, max 80)"}
+
+        valid_types = ("Positive", "Negative")
+        if feedback_type not in valid_types:
+            return {
+                "error": f"Invalid feedback type '{feedback_type}', must be one of {valid_types}"
+            }
+
+        try:
+            result = self._leave_feedback_api_call(
+                order_number,
+                comment,
+                feedback_type,
+                self._auth_headers(self.restricted_client, include_authorization=True),
+            )
+
+            if result is False:
+                return {
+                    "error": "Tradera rejected the feedback (may already be submitted)",
+                    "order_number": order_number,
+                }
+
+            return {
+                "success": True,
+                "order_number": order_number,
+                "comment": comment,
+                "feedback_type": feedback_type,
+            }
+
+        except Exception as e:
+            logger.exception("Tradera leave_feedback failed")
+            return {"error": str(e)}

@@ -303,6 +303,36 @@ TOOLS = [
         },
     },
     {
+        "name": "list_orders_pending_feedback",
+        "description": "Lista Tradera-ordrar som är skickade men saknar omdöme till köparen.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "leave_feedback",
+        "description": "Lämna omdöme till köparen på en Tradera-order. Lämna ALDRIG omdöme utan ägarens uttryckliga bekräftelse av texten.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "integer", "description": "Order ID"},
+                "comment": {
+                    "type": "string",
+                    "maxLength": 80,
+                    "description": "Omdömestext (max 80 tecken)",
+                },
+                "feedback_type": {
+                    "type": "string",
+                    "enum": ["Positive", "Negative"],
+                    "default": "Positive",
+                    "description": "Typ av omdöme",
+                },
+            },
+            "required": ["order_id", "comment"],
+        },
+    },
+    {
         "name": "create_voucher",
         "description": "Skapa en bokföringsverifikation och spara lokalt. Debet och kredit måste balansera.",
         "input_schema": {
@@ -588,7 +618,7 @@ Du kan:
 - Visa, redigera, godkänna och avvisa annonsutkast
 - Publicera godkända annonser till Tradera (med bilduppladdning)
 - Bläddra i Tradera-kategorier för att hitta rätt kategori
-- Hantera ordrar: kolla efter nya ordrar, visa ordrar, skapa fraktetiketter via PostNord, skapa försäljningsverifikation, markera som skickad
+- Hantera ordrar: kolla efter nya ordrar, visa ordrar, skapa fraktetiketter via PostNord, skapa försäljningsverifikation, markera som skickad, lämna omdöme till köparen
 - Skapa bokföringsverifikationer och exportera som PDF
 - Söka i produktdatabasen
 - Hantera sparade sökningar (scout): skapa, lista, uppdatera, ta bort
@@ -601,6 +631,9 @@ VIKTIGT — Orderhantering:
 3. Informera ägaren om nya ordrar med köpare, belopp och produkt.
 4. Fraktetiketter kräver att produkten har vikt (weight_grams). Föreslå att ange vikt om det saknas.
 5. PostNord-tjänster: 19=MyPack Collect (standard), 17=MyPack Home, 18=Postpaket.
+6. När en order är markerad som skickad, påminn ägaren om att lämna omdöme till köparen.
+7. Föreslå alltid en positiv kommentar på svenska (max 80 tecken).
+8. Skicka ALDRIG omdöme utan ägarens godkännande av den föreslagna texten.
 
 När användaren skickar en bild:
 1. Beskriv vad du ser i bilden.
@@ -790,6 +823,8 @@ class Agent:
         "create_sale_voucher": "order",
         "mark_order_shipped": "order",
         "create_shipping_label": "order",
+        "list_orders_pending_feedback": "order",
+        "leave_feedback": "order",
         "create_voucher": "accounting",
         "export_vouchers": "accounting",
         "create_saved_search": "scout",
@@ -877,6 +912,10 @@ class Agent:
                     return self.order.mark_shipped(**tool_input)
                 case "create_shipping_label":
                     return self.order.create_shipping_label(**tool_input)
+                case "list_orders_pending_feedback":
+                    return self.order.list_orders_pending_feedback()
+                case "leave_feedback":
+                    return self.order.leave_feedback(**tool_input)
                 case "create_voucher":
                     return self.accounting.create_voucher(**tool_input)
                 case "export_vouchers":
