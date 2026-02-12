@@ -164,6 +164,8 @@ class PostNordClient:
             timeout=30,
         )
 
+        if resp.status_code >= 500:
+            resp.raise_for_status()  # raises requests.HTTPError, retryable
         if resp.status_code == 401:
             raise PostNordError("Authentication failed — check API key", status_code=401)
         if resp.status_code >= 400:
@@ -202,6 +204,8 @@ class PostNordClient:
             timeout=30,
         )
 
+        if resp.status_code >= 500:
+            resp.raise_for_status()  # raises requests.HTTPError, retryable
         if resp.status_code == 404:
             raise PostNordError(
                 f"Label not found for shipment {shipment_id}",

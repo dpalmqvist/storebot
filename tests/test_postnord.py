@@ -3,6 +3,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from storebot.tools.postnord import (
     PRODUCTION_URL,
@@ -117,6 +118,16 @@ class TestCreateShipment:
             with pytest.raises(PostNordError, match="Authentication failed"):
                 client.create_shipment(recipient, weight_grams=2000)
 
+    def test_server_error_raises_http_error(self, client, recipient):
+        """5xx errors raise requests.HTTPError so the retry decorator can handle them."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 503
+        mock_resp.raise_for_status.side_effect = requests.HTTPError(response=mock_resp)
+
+        with patch.object(client.session, "post", return_value=mock_resp):
+            with pytest.raises(requests.HTTPError):
+                client.create_shipment(recipient, weight_grams=2000)
+
     def test_bad_request(self, client, recipient):
         mock_resp = MagicMock()
         mock_resp.status_code = 400
@@ -185,6 +196,15 @@ class TestGetLabel:
             result = client.get_label("SH-001")
 
         assert result == pdf_bytes
+
+    def test_server_error_raises_http_error(self, client):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 502
+        mock_resp.raise_for_status.side_effect = requests.HTTPError(response=mock_resp)
+
+        with patch.object(client.session, "get", return_value=mock_resp):
+            with pytest.raises(requests.HTTPError):
+                client.get_label("SH-001")
 
     def test_not_found(self, client):
         mock_resp = MagicMock()
