@@ -21,7 +21,7 @@ def _update_env_file(env_path: Path, key: str, value: str) -> None:
     pattern = re.compile(rf"^{re.escape(key)}=.*$", re.MULTILINE)
 
     if pattern.search(content):
-        env_path.write_text(pattern.sub(line, content))
+        env_path.write_text(pattern.sub(lambda m: line, content))
         return
 
     if not content.endswith("\n"):

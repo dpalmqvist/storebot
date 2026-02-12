@@ -161,6 +161,15 @@ class TestUpdateEnvFile:
         assert "BAR=baz" in content
         assert "FOO=old" not in content
 
+    def test_update_value_with_backslash(self, tmp_path):
+        env_file = tmp_path / ".env"
+        env_file.write_text("TOKEN=old\n")
+
+        _update_env_file(env_file, "TOKEN", r"abc\1def")
+
+        content = env_file.read_text()
+        assert r"TOKEN=abc\1def" in content
+
     def test_append_new_key(self, tmp_path):
         env_file = tmp_path / ".env"
         env_file.write_text("FOO=bar\n")
