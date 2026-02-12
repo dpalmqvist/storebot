@@ -254,6 +254,38 @@ class TraderaClient:
             logger.exception("Tradera get_categories failed")
             return {"error": str(e)}
 
+    def fetch_token(self, secret_key: str) -> dict:
+        """Fetch user token after consent flow.
+
+        Calls PublicService.FetchToken with the secret key generated
+        during the authorization URL step.
+        """
+        try:
+            response = self.public_client.service.FetchToken(
+                UserId=0,
+                Token=secret_key,
+                **self._auth_headers(self.public_client),
+            )
+
+            user_id = getattr(response, "UserId", None)
+            token = getattr(response, "Token", None)
+            expires = getattr(response, "ExpirationDate", None)
+            if expires is not None:
+                expires = str(expires)
+
+            if user_id is None or token is None:
+                return {"error": "FetchToken response missing UserId or Token"}
+
+            return {
+                "user_id": user_id,
+                "token": token,
+                "expires": expires,
+            }
+
+        except Exception as e:
+            logger.exception("Tradera fetch_token failed")
+            return {"error": str(e)}
+
     def get_orders(self, from_date: str | None = None, to_date: str | None = None) -> dict:
         try:
             if to_date:
