@@ -162,6 +162,9 @@ class OrderService:
                 "shipped_at": order.shipped_at.isoformat() if order.shipped_at else None,
                 "tracking_number": order.tracking_number,
                 "label_path": order.label_path,
+                "feedback_left_at": (
+                    order.feedback_left_at.isoformat() if order.feedback_left_at else None
+                ),
             }
 
     def list_orders(self, status: str | None = None) -> dict:
@@ -184,6 +187,9 @@ class OrderService:
                         "sale_price": o.sale_price,
                         "status": o.status,
                         "ordered_at": o.ordered_at.isoformat() if o.ordered_at else None,
+                        "feedback_left_at": (
+                            o.feedback_left_at.isoformat() if o.feedback_left_at else None
+                        ),
                     }
                     for o in orders
                 ],
@@ -410,3 +416,88 @@ class OrderService:
             "label_path": label_path,
             "service_code": service_code,
         }
+
+    def leave_feedback(self, order_id: int, comment: str, feedback_type: str = "Positive") -> dict:
+        """Leave feedback for the buyer on a completed Tradera order."""
+        if not self.tradera:
+            return {"error": "Tradera client not available"}
+
+        with Session(self.engine) as session:
+            order = session.get(Order, order_id)
+            if not order:
+                return {"error": f"Order {order_id} not found"}
+
+            if order.platform != "tradera":
+                return {"error": f"Order {order_id} is not a Tradera order"}
+
+            if not order.external_order_id:
+                return {"error": f"Order {order_id} has no external order ID"}
+
+            if order.status not in ("shipped", "delivered"):
+                return {
+                    "error": f"Order {order_id} is not shipped/delivered (status: {order.status})"
+                }
+
+            if order.feedback_left_at is not None:
+                return {
+                    "error": f"Feedback already left for order {order_id} at {order.feedback_left_at.isoformat()}"
+                }
+
+            result = self.tradera.leave_feedback(
+                order_number=int(order.external_order_id),
+                comment=comment,
+                feedback_type=feedback_type,
+            )
+
+            if "error" in result:
+                return result
+
+            order.feedback_left_at = datetime.now(UTC)
+
+            action = AgentAction(
+                agent_name="order",
+                action_type="leave_feedback",
+                product_id=order.product_id,
+                details={
+                    "order_id": order.id,
+                    "external_order_id": order.external_order_id,
+                    "comment": comment,
+                    "feedback_type": feedback_type,
+                },
+                executed_at=datetime.now(UTC),
+            )
+            session.add(action)
+            session.commit()
+
+        return result
+
+    def list_orders_pending_feedback(self) -> dict:
+        """List Tradera orders that have been shipped but lack feedback."""
+        with Session(self.engine) as session:
+            orders = (
+                session.query(Order)
+                .filter(
+                    Order.platform == "tradera",
+                    Order.status.in_(["shipped", "delivered"]),
+                    Order.feedback_left_at.is_(None),
+                )
+                .order_by(Order.id.desc())
+                .all()
+            )
+
+            result_orders = []
+            for o in orders:
+                product = session.get(Product, o.product_id)
+                result_orders.append(
+                    {
+                        "order_id": o.id,
+                        "product_id": o.product_id,
+                        "product_title": product.title if product else None,
+                        "buyer_name": o.buyer_name,
+                        "sale_price": o.sale_price,
+                        "status": o.status,
+                        "shipped_at": o.shipped_at.isoformat() if o.shipped_at else None,
+                    }
+                )
+
+            return {"count": len(result_orders), "orders": result_orders}

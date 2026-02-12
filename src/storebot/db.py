@@ -114,6 +114,7 @@ class Order(Base):
     shipped_at: Mapped[datetime | None] = mapped_column(DateTime)
     tracking_number: Mapped[str | None] = mapped_column(String)
     label_path: Mapped[str | None] = mapped_column(String)
+    feedback_left_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     product: Mapped["Product"] = relationship(back_populates="orders")
 

@@ -258,14 +258,14 @@ The Marketing Agent tracks listing performance and suggests optimization strateg
 
 ## Agent tools
 
-The Claude agent has access to 34 tools organized by domain:
+The Claude agent has access to 36 tools organized by domain:
 
 | Domain | Tools |
 |--------|-------|
 | **Search** | `search_tradera`, `search_blocket`, `price_check` |
 | **Products** | `create_product`, `save_product_image`, `search_products` |
 | **Listings** | `create_draft_listing`, `list_draft_listings`, `get_draft_listing`, `update_draft_listing`, `approve_draft_listing`, `reject_draft_listing`, `publish_listing`, `get_categories`, `get_shipping_options` |
-| **Orders** | `check_new_orders`, `list_orders`, `get_order`, `create_sale_voucher`, `mark_order_shipped`, `create_shipping_label` |
+| **Orders** | `check_new_orders`, `list_orders`, `get_order`, `create_sale_voucher`, `mark_order_shipped`, `create_shipping_label`, `list_orders_pending_feedback`, `leave_feedback` |
 | **Accounting** | `create_voucher`, `export_vouchers` |
 | **Scout** | `create_saved_search`, `list_saved_searches`, `update_saved_search`, `delete_saved_search`, `run_saved_search`, `run_all_saved_searches` |
 | **Marketing** | `refresh_listing_stats`, `analyze_listing`, `get_performance_report`, `get_recommendations` |
@@ -378,7 +378,7 @@ ruff format src/ tests/
 
 ```
 src/storebot/
-  agent.py             Claude API tool loop (34 tools, vision support)
+  agent.py             Claude API tool loop (36 tools, vision support)
   config.py            Pydantic Settings from .env
   db.py                SQLAlchemy 2.0 models (SQLite, 12 tables)
   cli.py               Tradera authorization CLI

@@ -629,6 +629,64 @@ class TestCreateListingShipping:
         assert "ShippingOptions" not in call_kwargs
 
 
+class TestTraderaLeaveFeedback:
+    def test_success(self, client):
+        client._restricted_client.service.LeaveOrderFeedbackToBuyer.return_value = True
+
+        result = client.leave_feedback(order_number=42, comment="Snabb betalning, tack!")
+
+        assert result["success"] is True
+        assert result["order_number"] == 42
+        assert result["comment"] == "Snabb betalning, tack!"
+        assert result["feedback_type"] == "Positive"
+
+        call_kwargs = client._restricted_client.service.LeaveOrderFeedbackToBuyer.call_args.kwargs
+        assert call_kwargs["orderNumber"] == 42
+        assert call_kwargs["comment"] == "Snabb betalning, tack!"
+        assert call_kwargs["type"] == "Positive"
+
+    def test_negative_feedback(self, client):
+        client._restricted_client.service.LeaveOrderFeedbackToBuyer.return_value = True
+
+        result = client.leave_feedback(
+            order_number=42, comment="Betalade sent", feedback_type="Negative"
+        )
+
+        assert result["success"] is True
+        assert result["feedback_type"] == "Negative"
+
+    def test_comment_too_long(self, client):
+        result = client.leave_feedback(order_number=42, comment="A" * 81)
+
+        assert "error" in result
+        assert "too long" in result["error"]
+        client._restricted_client.service.LeaveOrderFeedbackToBuyer.assert_not_called()
+
+    def test_invalid_feedback_type(self, client):
+        result = client.leave_feedback(order_number=42, comment="Tack!", feedback_type="Neutral")
+
+        assert "error" in result
+        assert "Invalid feedback type" in result["error"]
+        client._restricted_client.service.LeaveOrderFeedbackToBuyer.assert_not_called()
+
+    def test_api_returns_false(self, client):
+        client._restricted_client.service.LeaveOrderFeedbackToBuyer.return_value = False
+
+        result = client.leave_feedback(order_number=42, comment="Tack!")
+
+        assert "error" in result
+        assert "rejected" in result["error"]
+
+    def test_api_error(self, client):
+        client._restricted_client.service.LeaveOrderFeedbackToBuyer.side_effect = Exception(
+            "Auth failed"
+        )
+
+        result = client.leave_feedback(order_number=42, comment="Tack!")
+
+        assert result["error"] == "Auth failed"
+
+
 class TestTraderaRetry:
     @patch("storebot.retry.time.sleep")
     def test_search_retries_on_connection_error(self, mock_sleep, client):

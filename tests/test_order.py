@@ -664,3 +664,226 @@ class TestCreateShippingLabel:
         mock_postnord.get_label.assert_called_once_with("SH-003")
         assert result["tracking_number"] == "SE111"
         assert result["label_path"] is not None
+
+
+class TestLeaveFeedback:
+    def test_success(self, service, engine, mock_tradera):
+        product_id = _create_product(engine)
+        order_id = _create_order(engine, product_id, status="shipped")
+        mock_tradera.leave_feedback.return_value = {
+            "success": True,
+            "order_number": 99,
+            "comment": "Tack för köpet!",
+            "feedback_type": "Positive",
+        }
+
+        result = service.leave_feedback(order_id, comment="Tack för köpet!")
+
+        assert result["success"] is True
+        mock_tradera.leave_feedback.assert_called_once_with(
+            order_number=99, comment="Tack för köpet!", feedback_type="Positive"
+        )
+
+        with Session(engine) as session:
+            order = session.get(Order, order_id)
+            assert order.feedback_left_at is not None
+
+    def test_negative_feedback(self, service, engine, mock_tradera):
+        product_id = _create_product(engine)
+        order_id = _create_order(engine, product_id, status="shipped")
+        mock_tradera.leave_feedback.return_value = {
+            "success": True,
+            "order_number": 99,
+            "comment": "Betalade sent",
+            "feedback_type": "Negative",
+        }
+
+        result = service.leave_feedback(
+            order_id, comment="Betalade sent", feedback_type="Negative"
+        )
+
+        assert result["success"] is True
+
+    def test_order_not_found(self, service):
+        result = service.leave_feedback(999, comment="Tack!")
+        assert result["error"] == "Order 999 not found"
+
+    def test_already_left_feedback(self, service, engine, mock_tradera):
+        product_id = _create_product(engine)
+        order_id = _create_order(engine, product_id, status="shipped")
+
+        with Session(engine) as session:
+            order = session.get(Order, order_id)
+            order.feedback_left_at = datetime.now(UTC)
+            session.commit()
+
+        result = service.leave_feedback(order_id, comment="Tack!")
+        assert "already left" in result["error"]
+
+    def test_not_shipped(self, service, engine):
+        product_id = _create_product(engine)
+        order_id = _create_order(engine, product_id, status="pending")
+
+        result = service.leave_feedback(order_id, comment="Tack!")
+        assert "not shipped/delivered" in result["error"]
+
+    def test_non_tradera_order(self, service, engine):
+        product_id = _create_product(engine)
+        with Session(engine) as session:
+            order = Order(
+                product_id=product_id,
+                platform="blocket",
+                external_order_id="123",
+                status="shipped",
+                ordered_at=datetime.now(UTC),
+            )
+            session.add(order)
+            session.commit()
+            order_id = order.id
+
+        result = service.leave_feedback(order_id, comment="Tack!")
+        assert "not a Tradera order" in result["error"]
+
+    def test_no_external_order_id(self, service, engine):
+        product_id = _create_product(engine)
+        with Session(engine) as session:
+            order = Order(
+                product_id=product_id,
+                platform="tradera",
+                external_order_id=None,
+                status="shipped",
+                ordered_at=datetime.now(UTC),
+            )
+            session.add(order)
+            session.commit()
+            order_id = order.id
+
+        result = service.leave_feedback(order_id, comment="Tack!")
+        assert "no external order ID" in result["error"]
+
+    def test_api_error_propagated(self, service, engine, mock_tradera):
+        product_id = _create_product(engine)
+        order_id = _create_order(engine, product_id, status="shipped")
+        mock_tradera.leave_feedback.return_value = {"error": "API timeout"}
+
+        result = service.leave_feedback(order_id, comment="Tack!")
+
+        assert result["error"] == "API timeout"
+        with Session(engine) as session:
+            order = session.get(Order, order_id)
+            assert order.feedback_left_at is None
+
+    def test_logs_agent_action(self, service, engine, mock_tradera):
+        product_id = _create_product(engine)
+        order_id = _create_order(engine, product_id, status="shipped")
+        mock_tradera.leave_feedback.return_value = {
+            "success": True,
+            "order_number": 99,
+            "comment": "Tack!",
+            "feedback_type": "Positive",
+        }
+
+        service.leave_feedback(order_id, comment="Tack!")
+
+        with Session(engine) as session:
+            actions = session.query(AgentAction).filter_by(action_type="leave_feedback").all()
+            assert len(actions) == 1
+            assert actions[0].agent_name == "order"
+            assert actions[0].details["comment"] == "Tack!"
+
+    def test_no_tradera_client(self, engine, accounting):
+        svc = OrderService(engine=engine, tradera=None, accounting=accounting)
+        product_id = _create_product(engine)
+        order_id = _create_order(engine, product_id, status="shipped")
+
+        result = svc.leave_feedback(order_id, comment="Tack!")
+        assert result["error"] == "Tradera client not available"
+
+    def test_delivered_order_allowed(self, service, engine, mock_tradera):
+        product_id = _create_product(engine)
+        order_id = _create_order(engine, product_id, status="delivered")
+        mock_tradera.leave_feedback.return_value = {
+            "success": True,
+            "order_number": 99,
+            "comment": "Tack!",
+            "feedback_type": "Positive",
+        }
+
+        result = service.leave_feedback(order_id, comment="Tack!")
+        assert result["success"] is True
+
+
+class TestListOrdersPendingFeedback:
+    def test_includes_shipped_without_feedback(self, service, engine):
+        product_id = _create_product(engine)
+        order_id = _create_order(engine, product_id, status="shipped")
+
+        result = service.list_orders_pending_feedback()
+
+        assert result["count"] == 1
+        assert result["orders"][0]["order_id"] == order_id
+
+    def test_excludes_feedback_given(self, service, engine):
+        product_id = _create_product(engine)
+        _create_order(engine, product_id, status="shipped")
+
+        with Session(engine) as session:
+            order = session.query(Order).first()
+            order.feedback_left_at = datetime.now(UTC)
+            session.commit()
+
+        result = service.list_orders_pending_feedback()
+        assert result["count"] == 0
+
+    def test_excludes_pending_orders(self, service, engine):
+        product_id = _create_product(engine)
+        _create_order(engine, product_id, status="pending")
+
+        result = service.list_orders_pending_feedback()
+        assert result["count"] == 0
+
+    def test_excludes_non_tradera(self, service, engine):
+        product_id = _create_product(engine)
+        with Session(engine) as session:
+            order = Order(
+                product_id=product_id,
+                platform="blocket",
+                status="shipped",
+                ordered_at=datetime.now(UTC),
+            )
+            session.add(order)
+            session.commit()
+
+        result = service.list_orders_pending_feedback()
+        assert result["count"] == 0
+
+    def test_empty_list(self, service):
+        result = service.list_orders_pending_feedback()
+        assert result["count"] == 0
+        assert result["orders"] == []
+
+    def test_includes_product_title(self, service, engine):
+        product_id = _create_product(engine, title="Mässingsljusstake")
+        _create_order(engine, product_id, status="shipped")
+
+        result = service.list_orders_pending_feedback()
+
+        assert result["orders"][0]["product_title"] == "Mässingsljusstake"
+
+    def test_includes_delivered_orders(self, service, engine):
+        product_id = _create_product(engine)
+        _create_order(engine, product_id, status="delivered")
+
+        result = service.list_orders_pending_feedback()
+        assert result["count"] == 1
+
+
+class TestGetOrderIncludesFeedback:
+    def test_includes_feedback_left_at(self, service, engine):
+        product_id = _create_product(engine)
+        order_id = _create_order(engine, product_id)
+
+        result = service.get_order(order_id)
+
+        assert "feedback_left_at" in result
+        assert result["feedback_left_at"] is None
