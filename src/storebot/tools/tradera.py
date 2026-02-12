@@ -88,7 +88,7 @@ class TraderaClient:
             AppId=int(self.app_id), AppKey=self.app_key
         )
         config = client.get_element("{http://api.tradera.com}ConfigurationHeader")(
-            Sandbox=1 if self.sandbox else 0
+            Sandbox=int(self.sandbox), MaxResultAge=0
         )
         headers = [auth, config]
         if include_authorization:
