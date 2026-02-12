@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Scout
     scout_digest_hour: int = 8  # Hour (0-23) for daily scout digest
 
+    # Marketing
+    marketing_refresh_hour: int = 7  # Hour (0-23) for daily stats refresh
+
     # Database
     database_path: str = "data/storebot.db"
 

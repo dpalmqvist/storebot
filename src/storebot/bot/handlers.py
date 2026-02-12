@@ -23,6 +23,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/help — Visa hjälp\n"
         "/orders — Kolla efter nya ordrar\n"
         "/scout — Kör alla sparade sökningar nu\n"
+        "/marketing — Visa marknadsföringsrapport\n"
         "/new — Starta en ny konversation\n"
     )
 
@@ -34,10 +35,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "- Skapa annonser\n"
         "- Hantera ordrar och leveranser\n"
         "- Bokföring (verifikationer som PDF)\n"
-        "- Sparade sökningar (scout) — hitta nya fynd automatiskt\n\n"
+        "- Sparade sökningar (scout) — hitta nya fynd automatiskt\n"
+        "- Marknadsföring — prestanda, statistik och förbättringsförslag\n\n"
         "Kommandon:\n"
         "/orders — Kolla efter nya ordrar\n"
         "/scout — Kör alla sparade sökningar nu\n"
+        "/marketing — Visa marknadsföringsrapport\n"
         "/new — Starta en ny konversation\n\n"
         "Skicka foton på en produkt eller beskriv vad du vill göra."
     )
@@ -159,6 +162,55 @@ async def scout_digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.exception("Error in scout digest job")
 
 
+async def marketing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    agent: Agent = context.bot_data["agent"]
+    if not agent.marketing:
+        await update.message.reply_text("Marknadsföringstjänsten är inte tillgänglig.")
+        return
+
+    try:
+        report = agent.marketing.get_performance_report()
+        text = agent.marketing._format_report(report)
+        if len(text) > 4000:
+            text = text[:4000] + "\n\n...avkortat"
+        await update.message.reply_text(text)
+    except Exception:
+        logger.exception("Error running marketing command")
+        await update.message.reply_text(
+            "Något gick fel vid marknadsföringsrapporten. Försök igen."
+        )
+
+
+async def marketing_refresh_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    agent: Agent = context.bot_data.get("agent")
+    if not agent or not agent.marketing:
+        return
+
+    try:
+        agent.marketing.refresh_listing_stats()
+
+        result = agent.marketing.get_recommendations()
+        high_priority = [r for r in result.get("recommendations", []) if r["priority"] == "high"]
+        if not high_priority:
+            return
+
+        chat_id = context.bot_data.get("owner_chat_id")
+        if not chat_id:
+            logger.warning("No owner_chat_id set — cannot send marketing recommendations")
+            return
+
+        lines = ["Viktiga marknadsföringsförslag:\n"]
+        for rec in high_priority:
+            lines.append(f"Annons #{rec['listing_id']}: {rec['suggestion']}")
+            lines.append(f"  Anledning: {rec['reason']}\n")
+        text = "\n".join(lines).strip()
+        if len(text) > 4000:
+            text = text[:4000] + "\n\n...avkortat"
+        await context.bot.send_message(chat_id=chat_id, text=text)
+    except Exception:
+        logger.exception("Error in marketing refresh job")
+
+
 async def poll_orders_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     agent: Agent = context.bot_data.get("agent")
     if not agent or not agent.order:
@@ -212,6 +264,7 @@ def main() -> None:
     app.add_handler(CommandHandler("new", new_conversation))
     app.add_handler(CommandHandler("orders", orders_command))
     app.add_handler(CommandHandler("scout", scout_command))
+    app.add_handler(CommandHandler("marketing", marketing_command))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
@@ -235,6 +288,16 @@ def main() -> None:
         logger.info(
             "Scout digest scheduled daily at %02d:00",
             settings.scout_digest_hour,
+        )
+
+        # Daily marketing stats refresh
+        app.job_queue.run_daily(
+            marketing_refresh_job,
+            time=dt_time(hour=settings.marketing_refresh_hour),
+        )
+        logger.info(
+            "Marketing refresh scheduled daily at %02d:00",
+            settings.marketing_refresh_hour,
         )
 
     logger.info("Starting bot...")

@@ -253,6 +253,9 @@ class TraderaClient:
                 "status": getattr(response, "Status", None),
                 "end_date": end_date,
                 "url": getattr(response, "ItemUrl", None),
+                "views": getattr(response, "TotalViews", 0) or 0,
+                "watchers": getattr(response, "NumberOfWatchers", 0) or 0,
+                "bid_count": getattr(response, "BidCount", 0) or 0,
             }
 
         except Exception as e:

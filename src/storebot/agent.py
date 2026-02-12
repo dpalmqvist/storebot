@@ -9,6 +9,7 @@ from storebot.tools.accounting import AccountingService
 from storebot.tools.blocket import BlocketClient
 from storebot.tools.image import encode_image_base64
 from storebot.tools.listing import ListingService
+from storebot.tools.marketing import MarketingService
 from storebot.tools.order import OrderService
 from storebot.tools.pricing import PricingService
 from storebot.tools.scout import ScoutService
@@ -453,6 +454,51 @@ TOOLS = [
             "properties": {},
         },
     },
+    {
+        "name": "refresh_listing_stats",
+        "description": "Hämta aktuell statistik (visningar, bevakare, bud) från Tradera för aktiva annonser och spara en snapshot.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "listing_id": {
+                    "type": "integer",
+                    "description": "Specific listing ID to refresh (optional, default all active)",
+                },
+            },
+        },
+    },
+    {
+        "name": "analyze_listing",
+        "description": "Analysera en annons prestanda: konverteringsgrad, trend, dagar aktiv, potentiell vinst.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "listing_id": {"type": "integer", "description": "Listing ID to analyze"},
+            },
+            "required": ["listing_id"],
+        },
+    },
+    {
+        "name": "get_performance_report",
+        "description": "Sammanställ en övergripande marknadsföringsrapport: aktiva annonser, visningar, försäljning, kategorier, konverteringstratt.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "get_recommendations",
+        "description": "Generera åtgärdsförslag för annonser: omlistning, prisjustering, förbättra innehåll, förläng, kategoritips.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "listing_id": {
+                    "type": "integer",
+                    "description": "Specific listing ID (optional, default all active+ended)",
+                },
+            },
+        },
+    },
 ]
 
 SYSTEM_PROMPT = """Du är en AI-assistent för en svensk lanthandel som säljer renoverade möbler, \
@@ -471,6 +517,7 @@ Du kan:
 - Söka i produktdatabasen
 - Hantera sparade sökningar (scout): skapa, lista, uppdatera, ta bort
 - Köra sparade sökningar manuellt eller alla på en gång för att hitta nya fynd
+- Marknadsföring: uppdatera annonsstatistik, analysera prestanda, skapa rapporter, ge förbättringsförslag
 
 VIKTIGT — Orderhantering:
 1. Markera ALDRIG en order som skickad utan ägarens uttryckliga bekräftelse.
@@ -534,6 +581,14 @@ class Agent:
                 engine=self.engine,
                 tradera=self.tradera,
                 blocket=self.blocket,
+            )
+            if self.engine
+            else None
+        )
+        self.marketing = (
+            MarketingService(
+                engine=self.engine,
+                tradera=self.tradera,
             )
             if self.engine
             else None
@@ -708,6 +763,22 @@ class Agent:
                     if not self.scout:
                         return {"error": "ScoutService not available (no database engine)"}
                     return self.scout.run_all_searches()
+                case "refresh_listing_stats":
+                    if not self.marketing:
+                        return {"error": "MarketingService not available (no database engine)"}
+                    return self.marketing.refresh_listing_stats(**tool_input)
+                case "analyze_listing":
+                    if not self.marketing:
+                        return {"error": "MarketingService not available (no database engine)"}
+                    return self.marketing.analyze_listing(**tool_input)
+                case "get_performance_report":
+                    if not self.marketing:
+                        return {"error": "MarketingService not available (no database engine)"}
+                    return self.marketing.get_performance_report()
+                case "get_recommendations":
+                    if not self.marketing:
+                        return {"error": "MarketingService not available (no database engine)"}
+                    return self.marketing.get_recommendations(**tool_input)
                 case _:
                     return {"error": f"Unknown tool: {name}"}
         except NotImplementedError:
