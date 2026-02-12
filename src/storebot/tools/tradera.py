@@ -185,6 +185,8 @@ class TraderaClient:
         start_price: float | None = None,
         buy_it_now_price: float | None = None,
         shipping_cost: float | None = None,
+        shipping_options: list[dict] | None = None,
+        shipping_condition: str | None = None,
         accepting_returns: bool = False,
     ) -> dict:
         """Create a listing on Tradera via RestrictedService AddItem."""
@@ -203,8 +205,15 @@ class TraderaClient:
                 params["StartPrice"] = int(start_price)
             if buy_it_now_price is not None:
                 params["BuyItNowPrice"] = int(buy_it_now_price)
-            if shipping_cost is not None:
+            if shipping_options:
+                params["ShippingOptions"] = [
+                    self._build_shipping_option(opt) for opt in shipping_options
+                ]
+            elif shipping_cost is not None:
                 params["ShippingCost"] = int(shipping_cost)
+
+            if shipping_condition is not None:
+                params["ShippingCondition"] = shipping_condition
 
             response = self._create_listing_api_call(
                 params,
@@ -283,6 +292,108 @@ class TraderaClient:
 
         except Exception as e:
             logger.exception("Tradera get_categories failed")
+            return {"error": str(e)}
+
+    @retry_on_transient()
+    def _get_shipping_options_api_call(self, request, headers):
+        return self.public_client.service.GetShippingOptions(request=request, **headers)
+
+    def get_shipping_options(self, from_country: str = "SE") -> dict:
+        """Get available shipping options from Tradera."""
+        try:
+            request = {"FromCountryCodes": [from_country]}
+            response = self._get_shipping_options_api_call(
+                request, self._auth_headers(self.public_client)
+            )
+
+            spans = getattr(response, "ProductsPerWeightSpan", None)
+            if not spans:
+                return {"shipping_options": []}
+
+            options = []
+            for span in getattr(spans, "ShippingOptionsPerWeightSpan", None) or []:
+                weight_limit = getattr(span, "WeightInGrams", None)
+                products = getattr(span, "Products", None)
+                if not products:
+                    continue
+                for prod in getattr(products, "ShippingProduct", None) or []:
+                    options.append(self._parse_shipping_product(prod, weight_limit))
+
+            return {"shipping_options": options}
+
+        except Exception as e:
+            logger.exception("Tradera get_shipping_options failed")
+            return {"error": str(e)}
+
+    @staticmethod
+    def _parse_shipping_product(prod, weight_limit: int | None) -> dict:
+        """Parse a SOAP ShippingProduct object into a plain dict."""
+        return {
+            "id": getattr(prod, "Id", None),
+            "provider_name": getattr(prod, "ProviderName", None),
+            "provider_id": getattr(prod, "ProviderId", None),
+            "name": getattr(prod, "Name", None),
+            "weight_limit_grams": weight_limit,
+            "price_sek": getattr(prod, "PriceInSek", None),
+            "vat_percent": getattr(prod, "VatInPercent", None),
+            "from_country": getattr(prod, "FromCountryCode", None),
+            "to_country": getattr(prod, "ToCountryCode", None),
+            "max_length_cm": getattr(prod, "MaxLengthInCm", None),
+            "max_width_cm": getattr(prod, "MaxWidthInCm", None),
+            "max_height_cm": getattr(prod, "MaxHeightInCm", None),
+            "service_point": getattr(prod, "ServicePoint", None),
+            "traceable": getattr(prod, "Traceable", None),
+        }
+
+    # Maps option dict keys to their SOAP field names (with int conversion)
+    _SHIPPING_OPTION_FIELDS = {
+        "shipping_option_id": "ShippingOptionId",
+        "shipping_product_id": "ShippingProductId",
+        "shipping_provider_id": "ShippingProviderId",
+    }
+
+    @staticmethod
+    def _build_shipping_option(opt: dict) -> dict:
+        """Convert a shipping option dict to a SOAP-compatible dict."""
+        soap_opt = {"Cost": int(opt["cost"])}
+        for key, soap_key in TraderaClient._SHIPPING_OPTION_FIELDS.items():
+            if opt.get(key) is not None:
+                soap_opt[soap_key] = int(opt[key])
+        if opt.get("shipping_weight") is not None:
+            soap_opt["ShippingWeight"] = opt["shipping_weight"]
+        return soap_opt
+
+    @retry_on_transient()
+    def _get_shipping_types_api_call(self, headers):
+        return self.public_client.service.GetShippingTypes(**headers)
+
+    def get_shipping_types(self) -> dict:
+        """Get available shipping types from Tradera."""
+        try:
+            response = self._get_shipping_types_api_call(
+                self._auth_headers(self.public_client)
+            )
+
+            if not response:
+                return {"shipping_types": []}
+
+            items = getattr(response, "IdDescriptionPair", None) or response
+            if not hasattr(items, "__iter__"):
+                return {"shipping_types": []}
+
+            return {
+                "shipping_types": [
+                    {
+                        "id": getattr(item, "Id", None),
+                        "description": getattr(item, "Description", None),
+                        "value": getattr(item, "Value", None),
+                    }
+                    for item in items
+                ]
+            }
+
+        except Exception as e:
+            logger.exception("Tradera get_shipping_types failed")
             return {"error": str(e)}
 
     @retry_on_transient()

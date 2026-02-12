@@ -254,6 +254,11 @@ class ListingService:
 
             duration = listing.duration_days or 7
 
+            details = listing.details or {}
+            shipping_options = details.get("shipping_options")
+            shipping_condition = details.get("shipping_condition")
+            shipping_cost = None if shipping_options else details.get("shipping_cost")
+
             create_result = self.tradera.create_listing(
                 title=listing.listing_title,
                 description=listing.listing_description,
@@ -262,6 +267,9 @@ class ListingService:
                 listing_type=listing.listing_type,
                 start_price=listing.start_price,
                 buy_it_now_price=listing.buy_it_now_price,
+                shipping_cost=shipping_cost,
+                shipping_options=shipping_options,
+                shipping_condition=shipping_condition,
             )
 
             if "error" in create_result:
@@ -528,5 +536,17 @@ def _format_draft_preview(listing: PlatformListing, product: Product | None) -> 
 
     if listing.tradera_category_id:
         lines.append(f"📂 Tradera-kategori: {listing.tradera_category_id}")
+
+    if listing.details:
+        opts = listing.details.get("shipping_options")
+        if opts:
+            lines.append(f"📦 Fraktalternativ: {len(opts)} st")
+            for opt in opts:
+                lines.append(f"  - {opt.get('name', 'Okänt')}: {opt.get('cost', '?')} kr")
+        elif listing.details.get("shipping_cost") is not None:
+            lines.append(f"📦 Fraktkostnad: {listing.details['shipping_cost']} kr")
+        cond = listing.details.get("shipping_condition")
+        if cond:
+            lines.append(f"📋 Leveransvillkor: {cond}")
 
     return "\n".join(lines)

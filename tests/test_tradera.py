@@ -464,6 +464,171 @@ class TestTraderaGetCategories:
         assert result["categories"] == []
 
 
+class TestGetShippingOptions:
+    def test_returns_parsed_options(self, client):
+        prod1 = MagicMock()
+        prod1.Id = 10
+        prod1.ProviderName = "PostNord"
+        prod1.ProviderId = 1
+        prod1.Name = "MyPack Collect"
+        prod1.PriceInSek = 59.0
+        prod1.VatInPercent = 25
+        prod1.FromCountryCode = "SE"
+        prod1.ToCountryCode = "SE"
+        prod1.MaxLengthInCm = 60
+        prod1.MaxWidthInCm = 40
+        prod1.MaxHeightInCm = 30
+        prod1.ServicePoint = True
+        prod1.Traceable = True
+
+        products_obj = MagicMock()
+        products_obj.ShippingProduct = [prod1]
+
+        span = MagicMock()
+        span.WeightInGrams = 2000
+        span.Products = products_obj
+
+        spans_obj = MagicMock()
+        spans_obj.ShippingOptionsPerWeightSpan = [span]
+
+        response = MagicMock()
+        response.ProductsPerWeightSpan = spans_obj
+        client._public_client.service.GetShippingOptions.return_value = response
+
+        result = client.get_shipping_options()
+
+        assert len(result["shipping_options"]) == 1
+        opt = result["shipping_options"][0]
+        assert opt["id"] == 10
+        assert opt["provider_name"] == "PostNord"
+        assert opt["name"] == "MyPack Collect"
+        assert opt["weight_limit_grams"] == 2000
+        assert opt["price_sek"] == 59.0
+        assert opt["service_point"] is True
+
+    def test_empty_response(self, client):
+        response = MagicMock()
+        response.ProductsPerWeightSpan = None
+        client._public_client.service.GetShippingOptions.return_value = response
+
+        result = client.get_shipping_options()
+
+        assert result["shipping_options"] == []
+
+    def test_api_error(self, client):
+        client._public_client.service.GetShippingOptions.side_effect = Exception("Timeout")
+
+        result = client.get_shipping_options()
+
+        assert result["error"] == "Timeout"
+
+    def test_passes_country_code(self, client):
+        response = MagicMock()
+        response.ProductsPerWeightSpan = None
+        client._public_client.service.GetShippingOptions.return_value = response
+
+        client.get_shipping_options(from_country="NO")
+
+        call_kwargs = client._public_client.service.GetShippingOptions.call_args.kwargs
+        assert call_kwargs["request"] == {"FromCountryCodes": ["NO"]}
+
+
+class TestGetShippingTypes:
+    def test_returns_types(self, client):
+        type1 = MagicMock()
+        type1.Id = 1
+        type1.Description = "Brev"
+        type1.Value = "letter"
+        type2 = MagicMock()
+        type2.Id = 2
+        type2.Description = "Paket"
+        type2.Value = "package"
+
+        response = MagicMock()
+        response.IdDescriptionPair = [type1, type2]
+        response.__iter__ = MagicMock(return_value=iter([type1, type2]))
+        client._public_client.service.GetShippingTypes.return_value = response
+
+        result = client.get_shipping_types()
+
+        assert len(result["shipping_types"]) == 2
+        assert result["shipping_types"][0] == {"id": 1, "description": "Brev", "value": "letter"}
+        assert result["shipping_types"][1] == {"id": 2, "description": "Paket", "value": "package"}
+
+    def test_api_error(self, client):
+        client._public_client.service.GetShippingTypes.side_effect = Exception("Auth failed")
+
+        result = client.get_shipping_types()
+
+        assert result["error"] == "Auth failed"
+
+
+class TestCreateListingShipping:
+    def test_structured_shipping_options(self, client):
+        response = MagicMock()
+        response.ItemId = 1
+        client._restricted_client.service.AddItem.return_value = response
+
+        shipping_options = [
+            {
+                "cost": 59,
+                "shipping_product_id": 10,
+                "shipping_provider_id": 1,
+                "shipping_weight": 2000,
+            },
+        ]
+        client.create_listing(
+            title="Test",
+            description="Test",
+            category_id=100,
+            shipping_options=shipping_options,
+            shipping_condition="PostBefordran",
+        )
+
+        call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
+        assert "ShippingOptions" in call_kwargs
+        assert "ShippingCost" not in call_kwargs
+        assert call_kwargs["ShippingCondition"] == "PostBefordran"
+        soap_opt = call_kwargs["ShippingOptions"][0]
+        assert soap_opt["Cost"] == 59
+        assert soap_opt["ShippingProductId"] == 10
+        assert soap_opt["ShippingProviderId"] == 1
+        assert soap_opt["ShippingWeight"] == 2000
+
+    def test_structured_options_override_flat_cost(self, client):
+        response = MagicMock()
+        response.ItemId = 1
+        client._restricted_client.service.AddItem.return_value = response
+
+        client.create_listing(
+            title="Test",
+            description="Test",
+            category_id=100,
+            shipping_cost=99,
+            shipping_options=[{"cost": 59, "shipping_product_id": 10}],
+        )
+
+        call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
+        assert "ShippingOptions" in call_kwargs
+        assert "ShippingCost" not in call_kwargs
+
+    def test_flat_shipping_cost_backward_compat(self, client):
+        response = MagicMock()
+        response.ItemId = 1
+        client._restricted_client.service.AddItem.return_value = response
+
+        client.create_listing(
+            title="Test",
+            description="Test",
+            category_id=100,
+            shipping_cost=49,
+        )
+
+        call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
+        assert call_kwargs["ShippingCost"] == 49
+        assert "ShippingOptions" not in call_kwargs
+
+
 class TestTraderaRetry:
     @patch("storebot.retry.time.sleep")
     def test_search_retries_on_connection_error(self, mock_sleep, client):

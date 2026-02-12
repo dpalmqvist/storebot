@@ -60,7 +60,7 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 
 - **Tradera:** SOAP/XML API, rate limit 100 calls/24h (extendable). Sandbox via `sandbox=1`. Register at Tradera Developer Program.
 - **Blocket:** Unofficial, read-only. Bearer token extracted from browser session (expires, needs manual renewal).
-- **PostNord:** Shipping label generation API.
+- **PostNord:** REST API for shipping labels. Sandbox: `atapi2.postnord.com`, production: `api2.postnord.com`. API key as query parameter. Service codes: `19` (MyPack Collect), `17` (MyPack Home), `18` (Postpaket).
 
 ## Swedish Business Context
 
@@ -79,25 +79,22 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **Blocket integration** — Unofficial REST API, read-only. `search` for price research/sourcing, `get_ad` for full ad details (description, images, seller, parameters). Agent tools: `search_blocket`, `get_blocket_ad`.
 - **Pricing Agent** — `PricingService.price_check()` searches both Tradera + Blocket, computes stats (min/max/mean/median), suggests price range via quartiles, logs `AgentAction`.
 - **Listing Agent** — `ListingService` with full draft workflow: `create_draft`, `list_drafts`, `get_draft`, `update_draft`, `approve_draft`, `reject_draft`, `search_products`. All with validation and `AgentAction` audit logging.
-- **Product management** — `create_product` (with all optional fields: condition, materials, era, dimensions, source, acquisition_cost) and `save_product_image` (with is_primary logic).
+- **Product management** — `create_product` (with all optional fields: condition, materials, era, dimensions, source, acquisition_cost, weight_grams) and `save_product_image` (with is_primary logic).
 - **Image processing** — `resize_for_listing` (1200px), `resize_for_analysis` (800px), `optimize_for_upload` (JPEG compress), `encode_image_base64`. All handle EXIF rotation and RGBA conversion.
 - **Accounting** — `AccountingService` with local voucher storage (SQLite), double-entry bookkeeping with BAS-kontoplan, PDF export (single + batch), debit/credit balance validation.
-- **Agent loop** — `agent.py` with Claude API tool loop, 22 tool definitions, vision support (base64 image content blocks), Swedish system prompt with image workflow guidance.
+- **Agent loop** — `agent.py` with Claude API tool loop, 23 tool definitions, vision support (base64 image content blocks), Swedish system prompt with image workflow guidance.
 - **Telegram bot** — `handlers.py` with `/start`, `/help`, `/scout`, text message handling, and photo handling (download, resize, forward to agent with vision).
 - **Config** — Pydantic Settings from `.env`, all service credentials.
 - **Deployment** — systemd service file, SQLite backup script with cron rotation.
-- **Order Agent** — `OrderService` with full order workflow: `check_new_orders` (polls Tradera, imports orders, updates listings/products), `get_order`, `list_orders`, `create_sale_voucher` (automatic VAT/revenue/fee calculation), `mark_shipped` (with Tradera notification). Scheduled polling via Telegram `job_queue`.
+- **Order Agent** — `OrderService` with full order workflow: `check_new_orders` (polls Tradera, imports orders, updates listings/products), `get_order`, `list_orders`, `create_sale_voucher` (automatic VAT/revenue/fee calculation), `mark_shipped` (with Tradera notification, persists tracking number), `create_shipping_label` (PostNord integration). Scheduled polling via Telegram `job_queue`.
 - **Conversation history** — `ConversationService` persists messages in SQLite per `chat_id`, with configurable message limit and timeout. Stores image file paths (not base64), re-encodes on load. `/new` command to reset. `AgentResponse` dataclass returns full message history from agent.
 - **Scout Agent** — `ScoutService` with saved search CRUD (`create_search`, `list_searches`, `update_search`, `delete_search`), per-search and batch execution (`run_search`, `run_all_searches`), deduplication via `SeenItem` table, Swedish digest formatting. Daily scheduled job via Telegram `job_queue` and `/scout` command for manual trigger.
 - **Marketing Agent** — `MarketingService` with listing performance tracking (`refresh_listing_stats`, `analyze_listing`), aggregate reporting (`get_performance_report`), and rules-based recommendations (6 types: relist, reprice_lower, reprice_raise, improve_content, extend_duration, category_opportunity). `ListingSnapshot` model for historical tracking. Telegram `/marketing` command and daily scheduled stats refresh.
 - **Tradera write operations** — `TraderaClient.create_listing()` via RestrictedService SOAP, `upload_images()`, `get_categories()`. `ListingService.publish_listing()` orchestrates the full flow: validates approved listing, optimizes/uploads images, creates Tradera listing, updates DB status to active. Agent tool integration with `publish_listing` and `get_categories` tools.
 - **Tradera authorization CLI** — `storebot-authorize-tradera` command for obtaining user tokens via consent flow. `TraderaClient.fetch_token()` calls `PublicService.FetchToken`. Saves credentials to `.env`.
-- **Resilience & observability** — Retry decorator with exponential backoff on transient errors (Tradera SOAP + Blocket REST), structured JSON logging (`LOG_JSON` toggle), startup credential validation, admin alerts on scheduled job failures. SQLite WAL mode + busy timeout. Systemd restart limits, backup integrity checks with gzip compression.
-- **Tests** — 347 tests covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, CLI, retry, logging, and handlers modules.
-
-### Stubbed (not yet implemented)
-
-- **PostNord** — `PostNordClient` class exists but `create_shipment` and `get_label` raise `NotImplementedError`.
+- **PostNord shipping labels** — `PostNordClient` REST client: `create_shipment()`, `get_label()`, `save_label()`. `Address` dataclass for sender/recipient, `parse_buyer_address()` for parsing Swedish addresses. Sandbox/production URL switching. Integrated into `OrderService.create_shipping_label()` with validation (weight, address), PDF label storage, tracking number persistence, and `AgentAction` audit trail.
+- **Resilience & observability** — Retry decorator with exponential backoff on transient errors (Tradera SOAP, Blocket REST, PostNord REST), structured JSON logging (`LOG_JSON` toggle), startup credential validation, admin alerts on scheduled job failures. SQLite WAL mode + busy timeout. Systemd restart limits, backup integrity checks with gzip compression.
+- **Tests** — 393 tests covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, postnord, CLI, retry, logging, and handlers modules.
 
 ### Not started
 

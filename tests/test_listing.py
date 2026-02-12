@@ -735,3 +735,50 @@ class TestPublishListing:
         with Session(engine) as session:
             product = session.get(Product, prod["product_id"])
             assert product.listing_price == 1200.0
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
+    def test_passes_shipping_options_to_tradera(
+        self, mock_encode, mock_optimize, pub_service, approved_listing, engine
+    ):
+        listing_id, _ = approved_listing
+        mock_optimize.return_value = "/tmp/optimized.jpg"
+        mock_encode.return_value = ("base64data", "image/jpeg")
+
+        shipping_opts = [
+            {"cost": 59, "shipping_product_id": 10, "shipping_provider_id": 1},
+        ]
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            listing.details = {
+                "shipping_options": shipping_opts,
+                "shipping_condition": "PostBefordran",
+            }
+            session.commit()
+
+        pub_service.publish_listing(listing_id)
+
+        call_kwargs = pub_service.tradera.create_listing.call_args.kwargs
+        assert call_kwargs["shipping_options"] == shipping_opts
+        assert call_kwargs["shipping_condition"] == "PostBefordran"
+        assert call_kwargs["shipping_cost"] is None
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
+    def test_passes_flat_shipping_cost_from_details(
+        self, mock_encode, mock_optimize, pub_service, approved_listing, engine
+    ):
+        listing_id, _ = approved_listing
+        mock_optimize.return_value = "/tmp/optimized.jpg"
+        mock_encode.return_value = ("base64data", "image/jpeg")
+
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            listing.details = {"shipping_cost": 49}
+            session.commit()
+
+        pub_service.publish_listing(listing_id)
+
+        call_kwargs = pub_service.tradera.create_listing.call_args.kwargs
+        assert call_kwargs["shipping_cost"] == 49
+        assert call_kwargs["shipping_options"] is None
