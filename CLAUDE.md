@@ -91,7 +91,8 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **Scout Agent** — `ScoutService` with saved search CRUD (`create_search`, `list_searches`, `update_search`, `delete_search`), per-search and batch execution (`run_search`, `run_all_searches`), deduplication via `SeenItem` table, Swedish digest formatting. Daily scheduled job via Telegram `job_queue` and `/scout` command for manual trigger.
 - **Marketing Agent** — `MarketingService` with listing performance tracking (`refresh_listing_stats`, `analyze_listing`), aggregate reporting (`get_performance_report`), and rules-based recommendations (6 types: relist, reprice_lower, reprice_raise, improve_content, extend_duration, category_opportunity). `ListingSnapshot` model for historical tracking. Telegram `/marketing` command and daily scheduled stats refresh.
 - **Tradera write operations** — `TraderaClient.create_listing()` via RestrictedService SOAP, `upload_images()`, `get_categories()`. `ListingService.publish_listing()` orchestrates the full flow: validates approved listing, optimizes/uploads images, creates Tradera listing, updates DB status to active. Agent tool integration with `publish_listing` and `get_categories` tools.
-- **Tests** — 270+ tests covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, and marketing modules.
+- **Tradera authorization CLI** — `storebot-authorize-tradera` command for obtaining user tokens via consent flow. `TraderaClient.fetch_token()` calls `PublicService.FetchToken`. Saves credentials to `.env`.
+- **Tests** — 290+ tests covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, and CLI modules.
 
 ### Stubbed (not yet implemented)
 
@@ -100,7 +101,6 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 
 ### Not started
 
-- Tradera authorization CLI (`storebot authorize-tradera`) — automated token request/fetch flow for user authorization
 - MCP server wrappers for tool modules
 - sqlite-vec embeddings for semantic product search
 - Social media cross-posting
@@ -138,6 +138,7 @@ When reviewing PRs, provide detailed and thorough reviews:
 ## Commands
 
 - **Run bot:** `storebot` (or `python -m storebot.bot.handlers`)
+- **Authorize Tradera:** `storebot-authorize-tradera` (interactive token consent flow)
 - **Run tests:** `pytest`
 - **Run single test:** `pytest tests/test_db.py::test_name`
 - **Lint:** `ruff check src/ tests/`
