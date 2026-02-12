@@ -120,6 +120,19 @@ uv pip install -e ".[dev]"
 cp .env.example .env  # fill in API keys
 ```
 
+## Code Review Style
+
+When reviewing PRs, provide detailed and thorough reviews:
+
+- Explain **why** each finding matters, not just what the issue is
+- Suggest concrete alternatives or fixes with code examples when applicable
+- Call out positive patterns worth keeping, not only problems
+- Consider architectural impact — does the change fit the project's design principles?
+- Flag potential issues with SQLite concurrency, SQLAlchemy session lifecycle, and async Telegram handler patterns
+- Check that new database changes have corresponding Alembic migrations
+- Verify audit trail coverage — agent actions should be logged to `agent_actions`
+- Ensure Swedish business rules (VAT, vouchers) are respected in financial code paths
+
 ## Commands
 
 - **Run bot:** `storebot` (or `python -m storebot.bot.handlers`)
