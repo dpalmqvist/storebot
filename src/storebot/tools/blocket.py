@@ -7,6 +7,7 @@ from storebot.retry import retry_on_transient
 logger = logging.getLogger(__name__)
 
 SEARCH_URL = "https://www.blocket.se/recommerce/forsale/search/api/search/SEARCH_ID_BAP_COMMON"
+AD_URL = "https://www.blocket.se/recommerce/forsale/search/api/item/{ad_id}"
 
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
 
@@ -27,6 +28,13 @@ class BlocketClient:
             headers["Authorization"] = f"Bearer {self.bearer_token}"
         return headers
 
+    @retry_on_transient()
+    def _get(self, url: str, headers: dict, params: dict | None = None) -> requests.Response:
+        resp = requests.get(url, params=params, headers=headers, timeout=15)
+        if resp.status_code >= 500:
+            raise requests.HTTPError(response=resp)
+        return resp
+
     def _parse_item(self, doc: dict) -> dict:
         price_obj = doc.get("price") or {}
         image_obj = doc.get("image") or {}
@@ -42,17 +50,32 @@ class BlocketClient:
             "trade_type": doc.get("trade_type", ""),
         }
 
-    @retry_on_transient()
-    def _search_request(self, params: dict, headers: dict) -> requests.Response:
-        resp = requests.get(
-            SEARCH_URL,
-            params=params,
-            headers=headers,
-            timeout=15,
-        )
-        if resp.status_code >= 500:
-            raise requests.HTTPError(response=resp)
-        return resp
+    def _parse_ad_detail(self, data: dict) -> dict:
+        """Parse full ad detail — extends _parse_item with description, images, seller, etc."""
+        base = self._parse_item(data)
+        del base["image_url"]  # replaced by images list
+
+        images = data.get("images") or []
+        if not images:
+            image_obj = data.get("image") or {}
+            if image_obj.get("url"):
+                images = [image_obj]
+
+        location = data.get("location") or ""
+        seller = data.get("seller") or {}
+        parameters = data.get("parameters") or []
+
+        base.update({
+            "description": data.get("body", ""),
+            "images": [img.get("url", "") for img in images if img.get("url")],
+            "location": location if isinstance(location, str) else location.get("name", ""),
+            "category": data.get("category", ""),
+            "seller": {"name": seller.get("name", ""), "id": str(seller.get("id", ""))},
+            "parameters": {
+                p.get("label", ""): p.get("value", "") for p in parameters if p.get("label")
+            },
+        })
+        return base
 
     def search(
         self,
@@ -69,7 +92,7 @@ class BlocketClient:
             if region:
                 params["location"] = region
 
-            resp = self._search_request(params, self._headers())
+            resp = self._get(SEARCH_URL, self._headers(), params=params)
 
             if resp.status_code == 401:
                 return {
@@ -99,6 +122,20 @@ class BlocketClient:
             logger.exception("Blocket search failed")
             return {"error": str(e), "total": 0, "items": []}
 
-    def get_ad(self, ad_id: str):
-        # TODO: Implement REST ad detail fetch
-        raise NotImplementedError("BlocketClient.get_ad not yet implemented")
+    def get_ad(self, ad_id: str) -> dict:
+        """Fetch full details for a single Blocket ad."""
+        try:
+            resp = self._get(AD_URL.format(ad_id=ad_id), self._headers())
+
+            if resp.status_code == 401:
+                return {"error": "Blocket bearer token expired or invalid (401)"}
+
+            if resp.status_code == 404:
+                return {"error": f"Ad {ad_id} not found (404)"}
+
+            resp.raise_for_status()
+            return self._parse_ad_detail(resp.json())
+
+        except Exception as e:
+            logger.exception("Blocket get_ad failed for %s", ad_id)
+            return {"error": str(e)}

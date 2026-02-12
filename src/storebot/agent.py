@@ -52,6 +52,17 @@ TOOLS = [
         },
     },
     {
+        "name": "get_blocket_ad",
+        "description": "Get full details of a single Blocket ad including description, all images, seller info, and item parameters. Useful for deeper research on a specific item found via search.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ad_id": {"type": "string", "description": "Blocket ad ID"},
+            },
+            "required": ["ad_id"],
+        },
+    },
+    {
         "name": "create_draft_listing",
         "description": "Create a draft listing for a product. The draft must be approved before publishing. Use after price_check to set appropriate pricing.",
         "input_schema": {
@@ -699,6 +710,7 @@ class Agent:
     _TOOL_SERVICE = {
         "search_tradera": None,
         "search_blocket": None,
+        "get_blocket_ad": None,
         "price_check": None,
         "get_categories": None,
         "create_draft_listing": "listing",
@@ -752,6 +764,8 @@ class Agent:
                     return self.tradera.search(**tool_input)
                 case "search_blocket":
                     return self.blocket.search(**tool_input)
+                case "get_blocket_ad":
+                    return self.blocket.get_ad(**tool_input)
                 case "price_check":
                     return self.pricing.price_check(**tool_input)
                 case "get_categories":
