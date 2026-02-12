@@ -104,7 +104,7 @@ TOOLS = [
                 },
                 "details": {
                     "type": "object",
-                    "description": "Additional details (shipping, condition, etc.)",
+                    "description": "Additional details. Shipping: set 'shipping_options' (list of {cost, shipping_product_id, shipping_provider_id, name}) or 'shipping_cost' (flat int). Optional: 'shipping_condition' (str).",
                 },
             },
             "required": ["product_id", "listing_type", "listing_title", "listing_description"],
@@ -197,6 +197,19 @@ TOOLS = [
                     "type": "integer",
                     "description": "Parent category ID (0 for top-level categories)",
                     "default": 0,
+                },
+            },
+        },
+    },
+    {
+        "name": "get_shipping_options",
+        "description": "Hämta tillgängliga fraktalternativ från Tradera. Returnerar fraktprodukter med leverantör, viktgräns och pris. Använd produktens vikt för att filtrera.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "weight_grams": {
+                    "type": "integer",
+                    "description": "Paketets vikt i gram — filtrerar till alternativ som klarar vikten",
                 },
             },
         },
@@ -603,6 +616,12 @@ VIKTIGT — Annonseringsflöde:
 5. Publicering laddar upp bilder och skapar annonsen på Tradera.
 6. Informera ägaren om den publicerade annonsens URL.
 
+VIKTIGT — Frakt vid annonsering:
+1. Använd get_shipping_options med produktens vikt för att hitta tillgängliga fraktalternativ.
+2. Inkludera shipping_options i details vid create_draft_listing: varje option ska ha cost, shipping_product_id och shipping_provider_id.
+3. Alternativt: sätt details.shipping_cost för enkel fast fraktkostnad.
+4. Visa fraktalternativen i förhandsgranskningen så ägaren kan godkänna.
+
 Svara alltid på svenska om inte användaren skriver på engelska. Var kortfattad och tydlig.
 Alla annonser och produktbeskrivningar ska vara på svenska."""
 
@@ -754,6 +773,7 @@ class Agent:
         "get_blocket_ad": None,
         "price_check": None,
         "get_categories": None,
+        "get_shipping_options": None,
         "create_draft_listing": "listing",
         "list_draft_listings": "listing",
         "get_draft_listing": "listing",
@@ -812,6 +832,18 @@ class Agent:
                     return self.pricing.price_check(**tool_input)
                 case "get_categories":
                     return self.tradera.get_categories(**tool_input)
+                case "get_shipping_options":
+                    weight = tool_input.get("weight_grams")
+                    result = self.tradera.get_shipping_options()
+                    if "error" not in result and weight is not None:
+                        result["shipping_options"] = [
+                            opt
+                            for opt in result["shipping_options"]
+                            if opt.get("weight_limit_grams") is None
+                            or opt["weight_limit_grams"] >= weight
+                        ]
+                        result["filtered_by_weight_grams"] = weight
+                    return result
                 case "create_draft_listing":
                     return self.listing.create_draft(**tool_input)
                 case "list_draft_listings":

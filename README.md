@@ -14,7 +14,7 @@ Telegram Bot  →  Claude API (tool use, vision)
                  ├── Scout                - saved searches, daily digests
                  ├── Marketing            - performance tracking
                  ├── Order                - sales, shipping, invoicing
-                 ├── PostNord (REST)      - shipping labels (stubbed)
+                 ├── PostNord (REST)      - shipping labels
                  └── Image (Pillow)       - resize, optimize, vision
                        |
                  SQLite + sqlite-vec
@@ -80,7 +80,7 @@ These are set automatically by the `storebot-authorize-tradera` CLI command (see
 | `CLAUDE_MODEL` | `claude-sonnet-4-5-20250929` | Claude model for the agent loop |
 | `TRADERA_SANDBOX` | `true` | Use Tradera sandbox environment |
 | `BLOCKET_BEARER_TOKEN` | | Blocket bearer token for price research |
-| `POSTNORD_API_KEY` | | PostNord API key (not yet implemented) |
+| `POSTNORD_API_KEY` | | PostNord API key for shipping labels |
 | `POSTNORD_SENDER_NAME` | | Sender name for shipping labels |
 | `POSTNORD_SENDER_ADDRESS` | | Sender address for shipping labels |
 | `ORDER_POLL_INTERVAL_MINUTES` | `30` | How often to poll Tradera for new orders |
@@ -164,13 +164,16 @@ Blocket has no official public API. Storebot uses an unofficial REST endpoint fo
 
 **Note:** The token expires periodically and must be manually renewed. The bot works without it but Blocket price research will be unavailable.
 
-### PostNord (planned)
+### PostNord
 
-Shipping label generation is stubbed out for future implementation.
+PostNord integration for generating shipping labels.
 
 1. Register at [PostNord Developer Portal](https://developer.postnord.com/)
 2. Create an application and get an API key
-3. Set `POSTNORD_API_KEY`, `POSTNORD_SENDER_NAME`, and `POSTNORD_SENDER_ADDRESS` in `.env`
+3. Set `POSTNORD_API_KEY` and sender details (`POSTNORD_SENDER_NAME`, `POSTNORD_SENDER_STREET`, `POSTNORD_SENDER_POSTAL_CODE`, `POSTNORD_SENDER_CITY`) in `.env`
+4. Keep `POSTNORD_SANDBOX=true` during development (uses `atapi2.postnord.com` instead of `api2.postnord.com`)
+
+**Service codes:** `19` (MyPack Collect), `17` (MyPack Home), `18` (Postpaket).
 
 ## Telegram commands
 
@@ -191,7 +194,7 @@ Send any **text message** to chat with the agent. Send a **photo** and the agent
 
 1. **Create product** — Send a photo or describe an item. The agent creates a product record with details (condition, materials, era, dimensions, source, acquisition cost).
 2. **Price check** — The agent searches Tradera and Blocket for comparable items and suggests a price range based on market data (min/max/mean/median/quartiles).
-3. **Draft listing** — The agent generates a Swedish title and description, selects a Tradera category, and creates a draft listing for review.
+3. **Draft listing** — The agent generates a Swedish title and description, selects a Tradera category, looks up shipping options based on product weight, and creates a draft listing for review.
 4. **Review & approve** — You review the draft and approve or reject it. Rejected drafts can be edited and re-submitted.
 5. **Publish** — Approved listings are published to Tradera: images are optimized and uploaded, the listing is created via the SOAP API, and the database is updated.
 
@@ -203,7 +206,8 @@ The bot automatically polls Tradera for new orders (configurable interval, defau
 - Product status is updated to "sold"
 - Listing status is updated to "sold"
 - You can create a sale voucher (automatic VAT/revenue/fee calculation)
-- You can mark orders as shipped (with Tradera notification)
+- You can generate a PostNord shipping label (requires product weight)
+- You can mark orders as shipped (with Tradera notification and tracking number)
 
 Use `/orders` to manually check for new orders.
 
@@ -254,14 +258,14 @@ The Marketing Agent tracks listing performance and suggests optimization strateg
 
 ## Agent tools
 
-The Claude agent has access to 28 tools organized by domain:
+The Claude agent has access to 34 tools organized by domain:
 
 | Domain | Tools |
 |--------|-------|
 | **Search** | `search_tradera`, `search_blocket`, `price_check` |
 | **Products** | `create_product`, `save_product_image`, `search_products` |
-| **Listings** | `create_draft_listing`, `list_draft_listings`, `get_draft_listing`, `update_draft_listing`, `approve_draft_listing`, `reject_draft_listing`, `publish_listing`, `get_categories` |
-| **Orders** | `check_new_orders`, `list_orders`, `get_order`, `create_sale_voucher`, `mark_order_shipped` |
+| **Listings** | `create_draft_listing`, `list_draft_listings`, `get_draft_listing`, `update_draft_listing`, `approve_draft_listing`, `reject_draft_listing`, `publish_listing`, `get_categories`, `get_shipping_options` |
+| **Orders** | `check_new_orders`, `list_orders`, `get_order`, `create_sale_voucher`, `mark_order_shipped`, `create_shipping_label` |
 | **Accounting** | `create_voucher`, `export_vouchers` |
 | **Scout** | `create_saved_search`, `list_saved_searches`, `update_saved_search`, `delete_saved_search`, `run_saved_search`, `run_all_saved_searches` |
 | **Marketing** | `refresh_listing_stats`, `analyze_listing`, `get_performance_report`, `get_recommendations` |
@@ -307,7 +311,7 @@ Backups include integrity verification, gzip compression, and automatic rotation
 
 ## Resilience
 
-- **Retry with backoff** — Transient errors from Tradera SOAP and Blocket REST are retried with exponential backoff
+- **Retry with backoff** — Transient errors from Tradera SOAP, Blocket REST, and PostNord REST are retried with exponential backoff
 - **Structured logging** — JSON logging by default (`LOG_JSON=true`), toggle to human-readable for development
 - **Credential validation** — API credentials are validated at startup
 - **Admin alerts** — Failures in scheduled jobs (order polling, scout digest, marketing refresh) trigger admin notifications
@@ -374,7 +378,7 @@ ruff format src/ tests/
 
 ```
 src/storebot/
-  agent.py             Claude API tool loop (28 tools, vision support)
+  agent.py             Claude API tool loop (34 tools, vision support)
   config.py            Pydantic Settings from .env
   db.py                SQLAlchemy 2.0 models (SQLite, 12 tables)
   cli.py               Tradera authorization CLI
@@ -383,10 +387,10 @@ src/storebot/
   bot/
     handlers.py        Telegram bot entry point (6 commands, photo handling)
   tools/
-    tradera.py         Tradera SOAP API (search, create, upload, orders)
+    tradera.py         Tradera SOAP API (search, create, upload, orders, shipping)
     blocket.py         Blocket unofficial REST API (price research)
     accounting.py      Local voucher storage + PDF export (BAS-kontoplan)
-    postnord.py        PostNord API (shipping labels, stubbed)
+    postnord.py        PostNord REST API (shipping labels)
     image.py           Pillow image processing + base64 encoding
     listing.py         Product & listing management (CRUD, drafts, publish)
     pricing.py         Combined price analysis (Tradera + Blocket)
@@ -394,7 +398,7 @@ src/storebot/
     conversation.py    Conversation history persistence
     scout.py           Saved searches + dedup + daily digest
     marketing.py       Listing performance tracking + recommendations
-tests/                 347 pytest tests
+tests/                 404 pytest tests
 deploy/
   storebot.service     systemd unit file
   backup.sh            SQLite backup script (cron, gzip, integrity check)
