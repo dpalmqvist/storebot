@@ -54,8 +54,8 @@ class TestFetchToken:
         assert result["expires"] == "2027-01-01T00:00:00"
 
         call_kwargs = tradera_client._public_client.service.FetchToken.call_args.kwargs
-        assert call_kwargs["UserId"] == 0
-        assert call_kwargs["Token"] == "test-secret-key"
+        assert call_kwargs["userId"] == 0
+        assert call_kwargs["secretKey"] == "test-secret-key"
 
     def test_fetch_token_missing_fields(self, tradera_client):
         response = MagicMock()

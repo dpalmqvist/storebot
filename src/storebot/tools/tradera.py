@@ -287,7 +287,7 @@ class TraderaClient:
 
     @retry_on_transient()
     def _fetch_token_api_call(self, secret_key, headers):
-        return self.public_client.service.FetchToken(UserId=0, Token=secret_key, **headers)
+        return self.public_client.service.FetchToken(userId=0, secretKey=secret_key, **headers)
 
     def fetch_token(self, secret_key: str) -> dict:
         """Fetch user token after consent flow.
