@@ -258,7 +258,7 @@ The Marketing Agent tracks listing performance and suggests optimization strateg
 
 ## Agent tools
 
-The Claude agent has access to 29 tools organized by domain:
+The Claude agent has access to 34 tools organized by domain:
 
 | Domain | Tools |
 |--------|-------|
@@ -378,7 +378,7 @@ ruff format src/ tests/
 
 ```
 src/storebot/
-  agent.py             Claude API tool loop (29 tools, vision support)
+  agent.py             Claude API tool loop (34 tools, vision support)
   config.py            Pydantic Settings from .env
   db.py                SQLAlchemy 2.0 models (SQLite, 12 tables)
   cli.py               Tradera authorization CLI
