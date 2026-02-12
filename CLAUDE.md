@@ -26,6 +26,7 @@ Agent Tool Modules (plain Python, MCP-wrappable later)
     ├── tools/blocket.py     (REST, read-only/research)
     ├── tools/accounting.py  (local vouchers + PDF export)
     ├── tools/scout.py       (saved searches, dedup, digest)
+    ├── tools/marketing.py   (listing performance, recommendations)
     ├── tools/postnord.py    (shipping labels)
     └── tools/image.py       (Pillow: resize, optimize)
     ↓
@@ -51,7 +52,7 @@ SQLite + sqlite-vec (operational + financial: inventory, listings, orders, vouch
 
 ## Database Schema (Core Tables)
 
-`products`, `product_images`, `platform_listings`, `orders`, `vouchers`, `voucher_rows`, `agent_actions`, `notifications`, `conversation_messages`, `saved_searches`, `seen_items`
+`products`, `product_images`, `platform_listings`, `listing_snapshots`, `orders`, `vouchers`, `voucher_rows`, `agent_actions`, `notifications`, `conversation_messages`, `saved_searches`, `seen_items`
 
 SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Alembic migrations (SQLite batch mode).
 
@@ -88,7 +89,8 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **Order Agent** — `OrderService` with full order workflow: `check_new_orders` (polls Tradera, imports orders, updates listings/products), `get_order`, `list_orders`, `create_sale_voucher` (automatic VAT/revenue/fee calculation), `mark_shipped` (with Tradera notification). Scheduled polling via Telegram `job_queue`.
 - **Conversation history** — `ConversationService` persists messages in SQLite per `chat_id`, with configurable message limit and timeout. Stores image file paths (not base64), re-encodes on load. `/new` command to reset. `AgentResponse` dataclass returns full message history from agent.
 - **Scout Agent** — `ScoutService` with saved search CRUD (`create_search`, `list_searches`, `update_search`, `delete_search`), per-search and batch execution (`run_search`, `run_all_searches`), deduplication via `SeenItem` table, Swedish digest formatting. Daily scheduled job via Telegram `job_queue` and `/scout` command for manual trigger.
-- **Tests** — 232 tests covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, and scout modules.
+- **Marketing Agent** — `MarketingService` with listing performance tracking (`refresh_listing_stats`, `analyze_listing`), aggregate reporting (`get_performance_report`), and rules-based recommendations (6 types: relist, reprice_lower, reprice_raise, improve_content, extend_duration, category_opportunity). `ListingSnapshot` model for historical tracking. Telegram `/marketing` command and daily scheduled stats refresh.
+- **Tests** — 270 tests covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, and marketing modules.
 
 ### Stubbed (not yet implemented)
 
@@ -98,7 +100,6 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 
 ### Not started
 
-- Marketing Agent (listing performance tracking, strategy suggestions)
 - MCP server wrappers for tool modules
 - sqlite-vec embeddings for semantic product search
 - Social media cross-posting
@@ -108,7 +109,7 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 
 1. **Phase 1 (MVP):** SQLite schema + SQLAlchemy ORM, Tradera/Blocket search tools, Pricing Agent, Listing Agent — **DONE**
 2. **Phase 2:** Telegram bot, Order Agent, local voucher/PDF export — **DONE**
-3. **Phase 3:** Scout Agent (scheduled) — **DONE**, Marketing Agent, MCP server wrappers, social media cross-posting
+3. **Phase 3:** Scout Agent (scheduled) — **DONE**, Marketing Agent — **DONE**, MCP server wrappers, social media cross-posting
 4. **Phase 4:** Crop management, custom webshop, wishlist matching, advanced analytics
 
 ## Development Setup
