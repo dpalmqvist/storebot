@@ -383,6 +383,14 @@ class TestTraderaCreateListing:
 
         assert result["error"] == "Auth failed"
 
+    def test_missing_item_id_in_response(self, client):
+        response = MagicMock(spec=[])  # no ItemId attribute
+        client._restricted_client.service.AddItem.return_value = response
+
+        result = client.create_listing(title="Test", description="Test", category_id=100)
+
+        assert result["error"] == "Tradera API response missing ItemId"
+
 
 class TestTraderaUploadImages:
     def test_success(self, client):

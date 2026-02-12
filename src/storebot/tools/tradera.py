@@ -190,6 +190,8 @@ class TraderaClient:
             )
 
             item_id = getattr(response, "ItemId", None)
+            if item_id is None:
+                return {"error": "Tradera API response missing ItemId"}
             return {
                 "item_id": item_id,
                 "url": f"https://www.tradera.com/item/{item_id}",
