@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
 from sqlalchemy.orm import Session
 
@@ -485,3 +487,251 @@ class TestSaveProductImage:
             assert action.agent_name == "listing"
             assert action.product_id == product
             assert action.details["file_path"] == str(img_path)
+
+
+class TestPublishListing:
+    @pytest.fixture
+    def mock_tradera(self):
+        tradera = MagicMock()
+        tradera.create_listing.return_value = {
+            "item_id": 12345,
+            "url": "https://www.tradera.com/item/12345",
+        }
+        tradera.upload_images.return_value = {"item_id": 12345, "images_uploaded": 1}
+        return tradera
+
+    @pytest.fixture
+    def pub_service(self, engine, mock_tradera):
+        return ListingService(engine=engine, tradera=mock_tradera)
+
+    @pytest.fixture
+    def approved_listing(self, pub_service, engine, tmp_path):
+        """Create an approved listing with a product image."""
+        # Create product
+        prod_result = pub_service.create_product(title="Antik byrå")
+        product_id = prod_result["product_id"]
+
+        # Create and save image
+        img_path = tmp_path / "photo.jpg"
+        img_path.write_bytes(b"fake-jpeg-data")
+        pub_service.save_product_image(product_id, str(img_path), is_primary=True)
+
+        # Create draft
+        draft = pub_service.create_draft(
+            product_id=product_id,
+            listing_type="auction",
+            listing_title="Antik byrå 1920-tal",
+            listing_description="Vacker byrå",
+            start_price=500.0,
+            duration_days=7,
+            tradera_category_id=344,
+        )
+
+        # Approve
+        pub_service.approve_draft(draft["listing_id"])
+        return draft["listing_id"], product_id
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
+    def test_success(self, mock_encode, mock_optimize, pub_service, approved_listing, engine):
+        listing_id, product_id = approved_listing
+        mock_optimize.return_value = "/tmp/optimized.jpg"
+        mock_encode.return_value = ("base64data", "image/jpeg")
+
+        result = pub_service.publish_listing(listing_id)
+
+        assert "error" not in result
+        assert result["status"] == "active"
+        assert result["external_id"] == "12345"
+        assert result["url"] == "https://www.tradera.com/item/12345"
+        assert result["listed_at"] is not None
+        assert result["ends_at"] is not None
+
+        # Verify DB state
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            assert listing.status == "active"
+            assert listing.external_id == "12345"
+            assert listing.listing_url == "https://www.tradera.com/item/12345"
+            assert listing.listed_at is not None
+            assert listing.ends_at is not None
+
+            product = session.get(Product, product_id)
+            assert product.status == "listed"
+            assert product.listing_price == 500.0
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
+    def test_rejects_draft_status(self, mock_encode, mock_optimize, pub_service, engine):
+        prod = pub_service.create_product(title="Test")
+        draft = pub_service.create_draft(
+            product_id=prod["product_id"],
+            listing_type="auction",
+            listing_title="Test",
+            listing_description="Test",
+            start_price=100.0,
+            tradera_category_id=100,
+        )
+
+        result = pub_service.publish_listing(draft["listing_id"])
+
+        assert "error" in result
+        assert "draft" in result["error"]
+
+    def test_not_found(self, pub_service):
+        result = pub_service.publish_listing(9999)
+        assert "error" in result
+        assert "9999" in result["error"]
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
+    def test_no_images(self, mock_encode, mock_optimize, pub_service, engine):
+        prod = pub_service.create_product(title="Test")
+        draft = pub_service.create_draft(
+            product_id=prod["product_id"],
+            listing_type="auction",
+            listing_title="Test",
+            listing_description="Test",
+            start_price=100.0,
+            tradera_category_id=100,
+        )
+        pub_service.approve_draft(draft["listing_id"])
+
+        result = pub_service.publish_listing(draft["listing_id"])
+
+        assert "error" in result
+        assert "image" in result["error"].lower()
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
+    def test_no_category_id(self, mock_encode, mock_optimize, pub_service, engine):
+        prod = pub_service.create_product(title="Test")
+        draft = pub_service.create_draft(
+            product_id=prod["product_id"],
+            listing_type="auction",
+            listing_title="Test",
+            listing_description="Test",
+            start_price=100.0,
+            # No tradera_category_id
+        )
+        pub_service.approve_draft(draft["listing_id"])
+
+        result = pub_service.publish_listing(draft["listing_id"])
+
+        assert "error" in result
+        assert "category" in result["error"].lower()
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
+    def test_non_tradera_platform(self, mock_encode, mock_optimize, pub_service, engine):
+        prod = pub_service.create_product(title="Test")
+        draft = pub_service.create_draft(
+            product_id=prod["product_id"],
+            listing_type="buy_it_now",
+            listing_title="Test",
+            listing_description="Test",
+            buy_it_now_price=500.0,
+            platform="blocket",
+            tradera_category_id=100,
+        )
+        pub_service.approve_draft(draft["listing_id"])
+
+        result = pub_service.publish_listing(draft["listing_id"])
+
+        assert "error" in result
+        assert "blocket" in result["error"]
+
+    def test_no_tradera_client(self, engine):
+        service = ListingService(engine=engine)
+        result = service.publish_listing(1)
+        assert "error" in result
+        assert "not configured" in result["error"]
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
+    def test_api_error_keeps_approved(
+        self, mock_encode, mock_optimize, pub_service, approved_listing, engine
+    ):
+        listing_id, _ = approved_listing
+        mock_optimize.return_value = "/tmp/optimized.jpg"
+        mock_encode.return_value = ("base64data", "image/jpeg")
+        pub_service.tradera.create_listing.return_value = {"error": "API down"}
+
+        result = pub_service.publish_listing(listing_id)
+
+        assert "error" in result
+        assert "API" in result["error"]
+
+        # Listing should still be approved
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            assert listing.status == "approved"
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
+    def test_image_upload_failure_non_fatal(
+        self, mock_encode, mock_optimize, pub_service, approved_listing, engine
+    ):
+        listing_id, _ = approved_listing
+        mock_optimize.return_value = "/tmp/optimized.jpg"
+        mock_encode.return_value = ("base64data", "image/jpeg")
+        pub_service.tradera.upload_images.return_value = {"error": "Upload failed"}
+
+        result = pub_service.publish_listing(listing_id)
+
+        # Should still succeed
+        assert "error" not in result
+        assert result["status"] == "active"
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
+    def test_logs_agent_action(
+        self, mock_encode, mock_optimize, pub_service, approved_listing, engine
+    ):
+        listing_id, _ = approved_listing
+        mock_optimize.return_value = "/tmp/optimized.jpg"
+        mock_encode.return_value = ("base64data", "image/jpeg")
+
+        pub_service.publish_listing(listing_id)
+
+        with Session(engine) as session:
+            action = session.query(AgentAction).filter_by(action_type="publish_listing").one()
+            assert action.agent_name == "listing"
+            assert action.details["external_id"] == "12345"
+            assert action.details["url"] == "https://www.tradera.com/item/12345"
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
+    def test_buy_it_now_sets_listing_price(self, mock_encode, mock_optimize, engine, tmp_path):
+        tradera = MagicMock()
+        tradera.create_listing.return_value = {
+            "item_id": 555,
+            "url": "https://www.tradera.com/item/555",
+        }
+        tradera.upload_images.return_value = {"item_id": 555, "images_uploaded": 1}
+        service = ListingService(engine=engine, tradera=tradera)
+
+        prod = service.create_product(title="Lampa")
+        img_path = tmp_path / "lamp.jpg"
+        img_path.write_bytes(b"fake")
+        service.save_product_image(prod["product_id"], str(img_path), is_primary=True)
+
+        draft = service.create_draft(
+            product_id=prod["product_id"],
+            listing_type="buy_it_now",
+            listing_title="Lampa",
+            listing_description="Fin lampa",
+            buy_it_now_price=1200.0,
+            tradera_category_id=100,
+        )
+        service.approve_draft(draft["listing_id"])
+
+        mock_optimize.return_value = "/tmp/optimized.jpg"
+        mock_encode.return_value = ("base64data", "image/jpeg")
+
+        result = service.publish_listing(draft["listing_id"])
+
+        assert result["status"] == "active"
+        with Session(engine) as session:
+            product = session.get(Product, prod["product_id"])
+            assert product.listing_price == 1200.0

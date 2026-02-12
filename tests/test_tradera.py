@@ -19,6 +19,7 @@ def client():
         c._search_client = mock_zeep.return_value
         c._order_client = MagicMock()
         c._public_client = MagicMock()
+        c._restricted_client = MagicMock()
         yield c
 
 
@@ -136,7 +137,7 @@ class TestTraderaSearch:
 
         assert result["items"][0]["price"] == 300
 
-    def test_soap_headers_include_auth_and_config(self, client):
+    def test_auth_headers_include_auth_and_config(self, client):
         auth_element = MagicMock()
         config_element = MagicMock()
         client.search_client.get_element.side_effect = [
@@ -144,7 +145,7 @@ class TestTraderaSearch:
             lambda **kw: config_element,
         ]
 
-        headers = client._soap_headers()
+        headers = client._auth_headers(client.search_client)
 
         assert "_soapheaders" in headers
         assert len(headers["_soapheaders"]) == 2
@@ -303,3 +304,160 @@ class TestAuthHeaders:
         headers = client._auth_headers(mock_client, include_authorization=True)
 
         assert len(headers["_soapheaders"]) == 3
+
+
+class TestTraderaCreateListing:
+    def test_auction_listing(self, client):
+        response = MagicMock()
+        response.ItemId = 12345
+        client._restricted_client.service.AddItem.return_value = response
+
+        result = client.create_listing(
+            title="Antik byrå",
+            description="Vacker byrå från 1920-talet",
+            category_id=344,
+            duration_days=7,
+            listing_type="auction",
+            start_price=500,
+        )
+
+        assert result["item_id"] == 12345
+        assert result["url"] == "https://www.tradera.com/item/12345"
+
+        call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
+        assert call_kwargs["Title"] == "Antik byrå"
+        assert call_kwargs["CategoryId"] == 344
+        assert call_kwargs["Duration"] == 7
+        assert call_kwargs["ItemType"] == 1  # Auction
+        assert call_kwargs["StartPrice"] == 500
+
+    def test_buy_it_now_listing(self, client):
+        response = MagicMock()
+        response.ItemId = 99999
+        client._restricted_client.service.AddItem.return_value = response
+
+        result = client.create_listing(
+            title="Mässingsljusstake",
+            description="Fin ljusstake",
+            category_id=200,
+            listing_type="buy_it_now",
+            buy_it_now_price=800,
+        )
+
+        assert result["item_id"] == 99999
+        call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
+        assert call_kwargs["ItemType"] == 2  # BuyItNow
+        assert call_kwargs["BuyItNowPrice"] == 800
+
+    def test_with_shipping_and_returns(self, client):
+        response = MagicMock()
+        response.ItemId = 1
+        client._restricted_client.service.AddItem.return_value = response
+
+        client.create_listing(
+            title="Test",
+            description="Test",
+            category_id=100,
+            shipping_cost=99,
+            accepting_returns=True,
+        )
+
+        call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
+        assert call_kwargs["ShippingCost"] == 99
+        assert call_kwargs["AcceptingReturns"] is True
+
+    def test_uses_authorization_headers(self, client):
+        response = MagicMock()
+        response.ItemId = 1
+        client._restricted_client.service.AddItem.return_value = response
+
+        client.create_listing(title="Test", description="Test", category_id=100)
+
+        call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
+        assert "_soapheaders" in call_kwargs
+
+    def test_api_error(self, client):
+        client._restricted_client.service.AddItem.side_effect = Exception("Auth failed")
+
+        result = client.create_listing(title="Test", description="Test", category_id=100)
+
+        assert result["error"] == "Auth failed"
+
+    def test_missing_item_id_in_response(self, client):
+        response = MagicMock(spec=[])  # no ItemId attribute
+        client._restricted_client.service.AddItem.return_value = response
+
+        result = client.create_listing(title="Test", description="Test", category_id=100)
+
+        assert result["error"] == "Tradera API response missing ItemId"
+
+
+class TestTraderaUploadImages:
+    def test_success(self, client):
+        client._restricted_client.service.AddItemImages.return_value = None
+
+        images = [("base64data1", "image/jpeg"), ("base64data2", "image/png")]
+        result = client.upload_images(item_id=12345, images=images)
+
+        assert result["item_id"] == 12345
+        assert result["images_uploaded"] == 2
+
+        call_kwargs = client._restricted_client.service.AddItemImages.call_args.kwargs
+        assert call_kwargs["ItemId"] == 12345
+        assert len(call_kwargs["Images"]) == 2
+        assert call_kwargs["Images"][0]["Data"] == "base64data1"
+        assert call_kwargs["Images"][0]["MediaType"] == "image/jpeg"
+
+    def test_api_error(self, client):
+        client._restricted_client.service.AddItemImages.side_effect = Exception("Upload failed")
+
+        result = client.upload_images(item_id=1, images=[("data", "image/jpeg")])
+
+        assert result["error"] == "Upload failed"
+
+    def test_empty_list(self, client):
+        client._restricted_client.service.AddItemImages.return_value = None
+
+        result = client.upload_images(item_id=1, images=[])
+
+        assert result["images_uploaded"] == 0
+
+
+class TestTraderaGetCategories:
+    def test_success(self, client):
+        cat1 = MagicMock()
+        cat1.Id = 100
+        cat1.Name = "Möbler"
+        cat2 = MagicMock()
+        cat2.Id = 200
+        cat2.Name = "Inredning"
+
+        response = MagicMock()
+        cats_obj = MagicMock()
+        cats_obj.Category = [cat1, cat2]
+        response.Categories = cats_obj
+        client._public_client.service.GetCategories.return_value = response
+
+        result = client.get_categories(parent_id=0)
+
+        assert len(result["categories"]) == 2
+        assert result["categories"][0] == {"id": 100, "name": "Möbler"}
+        assert result["categories"][1] == {"id": 200, "name": "Inredning"}
+
+    def test_api_error(self, client):
+        client._public_client.service.GetCategories.side_effect = Exception("Timeout")
+
+        result = client.get_categories()
+
+        assert result["error"] == "Timeout"
+
+    def test_empty_categories(self, client):
+        response = MagicMock()
+        cats_obj = MagicMock()
+        cats_obj.Category = []
+        response.Categories = cats_obj
+        client._public_client.service.GetCategories.return_value = response
+
+        result = client.get_categories(parent_id=999)
+
+        assert result["categories"] == []

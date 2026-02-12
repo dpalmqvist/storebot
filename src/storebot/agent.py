@@ -162,6 +162,34 @@ TOOLS = [
         },
     },
     {
+        "name": "publish_listing",
+        "description": "Publish an approved listing to Tradera. Uploads images and creates the listing. The listing must be in 'approved' status.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "listing_id": {
+                    "type": "integer",
+                    "description": "Listing ID to publish",
+                },
+            },
+            "required": ["listing_id"],
+        },
+    },
+    {
+        "name": "get_categories",
+        "description": "Browse Tradera categories. Use to find the right category ID for a listing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "parent_id": {
+                    "type": "integer",
+                    "description": "Parent category ID (0 for top-level categories)",
+                    "default": 0,
+                },
+            },
+        },
+    },
+    {
         "name": "reject_draft_listing",
         "description": "Reject and delete a draft listing.",
         "input_schema": {
@@ -512,6 +540,8 @@ Du kan:
 - Göra priskoll som söker båda plattformarna och ger prisstatistik med föreslagen prisintervall
 - Skapa utkast till annonser (alla annonser börjar som utkast)
 - Visa, redigera, godkänna och avvisa annonsutkast
+- Publicera godkända annonser till Tradera (med bilduppladdning)
+- Bläddra i Tradera-kategorier för att hitta rätt kategori
 - Hantera ordrar: kolla efter nya ordrar, visa ordrar, skapa försäljningsverifikation, markera som skickad
 - Skapa bokföringsverifikationer och exportera som PDF
 - Söka i produktdatabasen
@@ -534,7 +564,9 @@ VIKTIGT — Annonseringsflöde:
 1. Alla annonser skapas som utkast (status=draft) och kräver ägarens godkännande.
 2. Visa alltid en förhandsgranskning efter att utkastet skapats.
 3. Ändra utkast efter feedback — godkänn ALDRIG automatiskt.
-4. Först efter godkännande (approve) kan annonsen publiceras.
+4. Först efter godkännande (approve) kan annonsen publiceras med publish_listing.
+5. Publicering laddar upp bilder och skapar annonsen på Tradera.
+6. Informera ägaren om den publicerade annonsens URL.
 
 Svara alltid på svenska om inte användaren skriver på engelska. Var kortfattad och tydlig.
 Alla annonser och produktbeskrivningar ska vara på svenska."""
@@ -566,7 +598,9 @@ class Agent:
             blocket=self.blocket,
             engine=self.engine,
         )
-        self.listing = ListingService(engine=self.engine) if self.engine else None
+        self.listing = (
+            ListingService(engine=self.engine, tradera=self.tradera) if self.engine else None
+        )
         self.order = (
             OrderService(
                 engine=self.engine,
@@ -661,8 +695,56 @@ class Agent:
         text = text_blocks[0].text if text_blocks else ""
         return AgentResponse(text=text, messages=messages)
 
+    # Maps tool names to the service attribute they require (None = no DB needed)
+    _TOOL_SERVICE = {
+        "search_tradera": None,
+        "search_blocket": None,
+        "price_check": None,
+        "get_categories": None,
+        "create_draft_listing": "listing",
+        "list_draft_listings": "listing",
+        "get_draft_listing": "listing",
+        "update_draft_listing": "listing",
+        "reject_draft_listing": "listing",
+        "approve_draft_listing": "listing",
+        "publish_listing": "listing",
+        "search_products": "listing",
+        "create_product": "listing",
+        "save_product_image": "listing",
+        "check_new_orders": "order",
+        "list_orders": "order",
+        "get_order": "order",
+        "create_sale_voucher": "order",
+        "mark_order_shipped": "order",
+        "create_voucher": "accounting",
+        "export_vouchers": "accounting",
+        "create_saved_search": "scout",
+        "list_saved_searches": "scout",
+        "update_saved_search": "scout",
+        "delete_saved_search": "scout",
+        "run_saved_search": "scout",
+        "run_all_saved_searches": "scout",
+        "refresh_listing_stats": "marketing",
+        "analyze_listing": "marketing",
+        "get_performance_report": "marketing",
+        "get_recommendations": "marketing",
+    }
+
+    _SERVICE_NAMES = {
+        "listing": "ListingService",
+        "order": "OrderService",
+        "accounting": "AccountingService",
+        "scout": "ScoutService",
+        "marketing": "MarketingService",
+    }
+
     def execute_tool(self, name: str, tool_input: dict) -> dict:
         logger.info("Executing tool: %s with input: %s", name, tool_input)
+
+        required_service = self._TOOL_SERVICE.get(name)
+        if required_service is not None and not getattr(self, required_service):
+            service_name = self._SERVICE_NAMES[required_service]
+            return {"error": f"{service_name} not available (no database engine)"}
 
         try:
             match name:
@@ -672,112 +754,64 @@ class Agent:
                     return self.blocket.search(**tool_input)
                 case "price_check":
                     return self.pricing.price_check(**tool_input)
+                case "get_categories":
+                    return self.tradera.get_categories(**tool_input)
                 case "create_draft_listing":
-                    if not self.listing:
-                        return {"error": "ListingService not available (no database engine)"}
                     return self.listing.create_draft(**tool_input)
                 case "list_draft_listings":
-                    if not self.listing:
-                        return {"error": "ListingService not available (no database engine)"}
                     return self.listing.list_drafts(**tool_input)
                 case "get_draft_listing":
-                    if not self.listing:
-                        return {"error": "ListingService not available (no database engine)"}
                     return self.listing.get_draft(**tool_input)
                 case "update_draft_listing":
-                    if not self.listing:
-                        return {"error": "ListingService not available (no database engine)"}
                     listing_id = tool_input.pop("listing_id")
                     return self.listing.update_draft(listing_id, **tool_input)
                 case "reject_draft_listing":
-                    if not self.listing:
-                        return {"error": "ListingService not available (no database engine)"}
                     return self.listing.reject_draft(**tool_input)
                 case "approve_draft_listing":
-                    if not self.listing:
-                        return {"error": "ListingService not available (no database engine)"}
                     return self.listing.approve_draft(**tool_input)
-                case "check_new_orders":
-                    if not self.order:
-                        return {"error": "OrderService not available (no database engine)"}
-                    return self.order.check_new_orders()
-                case "list_orders":
-                    if not self.order:
-                        return {"error": "OrderService not available (no database engine)"}
-                    return self.order.list_orders(**tool_input)
-                case "get_order":
-                    if not self.order:
-                        return {"error": "OrderService not available (no database engine)"}
-                    return self.order.get_order(**tool_input)
-                case "create_sale_voucher":
-                    if not self.order:
-                        return {"error": "OrderService not available (no database engine)"}
-                    return self.order.create_sale_voucher(**tool_input)
-                case "mark_order_shipped":
-                    if not self.order:
-                        return {"error": "OrderService not available (no database engine)"}
-                    return self.order.mark_shipped(**tool_input)
-                case "create_voucher":
-                    if not self.accounting:
-                        return {"error": "AccountingService not available (no database engine)"}
-                    return self.accounting.create_voucher(**tool_input)
-                case "export_vouchers":
-                    if not self.accounting:
-                        return {"error": "AccountingService not available (no database engine)"}
-                    path = self.accounting.export_vouchers_pdf(**tool_input)
-                    return {"pdf_path": path}
+                case "publish_listing":
+                    return self.listing.publish_listing(**tool_input)
                 case "search_products":
-                    if not self.listing:
-                        return {"error": "ListingService not available (no database engine)"}
                     return self.listing.search_products(**tool_input)
                 case "create_product":
-                    if not self.listing:
-                        return {"error": "ListingService not available (no database engine)"}
                     return self.listing.create_product(**tool_input)
                 case "save_product_image":
-                    if not self.listing:
-                        return {"error": "ListingService not available (no database engine)"}
                     return self.listing.save_product_image(**tool_input)
+                case "check_new_orders":
+                    return self.order.check_new_orders()
+                case "list_orders":
+                    return self.order.list_orders(**tool_input)
+                case "get_order":
+                    return self.order.get_order(**tool_input)
+                case "create_sale_voucher":
+                    return self.order.create_sale_voucher(**tool_input)
+                case "mark_order_shipped":
+                    return self.order.mark_shipped(**tool_input)
+                case "create_voucher":
+                    return self.accounting.create_voucher(**tool_input)
+                case "export_vouchers":
+                    path = self.accounting.export_vouchers_pdf(**tool_input)
+                    return {"pdf_path": path}
                 case "create_saved_search":
-                    if not self.scout:
-                        return {"error": "ScoutService not available (no database engine)"}
                     return self.scout.create_search(**tool_input)
                 case "list_saved_searches":
-                    if not self.scout:
-                        return {"error": "ScoutService not available (no database engine)"}
                     return self.scout.list_searches(**tool_input)
                 case "update_saved_search":
-                    if not self.scout:
-                        return {"error": "ScoutService not available (no database engine)"}
                     search_id = tool_input.pop("search_id")
                     return self.scout.update_search(search_id, **tool_input)
                 case "delete_saved_search":
-                    if not self.scout:
-                        return {"error": "ScoutService not available (no database engine)"}
                     return self.scout.delete_search(**tool_input)
                 case "run_saved_search":
-                    if not self.scout:
-                        return {"error": "ScoutService not available (no database engine)"}
                     return self.scout.run_search(**tool_input)
                 case "run_all_saved_searches":
-                    if not self.scout:
-                        return {"error": "ScoutService not available (no database engine)"}
                     return self.scout.run_all_searches()
                 case "refresh_listing_stats":
-                    if not self.marketing:
-                        return {"error": "MarketingService not available (no database engine)"}
                     return self.marketing.refresh_listing_stats(**tool_input)
                 case "analyze_listing":
-                    if not self.marketing:
-                        return {"error": "MarketingService not available (no database engine)"}
                     return self.marketing.analyze_listing(**tool_input)
                 case "get_performance_report":
-                    if not self.marketing:
-                        return {"error": "MarketingService not available (no database engine)"}
                     return self.marketing.get_performance_report()
                 case "get_recommendations":
-                    if not self.marketing:
-                        return {"error": "MarketingService not available (no database engine)"}
                     return self.marketing.get_recommendations(**tool_input)
                 case _:
                     return {"error": f"Unknown tool: {name}"}

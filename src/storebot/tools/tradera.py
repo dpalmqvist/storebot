@@ -20,6 +20,7 @@ class TraderaClient:
     SEARCH_WSDL = "https://api.tradera.com/v3/searchservice.asmx?WSDL"
     ORDER_WSDL = "https://api.tradera.com/v3/orderservice.asmx?WSDL"
     PUBLIC_WSDL = "https://api.tradera.com/v3/publicservice.asmx?WSDL"
+    RESTRICTED_WSDL = "https://api.tradera.com/v3/restrictedservice.asmx?WSDL"
 
     def __init__(
         self,
@@ -37,6 +38,7 @@ class TraderaClient:
         self._search_client = None
         self._order_client = None
         self._public_client = None
+        self._restricted_client = None
 
     @property
     def search_client(self) -> zeep.Client:
@@ -56,14 +58,11 @@ class TraderaClient:
             self._public_client = zeep.Client(wsdl=self.PUBLIC_WSDL)
         return self._public_client
 
-    def _soap_headers(self) -> dict:
-        auth = self.search_client.get_element("{http://api.tradera.com}AuthenticationHeader")(
-            AppId=int(self.app_id), AppKey=self.app_key
-        )
-        config = self.search_client.get_element("{http://api.tradera.com}ConfigurationHeader")(
-            Sandbox=1 if self.sandbox else 0
-        )
-        return {"_soapheaders": [auth, config]}
+    @property
+    def restricted_client(self) -> zeep.Client:
+        if self._restricted_client is None:
+            self._restricted_client = zeep.Client(wsdl=self.RESTRICTED_WSDL)
+        return self._restricted_client
 
     def _auth_headers(self, client, include_authorization: bool = False) -> dict:
         auth = client.get_element("{http://api.tradera.com}AuthenticationHeader")(
@@ -128,7 +127,7 @@ class TraderaClient:
 
             response = self.search_client.service.SearchAdvanced(
                 **params,
-                **self._soap_headers(),
+                **self._auth_headers(self.search_client),
             )
 
             errors = getattr(response, "Errors", None)
@@ -158,12 +157,102 @@ class TraderaClient:
         self,
         title: str,
         description: str,
-        price: float,
-        category_id: int | None = None,
-        images: list[str] | None = None,
-    ):
-        # TODO: Implement via RestrictedService AddItem
-        raise NotImplementedError("TraderaClient.create_listing not yet implemented")
+        category_id: int,
+        duration_days: int = 7,
+        listing_type: str = "auction",
+        start_price: float | None = None,
+        buy_it_now_price: float | None = None,
+        shipping_cost: float | None = None,
+        accepting_returns: bool = False,
+    ) -> dict:
+        """Create a listing on Tradera via RestrictedService AddItem."""
+        try:
+            item_type = 2 if listing_type == "buy_it_now" else 1  # 1=Auction, 2=BuyItNow
+
+            params = {
+                "Title": title,
+                "Description": description,
+                "CategoryId": int(category_id),
+                "Duration": int(duration_days),
+                "ItemType": item_type,
+                "AcceptingReturns": accepting_returns,
+            }
+            if start_price is not None:
+                params["StartPrice"] = int(start_price)
+            if buy_it_now_price is not None:
+                params["BuyItNowPrice"] = int(buy_it_now_price)
+            if shipping_cost is not None:
+                params["ShippingCost"] = int(shipping_cost)
+
+            response = self.restricted_client.service.AddItem(
+                **params,
+                **self._auth_headers(self.restricted_client, include_authorization=True),
+            )
+
+            item_id = getattr(response, "ItemId", None)
+            if item_id is None:
+                return {"error": "Tradera API response missing ItemId"}
+            return {
+                "item_id": item_id,
+                "url": f"https://www.tradera.com/item/{item_id}",
+            }
+
+        except Exception as e:
+            logger.exception("Tradera create_listing failed")
+            return {"error": str(e)}
+
+    def upload_images(self, item_id: int, images: list[tuple[str, str]]) -> dict:
+        """Upload images for a listing on Tradera.
+
+        Args:
+            item_id: Tradera item ID.
+            images: List of (base64_data, media_type) tuples.
+        """
+        try:
+            image_objects = [
+                {"Data": base64_data, "MediaType": media_type}
+                for base64_data, media_type in images
+            ]
+
+            self.restricted_client.service.AddItemImages(
+                ItemId=int(item_id),
+                Images=image_objects,
+                **self._auth_headers(self.restricted_client, include_authorization=True),
+            )
+
+            return {"item_id": item_id, "images_uploaded": len(images)}
+
+        except Exception as e:
+            logger.exception("Tradera upload_images failed")
+            return {"error": str(e)}
+
+    def get_categories(self, parent_id: int = 0) -> dict:
+        """Get Tradera categories, optionally under a parent category."""
+        try:
+            response = self.public_client.service.GetCategories(
+                ParentCategoryId=int(parent_id),
+                **self._auth_headers(self.public_client),
+            )
+
+            categories_obj = getattr(response, "Categories", None)
+            if categories_obj and hasattr(categories_obj, "Category"):
+                raw_cats = categories_obj.Category or []
+            else:
+                raw_cats = []
+
+            return {
+                "categories": [
+                    {
+                        "id": getattr(cat, "Id", None),
+                        "name": getattr(cat, "Name", None),
+                    }
+                    for cat in raw_cats
+                ],
+            }
+
+        except Exception as e:
+            logger.exception("Tradera get_categories failed")
+            return {"error": str(e)}
 
     def get_orders(self, from_date: str | None = None, to_date: str | None = None) -> dict:
         try:
