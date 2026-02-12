@@ -11,6 +11,7 @@ from storebot.tools.image import encode_image_base64
 from storebot.tools.listing import ListingService
 from storebot.tools.marketing import MarketingService
 from storebot.tools.order import OrderService
+from storebot.tools.postnord import Address, PostNordClient
 from storebot.tools.pricing import PricingService
 from storebot.tools.scout import ScoutService
 from storebot.tools.tradera import TraderaClient
@@ -272,6 +273,23 @@ TOOLS = [
         },
     },
     {
+        "name": "create_shipping_label",
+        "description": "Skapa en fraktetikett via PostNord för en order. Kräver att produkten har weight_grams satt.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "integer", "description": "Order ID"},
+                "service_code": {
+                    "type": "string",
+                    "enum": ["19", "17", "18"],
+                    "default": "19",
+                    "description": "PostNord service: 19=MyPack Collect, 17=MyPack Home, 18=Postpaket",
+                },
+            },
+            "required": ["order_id"],
+        },
+    },
+    {
         "name": "create_voucher",
         "description": "Skapa en bokföringsverifikation och spara lokalt. Debet och kredit måste balansera.",
         "input_schema": {
@@ -386,6 +404,10 @@ TOOLS = [
                     "description": "Where it was acquired (e.g. loppis, dödsbo, tradera)",
                 },
                 "acquisition_cost": {"type": "number", "description": "Purchase cost in SEK"},
+                "weight_grams": {
+                    "type": "integer",
+                    "description": "Weight in grams (required for shipping labels)",
+                },
             },
             "required": ["title"],
         },
@@ -553,7 +575,7 @@ Du kan:
 - Visa, redigera, godkänna och avvisa annonsutkast
 - Publicera godkända annonser till Tradera (med bilduppladdning)
 - Bläddra i Tradera-kategorier för att hitta rätt kategori
-- Hantera ordrar: kolla efter nya ordrar, visa ordrar, skapa försäljningsverifikation, markera som skickad
+- Hantera ordrar: kolla efter nya ordrar, visa ordrar, skapa fraktetiketter via PostNord, skapa försäljningsverifikation, markera som skickad
 - Skapa bokföringsverifikationer och exportera som PDF
 - Söka i produktdatabasen
 - Hantera sparade sökningar (scout): skapa, lista, uppdatera, ta bort
@@ -564,6 +586,8 @@ VIKTIGT — Orderhantering:
 1. Markera ALDRIG en order som skickad utan ägarens uttryckliga bekräftelse.
 2. Skapa alltid en försäljningsverifikation (create_sale_voucher) för varje ny order.
 3. Informera ägaren om nya ordrar med köpare, belopp och produkt.
+4. Fraktetiketter kräver att produkten har vikt (weight_grams). Föreslå att ange vikt om det saknas.
+5. PostNord-tjänster: 19=MyPack Collect (standard), 17=MyPack Home, 18=Postpaket.
 
 När användaren skickar en bild:
 1. Beskriv vad du ser i bilden.
@@ -612,11 +636,28 @@ class Agent:
         self.listing = (
             ListingService(engine=self.engine, tradera=self.tradera) if self.engine else None
         )
+        self.postnord = None
+        if self.settings.postnord_api_key:
+            self.postnord = PostNordClient(
+                api_key=self.settings.postnord_api_key,
+                sender=Address(
+                    name=self.settings.postnord_sender_name,
+                    street=self.settings.postnord_sender_street,
+                    postal_code=self.settings.postnord_sender_postal_code,
+                    city=self.settings.postnord_sender_city,
+                    country_code=self.settings.postnord_sender_country_code,
+                    phone=self.settings.postnord_sender_phone,
+                    email=self.settings.postnord_sender_email,
+                ),
+                sandbox=self.settings.postnord_sandbox,
+            )
         self.order = (
             OrderService(
                 engine=self.engine,
                 tradera=self.tradera,
                 accounting=self.accounting,
+                postnord=self.postnord,
+                label_export_path=self.settings.label_export_path,
             )
             if self.engine
             else None
@@ -728,6 +769,7 @@ class Agent:
         "get_order": "order",
         "create_sale_voucher": "order",
         "mark_order_shipped": "order",
+        "create_shipping_label": "order",
         "create_voucher": "accounting",
         "export_vouchers": "accounting",
         "create_saved_search": "scout",
@@ -801,6 +843,8 @@ class Agent:
                     return self.order.create_sale_voucher(**tool_input)
                 case "mark_order_shipped":
                     return self.order.mark_shipped(**tool_input)
+                case "create_shipping_label":
+                    return self.order.create_shipping_label(**tool_input)
                 case "create_voucher":
                     return self.accounting.create_voucher(**tool_input)
                 case "export_vouchers":

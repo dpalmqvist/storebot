@@ -24,8 +24,17 @@ class Settings(BaseSettings):
 
     # PostNord (shipping labels)
     postnord_api_key: str = ""
+    postnord_sandbox: bool = True
     postnord_sender_name: str = ""
-    postnord_sender_address: str = ""
+    postnord_sender_street: str = ""
+    postnord_sender_postal_code: str = ""
+    postnord_sender_city: str = ""
+    postnord_sender_country_code: str = "SE"
+    postnord_sender_phone: str = ""
+    postnord_sender_email: str = ""
+
+    # Shipping label export
+    label_export_path: str = "data/labels"
 
     # Order polling
     order_poll_interval_minutes: int = 30

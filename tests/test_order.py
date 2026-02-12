@@ -72,6 +72,7 @@ def _create_order(engine, product_id, external_order_id="99", sale_price=500.0, 
             sale_price=sale_price,
             status=kwargs.get("status", "pending"),
             buyer_name=kwargs.get("buyer_name", "Test Köpare"),
+            buyer_address=kwargs.get("buyer_address"),
             shipping_cost=kwargs.get("shipping_cost", 0),
             platform_fee=kwargs.get("platform_fee", 0),
             ordered_at=datetime.now(UTC),
@@ -446,8 +447,220 @@ class TestMarkShipped:
             assert actions[0].agent_name == "order"
 
 
+class TestMarkShippedTracking:
+    def test_persists_tracking_number_on_order(self, service, engine, mock_tradera):
+        product_id = _create_product(engine)
+        order_id = _create_order(engine, product_id)
+        mock_tradera.mark_order_shipped.return_value = {"status": "shipped"}
+
+        service.mark_shipped(order_id, tracking_number="SE123456789")
+
+        with Session(engine) as session:
+            order = session.get(Order, order_id)
+            assert order.tracking_number == "SE123456789"
+
+
+class TestGetOrderIncludesShippingFields:
+    def test_includes_tracking_and_label(self, service, engine):
+        product_id = _create_product(engine)
+        order_id = _create_order(engine, product_id)
+
+        result = service.get_order(order_id)
+
+        assert "tracking_number" in result
+        assert "label_path" in result
+
+
+def _create_product_with_weight(engine, title="Antik byrå", weight_grams=2000):
+    with Session(engine) as session:
+        product = Product(title=title, status="listed", weight_grams=weight_grams)
+        session.add(product)
+        session.commit()
+        return product.id
+
+
 class TestCreateShippingLabel:
-    def test_not_implemented(self, service):
-        result = service.create_shipping_label(1)
+    def test_no_postnord_client(self, engine, mock_tradera, accounting):
+        svc = OrderService(
+            engine=engine, tradera=mock_tradera, accounting=accounting, postnord=None
+        )
+        product_id = _create_product(engine)
+        order_id = _create_order(engine, product_id)
+
+        result = svc.create_shipping_label(order_id)
+
         assert "error" in result
-        assert "inte implementerat" in result["error"]
+        assert "PostNord" in result["error"]
+
+    def test_order_not_found(self, engine, mock_tradera, accounting):
+        mock_postnord = MagicMock()
+        svc = OrderService(
+            engine=engine, tradera=mock_tradera, accounting=accounting, postnord=mock_postnord
+        )
+
+        result = svc.create_shipping_label(999)
+
+        assert result["error"] == "Order 999 not found"
+
+    def test_missing_buyer_address(self, engine, mock_tradera, accounting):
+        mock_postnord = MagicMock()
+        svc = OrderService(
+            engine=engine, tradera=mock_tradera, accounting=accounting, postnord=mock_postnord
+        )
+        product_id = _create_product_with_weight(engine)
+        order_id = _create_order(engine, product_id, buyer_address=None)
+
+        result = svc.create_shipping_label(order_id)
+
+        assert "saknar köparadress" in result["error"]
+
+    def test_missing_weight(self, engine, mock_tradera, accounting):
+        mock_postnord = MagicMock()
+        svc = OrderService(
+            engine=engine, tradera=mock_tradera, accounting=accounting, postnord=mock_postnord
+        )
+        product_id = _create_product(engine)  # no weight_grams
+        order_id = _create_order(engine, product_id, buyer_address="Storgatan 1, 123 45 Stockholm")
+
+        result = svc.create_shipping_label(order_id)
+
+        assert "saknar vikt" in result["error"]
+
+    def test_success_with_label(self, engine, mock_tradera, accounting, tmp_path):
+        import base64
+
+        mock_postnord = MagicMock()
+        label_dir = str(tmp_path / "labels")
+        svc = OrderService(
+            engine=engine,
+            tradera=mock_tradera,
+            accounting=accounting,
+            postnord=mock_postnord,
+            label_export_path=label_dir,
+        )
+        product_id = _create_product_with_weight(engine, weight_grams=3000)
+        order_id = _create_order(
+            engine,
+            product_id,
+            buyer_name="Anna Svensson",
+            buyer_address="Storgatan 1, 123 45 Stockholm",
+        )
+
+        mock_postnord.create_shipment.return_value = {
+            "shipment_id": "SH-001",
+            "tracking_number": "SE123456789",
+            "label_base64": base64.b64encode(b"%PDF-1.4 test").decode(),
+        }
+
+        result = svc.create_shipping_label(order_id)
+
+        assert result["tracking_number"] == "SE123456789"
+        assert result["shipment_id"] == "SH-001"
+        assert result["label_path"] is not None
+        assert "order_" in result["label_path"]
+        mock_postnord.save_label.assert_called_once()
+
+        # Verify order updated in DB
+        with Session(engine) as session:
+            order = session.get(Order, order_id)
+            assert order.tracking_number == "SE123456789"
+            assert order.label_path is not None
+
+    def test_duplicate_label_rejected(self, engine, mock_tradera, accounting):
+        mock_postnord = MagicMock()
+        svc = OrderService(
+            engine=engine, tradera=mock_tradera, accounting=accounting, postnord=mock_postnord
+        )
+        product_id = _create_product_with_weight(engine)
+        order_id = _create_order(engine, product_id, buyer_address="Storgatan 1, 123 45 Stockholm")
+
+        # Set label_path to simulate existing label
+        with Session(engine) as session:
+            order = session.get(Order, order_id)
+            order.label_path = "data/labels/order_1.pdf"
+            session.commit()
+
+        result = svc.create_shipping_label(order_id)
+
+        assert "redan en fraktetikett" in result["error"]
+
+    def test_postnord_error_handled(self, engine, mock_tradera, accounting):
+        from storebot.tools.postnord import PostNordError
+
+        mock_postnord = MagicMock()
+        mock_postnord.create_shipment.side_effect = PostNordError("Bad request", status_code=400)
+        svc = OrderService(
+            engine=engine, tradera=mock_tradera, accounting=accounting, postnord=mock_postnord
+        )
+        product_id = _create_product_with_weight(engine)
+        order_id = _create_order(engine, product_id, buyer_address="Storgatan 1, 123 45 Stockholm")
+
+        result = svc.create_shipping_label(order_id)
+
+        assert "PostNord API-fel" in result["error"]
+
+    def test_logs_agent_action(self, engine, mock_tradera, accounting, tmp_path):
+        import base64
+
+        mock_postnord = MagicMock()
+        label_dir = str(tmp_path / "labels")
+        svc = OrderService(
+            engine=engine,
+            tradera=mock_tradera,
+            accounting=accounting,
+            postnord=mock_postnord,
+            label_export_path=label_dir,
+        )
+        product_id = _create_product_with_weight(engine)
+        order_id = _create_order(
+            engine,
+            product_id,
+            buyer_address="Storgatan 1, 123 45 Stockholm",
+        )
+
+        mock_postnord.create_shipment.return_value = {
+            "shipment_id": "SH-002",
+            "tracking_number": "SE999",
+            "label_base64": base64.b64encode(b"%PDF").decode(),
+        }
+
+        svc.create_shipping_label(order_id)
+
+        with Session(engine) as session:
+            actions = (
+                session.query(AgentAction).filter_by(action_type="create_shipping_label").all()
+            )
+            assert len(actions) == 1
+            assert actions[0].agent_name == "order"
+            assert actions[0].details["tracking_number"] == "SE999"
+
+    def test_success_without_inline_label(self, engine, mock_tradera, accounting, tmp_path):
+        """When label_base64 is empty, get_label is called as fallback."""
+        mock_postnord = MagicMock()
+        label_dir = str(tmp_path / "labels")
+        svc = OrderService(
+            engine=engine,
+            tradera=mock_tradera,
+            accounting=accounting,
+            postnord=mock_postnord,
+            label_export_path=label_dir,
+        )
+        product_id = _create_product_with_weight(engine)
+        order_id = _create_order(
+            engine,
+            product_id,
+            buyer_address="Storgatan 1, 123 45 Stockholm",
+        )
+
+        mock_postnord.create_shipment.return_value = {
+            "shipment_id": "SH-003",
+            "tracking_number": "SE111",
+            "label_base64": "",
+        }
+        mock_postnord.get_label.return_value = b"%PDF-1.4 fetched"
+
+        result = svc.create_shipping_label(order_id)
+
+        mock_postnord.get_label.assert_called_once_with("SH-003")
+        assert result["tracking_number"] == "SE111"
+        assert result["label_path"] is not None

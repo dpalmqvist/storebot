@@ -1,9 +1,12 @@
+import base64
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from storebot.db import AgentAction, Notification, Order, PlatformListing, Product
+from storebot.tools.postnord import PostNordError, parse_buyer_address
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +18,14 @@ class OrderService:
     accounting vouchers, and coordinates shipping.
     """
 
-    def __init__(self, engine, tradera=None, accounting=None):
+    def __init__(
+        self, engine, tradera=None, accounting=None, postnord=None, label_export_path="data/labels"
+    ):
         self.engine = engine
         self.tradera = tradera
         self.accounting = accounting
+        self.postnord = postnord
+        self.label_export_path = label_export_path
 
     def check_new_orders(self) -> dict:
         """Poll Tradera for new orders and import them locally."""
@@ -153,6 +160,8 @@ class OrderService:
                 "voucher_id": order.voucher_id,
                 "ordered_at": order.ordered_at.isoformat() if order.ordered_at else None,
                 "shipped_at": order.shipped_at.isoformat() if order.shipped_at else None,
+                "tracking_number": order.tracking_number,
+                "label_path": order.label_path,
             }
 
     def list_orders(self, status: str | None = None) -> dict:
@@ -271,6 +280,8 @@ class OrderService:
 
             order.status = "shipped"
             order.shipped_at = datetime.now(UTC)
+            if tracking_number:
+                order.tracking_number = tracking_number
 
             # Try to notify Tradera (non-blocking on failure)
             tradera_status = None
@@ -306,9 +317,96 @@ class OrderService:
             "tradera_status": tradera_status,
         }
 
-    def create_shipping_label(self, order_id: int) -> dict:
-        """Create a shipping label for an order (PostNord integration not yet implemented)."""
+    def _get_label_data(self, shipment_result: dict) -> bytes | None:
+        """Extract label PDF bytes from shipment result, falling back to get_label API call."""
+        if shipment_result.get("label_base64"):
+            return base64.b64decode(shipment_result["label_base64"])
+
+        try:
+            return self.postnord.get_label(shipment_result["shipment_id"])
+        except PostNordError as e:
+            logger.error(
+                "Failed to retrieve label for shipment %s: %s",
+                shipment_result["shipment_id"],
+                e,
+            )
+            return None
+
+    def create_shipping_label(self, order_id: int, service_code: str = "19") -> dict:
+        """Create a PostNord shipping label for an order.
+
+        Service codes:
+          19 = MyPack Collect (default)
+          17 = MyPack Home
+          18 = Postpaket
+        """
+        if not self.postnord:
+            return {"error": "PostNord-klient är inte konfigurerad. Ange POSTNORD_API_KEY i .env."}
+
+        with Session(self.engine) as session:
+            order = session.get(Order, order_id)
+            if not order:
+                return {"error": f"Order {order_id} not found"}
+
+            if order.label_path:
+                return {"error": f"Order {order_id} har redan en fraktetikett: {order.label_path}"}
+
+            if not order.buyer_address:
+                return {"error": f"Order {order_id} saknar köparadress"}
+
+            product = session.get(Product, order.product_id)
+            if not product or not product.weight_grams:
+                return {"error": f"Produkt för order {order_id} saknar vikt (weight_grams)"}
+
+            try:
+                recipient = parse_buyer_address(order.buyer_name or "", order.buyer_address)
+            except ValueError as e:
+                return {"error": f"Kunde inte tolka köparadressen: {e}"}
+
+            try:
+                result = self.postnord.create_shipment(
+                    recipient=recipient,
+                    weight_grams=product.weight_grams,
+                    reference=f"Order #{order.id}",
+                    service_code=service_code,
+                )
+            except PostNordError as e:
+                logger.error("PostNord shipment creation failed for order %s: %s", order_id, e)
+                return {"error": f"PostNord API-fel: {e}"}
+
+            # Obtain label PDF: prefer inline base64, fall back to separate fetch
+            label_data = self._get_label_data(result)
+
+            label_path = None
+            if label_data:
+                label_path = str(Path(self.label_export_path) / f"order_{order.id}.pdf")
+                self.postnord.save_label(label_data, label_path)
+
+            # Update order
+            order.tracking_number = result["tracking_number"]
+            if label_path:
+                order.label_path = label_path
+
+            action = AgentAction(
+                agent_name="order",
+                action_type="create_shipping_label",
+                product_id=order.product_id,
+                details={
+                    "order_id": order.id,
+                    "shipment_id": result["shipment_id"],
+                    "tracking_number": result["tracking_number"],
+                    "service_code": service_code,
+                    "label_path": label_path,
+                },
+                executed_at=datetime.now(UTC),
+            )
+            session.add(action)
+            session.commit()
+
         return {
-            "error": "Fraktetiketter via PostNord är inte implementerat ännu. "
-            "Skapa fraktetikett manuellt via postnord.se."
+            "order_id": order_id,
+            "shipment_id": result["shipment_id"],
+            "tracking_number": result["tracking_number"],
+            "label_path": label_path,
+            "service_code": service_code,
         }
