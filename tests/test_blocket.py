@@ -276,7 +276,10 @@ class TestBlocketGetAd:
 
         assert result["id"] == "20753486"
         assert result["title"] == "Antikt bord från 1800-tal"
-        assert result["description"] == "Vackert antikt bord i ek från sent 1800-tal. Gott skick med viss patina."
+        assert (
+            result["description"]
+            == "Vackert antikt bord i ek från sent 1800-tal. Gott skick med viss patina."
+        )
         assert result["price"] == 600
         assert result["currency"] == "SEK"
         assert result["url"] == "https://www.blocket.se/recommerce/forsale/item/20753486"

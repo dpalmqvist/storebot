@@ -65,16 +65,18 @@ class BlocketClient:
         seller = data.get("seller") or {}
         parameters = data.get("parameters") or []
 
-        base.update({
-            "description": data.get("body", ""),
-            "images": [img.get("url", "") for img in images if img.get("url")],
-            "location": location if isinstance(location, str) else location.get("name", ""),
-            "category": data.get("category", ""),
-            "seller": {"name": seller.get("name", ""), "id": str(seller.get("id", ""))},
-            "parameters": {
-                p.get("label", ""): p.get("value", "") for p in parameters if p.get("label")
-            },
-        })
+        base.update(
+            {
+                "description": data.get("body", ""),
+                "images": [img.get("url", "") for img in images if img.get("url")],
+                "location": location if isinstance(location, str) else location.get("name", ""),
+                "category": data.get("category", ""),
+                "seller": {"name": seller.get("name", ""), "id": str(seller.get("id", ""))},
+                "parameters": {
+                    p.get("label", ""): p.get("value", "") for p in parameters if p.get("label")
+                },
+            }
+        )
         return base
 
     def search(
