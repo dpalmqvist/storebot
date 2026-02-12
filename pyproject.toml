@@ -29,6 +29,7 @@ dev = [
 
 [project.scripts]
 storebot = "storebot.bot.handlers:main"
+storebot-authorize-tradera = "storebot.cli:authorize_tradera"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/storebot"]
