@@ -1,10 +1,11 @@
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from storebot.db import AgentAction, PlatformListing, Product, ProductImage
+from storebot.tools.image import encode_image_base64, optimize_for_upload
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +20,9 @@ class ListingService:
     they can be published to a marketplace.
     """
 
-    def __init__(self, engine):
+    def __init__(self, engine, tradera=None):
         self.engine = engine
+        self.tradera = tradera
 
     def create_draft(
         self,
@@ -210,6 +212,113 @@ class ListingService:
             session.commit()
 
             return {"listing_id": listing.id, "status": "approved"}
+
+    def publish_listing(self, listing_id: int) -> dict:
+        """Publish an approved listing to Tradera. Uploads images and creates the listing."""
+        if not self.tradera:
+            return {"error": "Tradera client not configured"}
+
+        with Session(self.engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            if listing is None:
+                return {"error": f"Listing {listing_id} not found"}
+
+            if listing.status != "approved":
+                return {
+                    "error": f"Cannot publish listing with status '{listing.status}', must be 'approved'"
+                }
+
+            if listing.platform != "tradera":
+                return {
+                    "error": f"Cannot publish to platform '{listing.platform}', only 'tradera' supported"
+                }
+
+            if not listing.tradera_category_id:
+                return {"error": "Listing must have a tradera_category_id to publish"}
+
+            images = (
+                session.query(ProductImage)
+                .filter_by(product_id=listing.product_id)
+                .order_by(ProductImage.is_primary.desc(), ProductImage.id)
+                .all()
+            )
+            if not images:
+                return {
+                    "error": "Product has no images, at least one image is required to publish"
+                }
+
+            # Optimize and encode images (primary first due to ordering above)
+            encoded_images = [
+                encode_image_base64(optimize_for_upload(img.file_path)) for img in images
+            ]
+
+            duration = listing.duration_days or 7
+
+            create_result = self.tradera.create_listing(
+                title=listing.listing_title,
+                description=listing.listing_description,
+                category_id=listing.tradera_category_id,
+                duration_days=duration,
+                listing_type=listing.listing_type,
+                start_price=listing.start_price,
+                buy_it_now_price=listing.buy_it_now_price,
+            )
+
+            if "error" in create_result:
+                return {"error": f"Tradera API error: {create_result['error']}"}
+
+            external_id = str(create_result["item_id"])
+            listing_url = create_result["url"]
+
+            # Image upload is non-fatal -- listing is already created on Tradera
+            upload_result = self.tradera.upload_images(
+                item_id=int(external_id),
+                images=encoded_images,
+            )
+            if "error" in upload_result:
+                logger.warning(
+                    "Image upload failed for listing %s: %s",
+                    listing_id,
+                    upload_result["error"],
+                )
+
+            now = datetime.now(UTC)
+            ends_at = now + timedelta(days=duration)
+            listing.external_id = external_id
+            listing.listing_url = listing_url
+            listing.listed_at = now
+            listing.ends_at = ends_at
+            listing.status = "active"
+
+            product = session.get(Product, listing.product_id)
+            if product:
+                product.status = "listed"
+                price = listing.buy_it_now_price or listing.start_price
+                if price:
+                    product.listing_price = price
+
+            action = AgentAction(
+                agent_name="listing",
+                action_type="publish_listing",
+                product_id=listing.product_id,
+                details={
+                    "listing_id": listing.id,
+                    "external_id": external_id,
+                    "url": listing_url,
+                },
+                executed_at=now,
+            )
+            session.add(action)
+            session.commit()
+
+            return {
+                "listing_id": listing.id,
+                "external_id": external_id,
+                "url": listing_url,
+                "status": "active",
+                "listed_at": now.isoformat(),
+                "ends_at": ends_at.isoformat(),
+            }
 
     def reject_draft(self, listing_id: int, reason: str = "") -> dict:
         """Reject and delete a draft listing."""

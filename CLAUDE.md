@@ -90,16 +90,17 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **Conversation history** — `ConversationService` persists messages in SQLite per `chat_id`, with configurable message limit and timeout. Stores image file paths (not base64), re-encodes on load. `/new` command to reset. `AgentResponse` dataclass returns full message history from agent.
 - **Scout Agent** — `ScoutService` with saved search CRUD (`create_search`, `list_searches`, `update_search`, `delete_search`), per-search and batch execution (`run_search`, `run_all_searches`), deduplication via `SeenItem` table, Swedish digest formatting. Daily scheduled job via Telegram `job_queue` and `/scout` command for manual trigger.
 - **Marketing Agent** — `MarketingService` with listing performance tracking (`refresh_listing_stats`, `analyze_listing`), aggregate reporting (`get_performance_report`), and rules-based recommendations (6 types: relist, reprice_lower, reprice_raise, improve_content, extend_duration, category_opportunity). `ListingSnapshot` model for historical tracking. Telegram `/marketing` command and daily scheduled stats refresh.
-- **Tests** — 270 tests covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, and marketing modules.
+- **Tradera write operations** — `TraderaClient.create_listing()` via RestrictedService SOAP, `upload_images()`, `get_categories()`. `ListingService.publish_listing()` orchestrates the full flow: validates approved listing, optimizes/uploads images, creates Tradera listing, updates DB status to active. Agent tool integration with `publish_listing` and `get_categories` tools.
+- **Tests** — 270+ tests covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, and marketing modules.
 
 ### Stubbed (not yet implemented)
 
 - **PostNord** — `PostNordClient` class exists but `create_shipment` and `get_label` raise `NotImplementedError`.
-- **Tradera write operations** — `create_listing` is stubbed.
 - **Blocket ad detail** — `get_ad` is stubbed.
 
 ### Not started
 
+- Tradera authorization CLI (`storebot authorize-tradera`) — automated token request/fetch flow for user authorization
 - MCP server wrappers for tool modules
 - sqlite-vec embeddings for semantic product search
 - Social media cross-posting
