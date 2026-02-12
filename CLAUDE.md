@@ -92,7 +92,8 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **Marketing Agent** — `MarketingService` with listing performance tracking (`refresh_listing_stats`, `analyze_listing`), aggregate reporting (`get_performance_report`), and rules-based recommendations (6 types: relist, reprice_lower, reprice_raise, improve_content, extend_duration, category_opportunity). `ListingSnapshot` model for historical tracking. Telegram `/marketing` command and daily scheduled stats refresh.
 - **Tradera write operations** — `TraderaClient.create_listing()` via RestrictedService SOAP, `upload_images()`, `get_categories()`. `ListingService.publish_listing()` orchestrates the full flow: validates approved listing, optimizes/uploads images, creates Tradera listing, updates DB status to active. Agent tool integration with `publish_listing` and `get_categories` tools.
 - **Tradera authorization CLI** — `storebot-authorize-tradera` command for obtaining user tokens via consent flow. `TraderaClient.fetch_token()` calls `PublicService.FetchToken`. Saves credentials to `.env`.
-- **Tests** — 290+ tests covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, and CLI modules.
+- **Resilience & observability** — Retry decorator with exponential backoff on transient errors (Tradera SOAP + Blocket REST), structured JSON logging (`LOG_JSON` toggle), startup credential validation, admin alerts on scheduled job failures. SQLite WAL mode + busy timeout. Systemd restart limits, backup integrity checks with gzip compression.
+- **Tests** — 347 tests covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, CLI, retry, logging, and handlers modules.
 
 ### Stubbed (not yet implemented)
 
