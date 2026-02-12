@@ -2,6 +2,8 @@ import logging
 
 import requests
 
+from storebot.retry import retry_on_transient
+
 logger = logging.getLogger(__name__)
 
 SEARCH_URL = "https://www.blocket.se/recommerce/forsale/search/api/search/SEARCH_ID_BAP_COMMON"
@@ -40,6 +42,18 @@ class BlocketClient:
             "trade_type": doc.get("trade_type", ""),
         }
 
+    @retry_on_transient()
+    def _search_request(self, params: dict, headers: dict) -> requests.Response:
+        resp = requests.get(
+            SEARCH_URL,
+            params=params,
+            headers=headers,
+            timeout=15,
+        )
+        if resp.status_code >= 500:
+            raise requests.HTTPError(response=resp)
+        return resp
+
     def search(
         self,
         query: str,
@@ -55,12 +69,7 @@ class BlocketClient:
             if region:
                 params["location"] = region
 
-            resp = requests.get(
-                SEARCH_URL,
-                params=params,
-                headers=self._headers(),
-                timeout=15,
-            )
+            resp = self._search_request(params, self._headers())
 
             if resp.status_code == 401:
                 return {
@@ -86,9 +95,6 @@ class BlocketClient:
                 "items": [self._parse_item(doc) for doc in docs],
             }
 
-        except requests.RequestException as e:
-            logger.exception("Blocket search failed")
-            return {"error": str(e), "total": 0, "items": []}
         except Exception as e:
             logger.exception("Blocket search failed")
             return {"error": str(e), "total": 0, "items": []}

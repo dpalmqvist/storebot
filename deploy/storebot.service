@@ -11,6 +11,10 @@ EnvironmentFile=/opt/storebot/.env
 ExecStart=/opt/storebot/.venv/bin/storebot
 Restart=on-failure
 RestartSec=10
+StartLimitIntervalSec=300
+StartLimitBurst=5
+TimeoutStopSec=30
+SyslogIdentifier=storebot
 
 [Install]
 WantedBy=multi-user.target

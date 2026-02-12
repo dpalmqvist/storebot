@@ -200,3 +200,37 @@ class TestBlocketSearch:
         assert item["location"] == "Stockholm"
         assert item["published"] == 1770668084000
         assert item["trade_type"] == "Säljes"
+
+
+class TestBlocketRetry:
+    @patch("storebot.retry.time.sleep")
+    @patch("storebot.tools.blocket.requests.get")
+    def test_retries_on_5xx(self, mock_get, mock_sleep, client):
+        resp_500 = MagicMock()
+        resp_500.status_code = 500
+
+        resp_ok = MagicMock()
+        resp_ok.status_code = 200
+        resp_ok.json.return_value = _make_response(docs=[], total=0)
+        resp_ok.raise_for_status = MagicMock()
+
+        mock_get.side_effect = [resp_500, resp_ok]
+
+        result = client.search("test")
+
+        assert "error" not in result
+        assert result["total"] == 0
+        assert mock_sleep.call_count == 1
+
+    @patch("storebot.retry.time.sleep")
+    @patch("storebot.tools.blocket.requests.get")
+    def test_no_retry_on_401(self, mock_get, mock_sleep, client):
+        resp_401 = MagicMock()
+        resp_401.status_code = 401
+        mock_get.return_value = resp_401
+
+        result = client.search("test")
+
+        assert "error" in result
+        assert "401" in result["error"]
+        mock_sleep.assert_not_called()

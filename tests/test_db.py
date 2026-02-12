@@ -1,6 +1,6 @@
 import sqlalchemy as sa
 
-from storebot.db import Order, PlatformListing, Product, ProductImage
+from storebot.db import Order, PlatformListing, Product, ProductImage, create_engine
 
 
 def test_tables_created(engine):
@@ -113,3 +113,30 @@ def test_product_cascade_relationships(session):
     assert len(loaded.listings) == 1
     assert len(loaded.orders) == 1
     assert loaded.listings[0].platform == "tradera"
+
+
+def test_wal_journal_mode(tmp_path):
+    """create_engine configures WAL journal mode on file-based databases."""
+    db_path = str(tmp_path / "test.db")
+    engine = create_engine(database_path=db_path)
+    with engine.connect() as conn:
+        result = conn.exec_driver_sql("PRAGMA journal_mode").scalar()
+        assert result == "wal"
+
+
+def test_busy_timeout(tmp_path):
+    """create_engine sets a 5000ms busy timeout."""
+    db_path = str(tmp_path / "test.db")
+    engine = create_engine(database_path=db_path)
+    with engine.connect() as conn:
+        result = conn.exec_driver_sql("PRAGMA busy_timeout").scalar()
+        assert result == 5000
+
+
+def test_foreign_keys_enabled(tmp_path):
+    """create_engine enables foreign keys."""
+    db_path = str(tmp_path / "test.db")
+    engine = create_engine(database_path=db_path)
+    with engine.connect() as conn:
+        result = conn.exec_driver_sql("PRAGMA foreign_keys").scalar()
+        assert result == 1

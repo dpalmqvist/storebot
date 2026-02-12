@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from storebot.tools.tradera import TraderaClient
 
@@ -461,3 +462,32 @@ class TestTraderaGetCategories:
         result = client.get_categories(parent_id=999)
 
         assert result["categories"] == []
+
+
+class TestTraderaRetry:
+    @patch("storebot.retry.time.sleep")
+    def test_search_retries_on_connection_error(self, mock_sleep, client):
+        response = _make_response(items=[], total=0)
+        client.search_client.service.SearchAdvanced.side_effect = [
+            requests.ConnectionError("refused"),
+            response,
+        ]
+
+        result = client.search("test")
+
+        assert "error" not in result
+        assert result["total"] == 0
+        assert mock_sleep.call_count == 1
+
+    @patch("storebot.retry.time.sleep")
+    def test_search_no_retry_on_auth_error(self, mock_sleep, client):
+        import zeep.exceptions
+
+        client.search_client.service.SearchAdvanced.side_effect = (
+            zeep.exceptions.TransportError(status_code=401, message="Unauthorized")
+        )
+
+        result = client.search("test")
+
+        assert "error" in result
+        mock_sleep.assert_not_called()

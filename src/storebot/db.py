@@ -211,10 +211,23 @@ class VoucherRow(Base):
     voucher: Mapped["Voucher"] = relationship(back_populates="rows")
 
 
-def _enable_foreign_keys(dbapi_connection, connection_record):
+def _configure_sqlite(dbapi_connection, connection_record):
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
     cursor.close()
+
+
+def _load_sqlite_vec(dbapi_connection, connection_record):
+    try:
+        import sqlite_vec
+
+        dbapi_connection.enable_load_extension(True)
+        sqlite_vec.load(dbapi_connection)
+        dbapi_connection.enable_load_extension(False)
+    except (ImportError, Exception):
+        pass  # sqlite-vec not installed or unavailable
 
 
 def create_engine(database_path: str | None = None) -> sa.Engine:
@@ -224,19 +237,8 @@ def create_engine(database_path: str | None = None) -> sa.Engine:
     Path(database_path).parent.mkdir(parents=True, exist_ok=True)
 
     engine = sa.create_engine(f"sqlite:///{database_path}")
-    event.listen(engine, "connect", _enable_foreign_keys)
-
-    # Load sqlite-vec extension if available
-    @event.listens_for(engine, "connect")
-    def load_sqlite_vec(dbapi_connection, connection_record):
-        try:
-            import sqlite_vec
-
-            dbapi_connection.enable_load_extension(True)
-            sqlite_vec.load(dbapi_connection)
-            dbapi_connection.enable_load_extension(False)
-        except (ImportError, Exception):
-            pass  # sqlite-vec not installed or unavailable
+    event.listen(engine, "connect", _configure_sqlite)
+    event.listen(engine, "connect", _load_sqlite_vec)
 
     return engine
 
@@ -244,9 +246,7 @@ def create_engine(database_path: str | None = None) -> sa.Engine:
 def _find_alembic_ini() -> Path | None:
     """Locate alembic.ini relative to the project root (two levels above src/storebot/)."""
     candidate = Path(__file__).resolve().parents[2] / "alembic.ini"
-    if candidate.exists():
-        return candidate
-    return None
+    return candidate if candidate.exists() else None
 
 
 def init_db(database_path: str | None = None) -> sa.Engine:
