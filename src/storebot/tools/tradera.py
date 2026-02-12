@@ -148,9 +148,7 @@ class TraderaClient:
             if max_price is not None:
                 params["PriceMaximum"] = int(max_price)
 
-            response = self._search_api_call(
-                params, self._auth_headers(self.search_client)
-            )
+            response = self._search_api_call(params, self._auth_headers(self.search_client))
 
             errors = getattr(response, "Errors", None)
             if errors:
@@ -258,9 +256,7 @@ class TraderaClient:
 
     @retry_on_transient()
     def _get_categories_api_call(self, parent_id, headers):
-        return self.public_client.service.GetCategories(
-            ParentCategoryId=int(parent_id), **headers
-        )
+        return self.public_client.service.GetCategories(ParentCategoryId=int(parent_id), **headers)
 
     def get_categories(self, parent_id: int = 0) -> dict:
         """Get Tradera categories, optionally under a parent category."""
@@ -291,9 +287,7 @@ class TraderaClient:
 
     @retry_on_transient()
     def _fetch_token_api_call(self, secret_key, headers):
-        return self.public_client.service.FetchToken(
-            UserId=0, Token=secret_key, **headers
-        )
+        return self.public_client.service.FetchToken(UserId=0, Token=secret_key, **headers)
 
     def fetch_token(self, secret_key: str) -> dict:
         """Fetch user token after consent flow.
@@ -327,9 +321,7 @@ class TraderaClient:
 
     @retry_on_transient()
     def _get_orders_api_call(self, from_dt, to_dt, headers):
-        return self.order_client.service.GetSellerOrders(
-            DateFrom=from_dt, DateTo=to_dt, **headers
-        )
+        return self.order_client.service.GetSellerOrders(DateFrom=from_dt, DateTo=to_dt, **headers)
 
     def get_orders(self, from_date: str | None = None, to_date: str | None = None) -> dict:
         try:
@@ -404,9 +396,7 @@ class TraderaClient:
 
     def get_item(self, item_id: int) -> dict:
         try:
-            response = self._get_item_api_call(
-                item_id, self._auth_headers(self.public_client)
-            )
+            response = self._get_item_api_call(item_id, self._auth_headers(self.public_client))
 
             end_date = getattr(response, "EndDate", None)
             if end_date is not None:
@@ -433,9 +423,7 @@ class TraderaClient:
 
     @retry_on_transient()
     def _mark_order_shipped_api_call(self, order_id, headers):
-        return self.order_client.service.SetSellerOrderAsShipped(
-            OrderId=int(order_id), **headers
-        )
+        return self.order_client.service.SetSellerOrderAsShipped(OrderId=int(order_id), **headers)
 
     def mark_order_shipped(self, order_id: int) -> dict:
         try:

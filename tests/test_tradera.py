@@ -483,8 +483,8 @@ class TestTraderaRetry:
     def test_search_no_retry_on_auth_error(self, mock_sleep, client):
         import zeep.exceptions
 
-        client.search_client.service.SearchAdvanced.side_effect = (
-            zeep.exceptions.TransportError(status_code=401, message="Unauthorized")
+        client.search_client.service.SearchAdvanced.side_effect = zeep.exceptions.TransportError(
+            status_code=401, message="Unauthorized"
         )
 
         result = client.search("test")

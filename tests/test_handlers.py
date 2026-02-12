@@ -85,9 +85,7 @@ class TestAlertAdmin:
 
         await _alert_admin(context, "Test alert")
 
-        context.bot.send_message.assert_awaited_once_with(
-            chat_id=12345, text="Test alert"
-        )
+        context.bot.send_message.assert_awaited_once_with(chat_id=12345, text="Test alert")
 
     @pytest.mark.asyncio
     async def test_does_nothing_when_no_chat_id(self):
