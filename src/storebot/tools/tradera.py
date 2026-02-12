@@ -370,9 +370,7 @@ class TraderaClient:
     def get_shipping_types(self) -> dict:
         """Get available shipping types from Tradera."""
         try:
-            response = self._get_shipping_types_api_call(
-                self._auth_headers(self.public_client)
-            )
+            response = self._get_shipping_types_api_call(self._auth_headers(self.public_client))
 
             if not response:
                 return {"shipping_types": []}
