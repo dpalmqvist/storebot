@@ -26,6 +26,7 @@ class Product(Base):
     source: Mapped[str | None] = mapped_column(String)  # tradera/blocket/market/estate_sale
     condition: Mapped[str | None] = mapped_column(String)
     dimensions: Mapped[str | None] = mapped_column(String)
+    weight_grams: Mapped[int | None] = mapped_column(Integer)
     materials: Mapped[str | None] = mapped_column(String)
     era: Mapped[str | None] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
@@ -111,6 +112,8 @@ class Order(Base):
     voucher_id: Mapped[int | None] = mapped_column(ForeignKey("vouchers.id"))
     ordered_at: Mapped[datetime | None] = mapped_column(DateTime)
     shipped_at: Mapped[datetime | None] = mapped_column(DateTime)
+    tracking_number: Mapped[str | None] = mapped_column(String)
+    label_path: Mapped[str | None] = mapped_column(String)
 
     product: Mapped["Product"] = relationship(back_populates="orders")
 

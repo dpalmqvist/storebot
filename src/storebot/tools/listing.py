@@ -394,6 +394,7 @@ class ListingService:
         dimensions: str | None = None,
         source: str | None = None,
         acquisition_cost: float | None = None,
+        weight_grams: int | None = None,
     ) -> dict:
         """Create a new product in the database."""
         with Session(self.engine) as session:
@@ -408,6 +409,7 @@ class ListingService:
                 dimensions=dimensions,
                 source=source,
                 acquisition_cost=acquisition_cost,
+                weight_grams=weight_grams,
             )
             session.add(product)
             session.flush()
