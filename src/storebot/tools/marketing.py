@@ -1,0 +1,485 @@
+import logging
+from datetime import UTC, datetime
+
+from sqlalchemy.orm import Session
+
+from storebot.db import AgentAction, ListingSnapshot, Order, PlatformListing
+
+logger = logging.getLogger(__name__)
+
+PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+
+def _listing_category(listing: PlatformListing) -> str:
+    """Extract category from a listing's product, defaulting to 'Okänd'."""
+    if listing.product and listing.product.category:
+        return listing.product.category
+    return "Okänd"
+
+
+def _naive_now() -> datetime:
+    """Current UTC time as a naive datetime (for comparison with SQLite-stored values)."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _listing_summary(listing: PlatformListing) -> dict:
+    """Summarize a listing for report output."""
+    return {
+        "listing_id": listing.id,
+        "title": listing.listing_title,
+        "views": listing.views or 0,
+    }
+
+
+class MarketingService:
+    """Tracks listing performance, analyzes results, and generates recommendations."""
+
+    def __init__(self, engine, tradera=None):
+        self.engine = engine
+        self.tradera = tradera
+
+    def refresh_listing_stats(self, listing_id: int | None = None) -> dict:
+        """Fetch current stats from Tradera for active listings and create snapshots."""
+        with Session(self.engine) as session:
+            q = session.query(PlatformListing).filter(
+                PlatformListing.status == "active",
+                PlatformListing.platform == "tradera",
+                PlatformListing.external_id.isnot(None),
+            )
+            if listing_id is not None:
+                q = q.filter(PlatformListing.id == listing_id)
+
+            refreshed = []
+            for listing in q.all():
+                item_data = self._fetch_tradera_stats(listing.external_id)
+                if item_data is None:
+                    continue
+
+                views = item_data.get("views", 0)
+                watchers = item_data.get("watchers", 0)
+                bids = item_data.get("bid_count", 0)
+                current_price = item_data.get("price")
+
+                listing.views = views
+                listing.watchers = watchers
+
+                snapshot = ListingSnapshot(
+                    listing_id=listing.id,
+                    views=views,
+                    watchers=watchers,
+                    bids=bids,
+                    current_price=current_price,
+                )
+                session.add(snapshot)
+
+                refreshed.append(
+                    {
+                        "listing_id": listing.id,
+                        "external_id": listing.external_id,
+                        "views": views,
+                        "watchers": watchers,
+                        "bids": bids,
+                        "current_price": current_price,
+                    }
+                )
+
+            action = AgentAction(
+                agent_name="marketing",
+                action_type="refresh_stats",
+                details={"refreshed": len(refreshed), "listing_id": listing_id},
+                executed_at=datetime.now(UTC),
+            )
+            session.add(action)
+            session.commit()
+
+            return {"refreshed": len(refreshed), "listings": refreshed}
+
+    def analyze_listing(self, listing_id: int) -> dict:
+        """Analyze a single listing's performance metrics."""
+        with Session(self.engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            if not listing:
+                return {"error": f"Listing {listing_id} not found"}
+
+            product = listing.product
+            snapshots = (
+                session.query(ListingSnapshot)
+                .filter(ListingSnapshot.listing_id == listing_id)
+                .order_by(ListingSnapshot.snapshot_at.desc())
+                .all()
+            )
+
+            views = listing.views or 0
+            watchers = listing.watchers or 0
+            latest_bids = snapshots[0].bids if snapshots else 0
+
+            watcher_rate = (watchers / views * 100) if views > 0 else 0.0
+            bid_rate = (latest_bids / views * 100) if views > 0 else 0.0
+
+            now = _naive_now()
+            days_active = (now - listing.listed_at).days if listing.listed_at else 0
+            days_remaining = (listing.ends_at - now).days if listing.ends_at else None
+
+            current_price = (
+                snapshots[0].current_price
+                if snapshots
+                else (listing.buy_it_now_price or listing.start_price)
+            )
+            acquisition_cost = product.acquisition_cost if product else None
+            potential_profit = None
+            if current_price and acquisition_cost:
+                potential_profit = current_price - acquisition_cost
+
+            action = AgentAction(
+                agent_name="marketing",
+                action_type="analyze_listing",
+                details={"listing_id": listing_id},
+                executed_at=datetime.now(UTC),
+            )
+            session.add(action)
+            session.commit()
+
+            return {
+                "listing_id": listing_id,
+                "title": listing.listing_title,
+                "status": listing.status,
+                "views": views,
+                "watchers": watchers,
+                "bids": latest_bids,
+                "watcher_rate": round(watcher_rate, 1),
+                "bid_rate": round(bid_rate, 1),
+                "trend": self._compute_trend(snapshots),
+                "days_active": days_active,
+                "days_remaining": days_remaining,
+                "current_price": current_price,
+                "acquisition_cost": acquisition_cost,
+                "potential_profit": potential_profit,
+                "snapshot_count": len(snapshots),
+            }
+
+    def get_performance_report(self) -> dict:
+        """Aggregate performance report across all listings."""
+        with Session(self.engine) as session:
+            active_listings = (
+                session.query(PlatformListing).filter(PlatformListing.status == "active").all()
+            )
+            sold_listings = (
+                session.query(PlatformListing).filter(PlatformListing.status == "sold").all()
+            )
+            all_listings = (
+                session.query(PlatformListing)
+                .filter(PlatformListing.status.in_(["active", "ended", "sold"]))
+                .all()
+            )
+
+            total_views = sum((lst.views or 0) for lst in all_listings)
+            total_watchers = sum((lst.watchers or 0) for lst in all_listings)
+
+            best = None
+            worst = None
+            for listing in active_listings:
+                v = listing.views or 0
+                if best is None or v > (best.views or 0):
+                    best = listing
+                if worst is None or v < (worst.views or 0):
+                    worst = listing
+
+            total_revenue = 0.0
+            total_profit = 0.0
+            sale_times = []
+            for listing in sold_listings:
+                order = session.query(Order).filter(Order.product_id == listing.product_id).first()
+                if order and order.sale_price:
+                    total_revenue += order.sale_price
+                    product = listing.product
+                    if product and product.acquisition_cost:
+                        total_profit += order.sale_price - product.acquisition_cost
+                if listing.listed_at and listing.ends_at:
+                    days = (listing.ends_at - listing.listed_at).days
+                    if days > 0:
+                        sale_times.append(days)
+
+            avg_time_to_sale = round(sum(sale_times) / len(sale_times), 1) if sale_times else None
+
+            categories: dict[str, dict] = {}
+            for listing in all_listings:
+                cat = _listing_category(listing)
+                entry = categories.setdefault(cat, {"count": 0, "views": 0, "sold": 0})
+                entry["count"] += 1
+                entry["views"] += listing.views or 0
+                if listing.status == "sold":
+                    entry["sold"] += 1
+
+            total_with_watchers = sum(1 for lst in all_listings if (lst.watchers or 0) > 0)
+            total_with_bids = sum(
+                1
+                for lst in all_listings
+                if session.query(ListingSnapshot)
+                .filter(ListingSnapshot.listing_id == lst.id, ListingSnapshot.bids > 0)
+                .first()
+            )
+
+            action = AgentAction(
+                agent_name="marketing",
+                action_type="performance_report",
+                details={"active": len(active_listings), "sold": len(sold_listings)},
+                executed_at=datetime.now(UTC),
+            )
+            session.add(action)
+            session.commit()
+
+            return {
+                "active_count": len(active_listings),
+                "total_views": total_views,
+                "total_watchers": total_watchers,
+                "best_listing": _listing_summary(best) if best else None,
+                "worst_listing": _listing_summary(worst) if worst else None,
+                "sales": {
+                    "count": len(sold_listings),
+                    "total_revenue": round(total_revenue, 2),
+                    "total_profit": round(total_profit, 2),
+                    "avg_time_to_sale_days": avg_time_to_sale,
+                },
+                "categories": categories,
+                "funnel": {
+                    "listed": len(all_listings),
+                    "with_watchers": total_with_watchers,
+                    "with_bids": total_with_bids,
+                    "sold": len(sold_listings),
+                },
+            }
+
+    def get_recommendations(self, listing_id: int | None = None) -> dict:
+        """Generate rules-based recommendations for listings."""
+        with Session(self.engine) as session:
+            if listing_id is not None:
+                listing = session.get(PlatformListing, listing_id)
+                listings = [listing] if listing else []
+            else:
+                listings = (
+                    session.query(PlatformListing)
+                    .filter(PlatformListing.status.in_(["active", "ended"]))
+                    .all()
+                )
+
+            category_avg_views = self._compute_category_avg_views(session)
+
+            recommendations = []
+            for listing in listings:
+                recommendations.extend(
+                    self._evaluate_listing(session, listing, category_avg_views)
+                )
+
+            recommendations.sort(key=lambda r: PRIORITY_ORDER.get(r["priority"], 3))
+
+            action = AgentAction(
+                agent_name="marketing",
+                action_type="generate_recommendations",
+                details={
+                    "listing_id": listing_id,
+                    "recommendation_count": len(recommendations),
+                },
+                executed_at=datetime.now(UTC),
+            )
+            session.add(action)
+            session.commit()
+
+            return {
+                "recommendations": recommendations,
+                "count": len(recommendations),
+            }
+
+    def _format_report(self, report: dict) -> str:
+        """Format a performance report as Swedish human-readable text."""
+        lines = ["Marknadsföringsrapport\n"]
+
+        lines.append(f"Aktiva annonser: {report['active_count']}")
+        lines.append(f"Totala visningar: {report['total_views']}")
+        lines.append(f"Totala bevakare: {report['total_watchers']}")
+
+        best = report.get("best_listing")
+        if best:
+            lines.append(f"\nBäst presterande: {best['title']} ({best['views']} visningar)")
+
+        worst = report.get("worst_listing")
+        if worst and report["active_count"] > 1:
+            lines.append(f"Sämst presterande: {worst['title']} ({worst['views']} visningar)")
+
+        sales = report.get("sales", {})
+        if sales.get("count", 0) > 0:
+            lines.append("\nFörsäljning:")
+            lines.append(f"  Antal sålda: {sales['count']}")
+            lines.append(f"  Total intäkt: {sales['total_revenue']:.0f} kr")
+            lines.append(f"  Total vinst: {sales['total_profit']:.0f} kr")
+            if sales.get("avg_time_to_sale_days") is not None:
+                lines.append(f"  Snittid till försäljning: {sales['avg_time_to_sale_days']} dagar")
+
+        categories = report.get("categories", {})
+        if categories:
+            lines.append("\nKategorier:")
+            for cat, data in categories.items():
+                lines.append(
+                    f"  {cat}: {data['count']} annonser, "
+                    f"{data['views']} visningar, {data['sold']} sålda"
+                )
+
+        funnel = report.get("funnel", {})
+        if funnel.get("listed", 0) > 0:
+            lines.append("\nKonverteringstratt:")
+            lines.append(f"  Annonserade: {funnel['listed']}")
+            lines.append(f"  Med bevakare: {funnel['with_watchers']}")
+            lines.append(f"  Med bud: {funnel['with_bids']}")
+            lines.append(f"  Sålda: {funnel['sold']}")
+
+        return "\n".join(lines)
+
+    def _fetch_tradera_stats(self, external_id: str) -> dict | None:
+        """Fetch item stats from Tradera."""
+        if not self.tradera:
+            return None
+        try:
+            result = self.tradera.get_item(int(external_id))
+            if "error" in result:
+                logger.warning(
+                    "Failed to fetch stats for item %s: %s", external_id, result["error"]
+                )
+                return None
+            return result
+        except Exception:
+            logger.exception("Failed to fetch Tradera stats for item %s", external_id)
+            return None
+
+    def _compute_trend(self, snapshots: list[ListingSnapshot]) -> str:
+        """Compute trend from last 3 snapshots."""
+        if len(snapshots) < 2:
+            return "insufficient_data"
+
+        recent = snapshots[:3]
+        view_deltas = [recent[i].views - recent[i + 1].views for i in range(len(recent) - 1)]
+        avg_delta = sum(view_deltas) / len(view_deltas)
+
+        if avg_delta > 5:
+            return "improving"
+        if avg_delta < -5:
+            return "declining"
+        return "stable"
+
+    def _compute_category_avg_views(self, session: Session) -> dict[str, float]:
+        """Compute average views per category for active listings."""
+        listings = session.query(PlatformListing).filter(PlatformListing.status == "active").all()
+
+        category_views: dict[str, list[int]] = {}
+        for listing in listings:
+            cat = _listing_category(listing)
+            category_views.setdefault(cat, []).append(listing.views or 0)
+
+        return {cat: sum(views) / len(views) for cat, views in category_views.items()}
+
+    def _evaluate_listing(
+        self,
+        session: Session,
+        listing: PlatformListing,
+        category_avg_views: dict[str, float],
+    ) -> list[dict]:
+        """Evaluate a single listing and return applicable recommendations."""
+        recs = []
+        views = listing.views or 0
+        watchers = listing.watchers or 0
+
+        latest_snapshot = (
+            session.query(ListingSnapshot)
+            .filter(ListingSnapshot.listing_id == listing.id)
+            .order_by(ListingSnapshot.snapshot_at.desc())
+            .first()
+        )
+        bids = latest_snapshot.bids if latest_snapshot else 0
+
+        now = _naive_now()
+        days_active = (now - listing.listed_at).days if listing.listed_at else 0
+        days_remaining = (listing.ends_at - now).days if listing.ends_at else None
+
+        cat = _listing_category(listing)
+        avg_views = category_avg_views.get(cat, 0)
+
+        # Relist: ended with watchers but no sale
+        if listing.status == "ended" and watchers > 0:
+            recs.append(
+                {
+                    "listing_id": listing.id,
+                    "type": "relist",
+                    "priority": "high",
+                    "suggestion": "Lägg upp igen \u2014 annonsen hade bevakare men såldes inte.",
+                    "reason": f"{watchers} bevakare visar intresse.",
+                }
+            )
+
+        # Reprice lower: high views, zero bids
+        if listing.status == "active" and views >= 20 and bids == 0:
+            recs.append(
+                {
+                    "listing_id": listing.id,
+                    "type": "reprice_lower",
+                    "priority": "medium",
+                    "suggestion": "Överväg att sänka priset \u2014 många visningar men inga bud.",
+                    "reason": f"{views} visningar, 0 bud.",
+                }
+            )
+
+        # Reprice raise: high watcher ratio + multiple bids
+        if listing.status == "active" and views > 0:
+            watcher_rate = watchers / views
+            if watcher_rate > 0.1 and bids >= 3:
+                recs.append(
+                    {
+                        "listing_id": listing.id,
+                        "type": "reprice_raise",
+                        "priority": "low",
+                        "suggestion": "Startpriset kan vara för lågt \u2014 högt intresse och flera bud.",
+                        "reason": f"{watchers} bevakare ({watcher_rate:.0%} av visningar), {bids} bud.",
+                    }
+                )
+
+        # Improve content: views below category avg after 3+ days
+        if listing.status == "active" and days_active >= 3 and avg_views > 0:
+            if views < avg_views * 0.5:
+                recs.append(
+                    {
+                        "listing_id": listing.id,
+                        "type": "improve_content",
+                        "priority": "medium",
+                        "suggestion": "Förbättra titel eller bilder \u2014 visningarna ligger under snittet.",
+                        "reason": f"{views} visningar vs kategorisnitt {avg_views:.0f}.",
+                    }
+                )
+
+        # Extend duration: ending soon with watchers but no bids
+        if (
+            listing.status == "active"
+            and days_remaining is not None
+            and days_remaining <= 1
+            and watchers > 0
+            and bids == 0
+        ):
+            recs.append(
+                {
+                    "listing_id": listing.id,
+                    "type": "extend_duration",
+                    "priority": "high",
+                    "suggestion": "Förläng annonsen \u2014 den slutar snart och har bevakare.",
+                    "reason": f"Slutar om {days_remaining} dag(ar), {watchers} bevakare, 0 bud.",
+                }
+            )
+
+        # Category opportunity: listing with 2x avg views
+        if listing.status == "active" and avg_views > 0 and views > avg_views * 2:
+            recs.append(
+                {
+                    "listing_id": listing.id,
+                    "type": "category_opportunity",
+                    "priority": "low",
+                    "suggestion": "Populär kategori \u2014 överväg att lägga upp fler liknande.",
+                    "reason": f"{views} visningar, kategorisnittet är {avg_views:.0f}.",
+                }
+            )
+
+        return recs

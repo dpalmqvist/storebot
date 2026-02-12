@@ -76,6 +76,21 @@ class PlatformListing(Base):
     watchers: Mapped[int | None] = mapped_column(Integer)
 
     product: Mapped["Product"] = relationship(back_populates="listings")
+    snapshots: Mapped[list["ListingSnapshot"]] = relationship(back_populates="listing")
+
+
+class ListingSnapshot(Base):
+    __tablename__ = "listing_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    listing_id: Mapped[int] = mapped_column(ForeignKey("platform_listings.id"), nullable=False)
+    views: Mapped[int] = mapped_column(Integer, default=0)
+    watchers: Mapped[int] = mapped_column(Integer, default=0)
+    bids: Mapped[int] = mapped_column(Integer, default=0)
+    current_price: Mapped[float | None] = mapped_column(Float)
+    snapshot_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+    listing: Mapped["PlatformListing"] = relationship(back_populates="snapshots")
 
 
 class Order(Base):
