@@ -6,12 +6,35 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from storebot.agent import Agent
-from storebot.config import get_settings
+from storebot.config import Settings, get_settings
 from storebot.db import init_db
+from storebot.logging_config import configure_logging
 from storebot.tools.conversation import ConversationService
 from storebot.tools.image import resize_for_analysis
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_credentials(settings: Settings) -> None:
+    """Log warnings for missing credentials at startup. Does not crash."""
+    if not settings.telegram_bot_token:
+        logger.error("TELEGRAM_BOT_TOKEN is not set — bot cannot start")
+    if not settings.claude_api_key:
+        logger.error("CLAUDE_API_KEY is not set — agent will not work")
+
+    if not settings.tradera_app_id or not settings.tradera_app_key:
+        logger.warning("Tradera credentials missing — Tradera features disabled")
+    if not settings.blocket_bearer_token:
+        logger.warning("Blocket bearer token missing — Blocket search disabled")
+    if not settings.postnord_api_key:
+        logger.warning("PostNord API key missing — shipping labels disabled")
+
+
+async def _alert_admin(context: ContextTypes.DEFAULT_TYPE, message: str) -> None:
+    """Send an alert message to the bot owner, if chat_id is known."""
+    chat_id = context.bot_data.get("owner_chat_id")
+    if chat_id:
+        await context.bot.send_message(chat_id=chat_id, text=message)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -160,6 +183,7 @@ async def scout_digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         await context.bot.send_message(chat_id=chat_id, text=digest)
     except Exception:
         logger.exception("Error in scout digest job")
+        await _alert_admin(context, "Fel i scout-jobbet. Kontrollera loggarna.")
 
 
 async def marketing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -209,6 +233,7 @@ async def marketing_refresh_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         await context.bot.send_message(chat_id=chat_id, text=text)
     except Exception:
         logger.exception("Error in marketing refresh job")
+        await _alert_admin(context, "Fel i marknadsföringsjobbet. Kontrollera loggarna.")
 
 
 async def poll_orders_job(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -238,15 +263,15 @@ async def poll_orders_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
     except Exception:
         logger.exception("Error in order polling job")
+        await _alert_admin(context, "Fel i orderpolling-jobbet. Kontrollera loggarna.")
 
 
 def main() -> None:
     settings = get_settings()
 
-    logging.basicConfig(
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        level=getattr(logging, settings.log_level),
-    )
+    configure_logging(level=settings.log_level, json_format=settings.log_json)
+
+    _validate_credentials(settings)
 
     engine = init_db()
 

@@ -48,6 +48,7 @@ class Settings(BaseSettings):
 
     # Logging
     log_level: str = "INFO"
+    log_json: bool = True
 
 
 def get_settings() -> Settings:

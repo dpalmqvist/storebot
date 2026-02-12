@@ -1,7 +1,11 @@
 import logging
 from datetime import UTC, datetime, timedelta
 
+import requests
 import zeep
+from zeep.transports import Transport
+
+from storebot.retry import retry_on_transient
 
 logger = logging.getLogger(__name__)
 
@@ -29,39 +33,54 @@ class TraderaClient:
         sandbox: bool = True,
         user_id: str = "",
         user_token: str = "",
+        timeout: int = 30,
     ):
         self.app_id = app_id
         self.app_key = app_key
         self.sandbox = sandbox
         self.user_id = user_id
         self.user_token = user_token
+        self.timeout = timeout
         self._search_client = None
         self._order_client = None
         self._public_client = None
         self._restricted_client = None
 
+    def _make_transport(self) -> Transport:
+        session = requests.Session()
+        session.timeout = self.timeout
+        return Transport(session=session, timeout=self.timeout)
+
     @property
     def search_client(self) -> zeep.Client:
         if self._search_client is None:
-            self._search_client = zeep.Client(wsdl=self.SEARCH_WSDL)
+            self._search_client = zeep.Client(
+                wsdl=self.SEARCH_WSDL, transport=self._make_transport()
+            )
         return self._search_client
 
     @property
     def order_client(self) -> zeep.Client:
         if self._order_client is None:
-            self._order_client = zeep.Client(wsdl=self.ORDER_WSDL)
+            self._order_client = zeep.Client(
+                wsdl=self.ORDER_WSDL, transport=self._make_transport()
+            )
         return self._order_client
 
     @property
     def public_client(self) -> zeep.Client:
         if self._public_client is None:
-            self._public_client = zeep.Client(wsdl=self.PUBLIC_WSDL)
+            self._public_client = zeep.Client(
+                wsdl=self.PUBLIC_WSDL, transport=self._make_transport()
+            )
         return self._public_client
 
     @property
     def restricted_client(self) -> zeep.Client:
         if self._restricted_client is None:
-            self._restricted_client = zeep.Client(wsdl=self.RESTRICTED_WSDL)
+            self._restricted_client = zeep.Client(
+                wsdl=self.RESTRICTED_WSDL, transport=self._make_transport()
+            )
         return self._restricted_client
 
     def _auth_headers(self, client, include_authorization: bool = False) -> dict:
@@ -106,6 +125,10 @@ class TraderaClient:
             "item_type": getattr(item, "ItemType", None),
         }
 
+    @retry_on_transient()
+    def _search_api_call(self, params, headers):
+        return self.search_client.service.SearchAdvanced(**params, **headers)
+
     def search(
         self,
         query: str,
@@ -125,16 +148,11 @@ class TraderaClient:
             if max_price is not None:
                 params["PriceMaximum"] = int(max_price)
 
-            response = self.search_client.service.SearchAdvanced(
-                **params,
-                **self._auth_headers(self.search_client),
-            )
+            response = self._search_api_call(params, self._auth_headers(self.search_client))
 
             errors = getattr(response, "Errors", None)
             if errors:
-                error_list = list(errors) if errors else []
-                if error_list:
-                    return {"error": str(error_list), "total": 0, "items": []}
+                return {"error": str(list(errors)), "total": 0, "items": []}
 
             items_obj = getattr(response, "Items", None)
             if items_obj and hasattr(items_obj, "SearchItem"):
@@ -152,6 +170,10 @@ class TraderaClient:
         except Exception as e:
             logger.exception("Tradera search failed")
             return {"error": str(e), "total": 0, "items": []}
+
+    @retry_on_transient()
+    def _create_listing_api_call(self, params, headers):
+        return self.restricted_client.service.AddItem(**params, **headers)
 
     def create_listing(
         self,
@@ -184,9 +206,9 @@ class TraderaClient:
             if shipping_cost is not None:
                 params["ShippingCost"] = int(shipping_cost)
 
-            response = self.restricted_client.service.AddItem(
-                **params,
-                **self._auth_headers(self.restricted_client, include_authorization=True),
+            response = self._create_listing_api_call(
+                params,
+                self._auth_headers(self.restricted_client, include_authorization=True),
             )
 
             item_id = getattr(response, "ItemId", None)
@@ -201,6 +223,12 @@ class TraderaClient:
             logger.exception("Tradera create_listing failed")
             return {"error": str(e)}
 
+    @retry_on_transient()
+    def _upload_images_api_call(self, item_id, image_objects, headers):
+        return self.restricted_client.service.AddItemImages(
+            ItemId=int(item_id), Images=image_objects, **headers
+        )
+
     def upload_images(self, item_id: int, images: list[tuple[str, str]]) -> dict:
         """Upload images for a listing on Tradera.
 
@@ -214,10 +242,10 @@ class TraderaClient:
                 for base64_data, media_type in images
             ]
 
-            self.restricted_client.service.AddItemImages(
-                ItemId=int(item_id),
-                Images=image_objects,
-                **self._auth_headers(self.restricted_client, include_authorization=True),
+            self._upload_images_api_call(
+                item_id,
+                image_objects,
+                self._auth_headers(self.restricted_client, include_authorization=True),
             )
 
             return {"item_id": item_id, "images_uploaded": len(images)}
@@ -226,12 +254,15 @@ class TraderaClient:
             logger.exception("Tradera upload_images failed")
             return {"error": str(e)}
 
+    @retry_on_transient()
+    def _get_categories_api_call(self, parent_id, headers):
+        return self.public_client.service.GetCategories(ParentCategoryId=int(parent_id), **headers)
+
     def get_categories(self, parent_id: int = 0) -> dict:
         """Get Tradera categories, optionally under a parent category."""
         try:
-            response = self.public_client.service.GetCategories(
-                ParentCategoryId=int(parent_id),
-                **self._auth_headers(self.public_client),
+            response = self._get_categories_api_call(
+                parent_id, self._auth_headers(self.public_client)
             )
 
             categories_obj = getattr(response, "Categories", None)
@@ -254,6 +285,10 @@ class TraderaClient:
             logger.exception("Tradera get_categories failed")
             return {"error": str(e)}
 
+    @retry_on_transient()
+    def _fetch_token_api_call(self, secret_key, headers):
+        return self.public_client.service.FetchToken(UserId=0, Token=secret_key, **headers)
+
     def fetch_token(self, secret_key: str) -> dict:
         """Fetch user token after consent flow.
 
@@ -261,10 +296,8 @@ class TraderaClient:
         during the authorization URL step.
         """
         try:
-            response = self.public_client.service.FetchToken(
-                UserId=0,
-                Token=secret_key,
-                **self._auth_headers(self.public_client),
+            response = self._fetch_token_api_call(
+                secret_key, self._auth_headers(self.public_client)
             )
 
             user_id = getattr(response, "UserId", None)
@@ -286,6 +319,10 @@ class TraderaClient:
             logger.exception("Tradera fetch_token failed")
             return {"error": str(e)}
 
+    @retry_on_transient()
+    def _get_orders_api_call(self, from_dt, to_dt, headers):
+        return self.order_client.service.GetSellerOrders(DateFrom=from_dt, DateTo=to_dt, **headers)
+
     def get_orders(self, from_date: str | None = None, to_date: str | None = None) -> dict:
         try:
             if to_date:
@@ -297,10 +334,10 @@ class TraderaClient:
             else:
                 from_dt = to_dt - timedelta(days=30)
 
-            response = self.order_client.service.GetSellerOrders(
-                DateFrom=from_dt,
-                DateTo=to_dt,
-                **self._auth_headers(self.order_client, include_authorization=True),
+            response = self._get_orders_api_call(
+                from_dt,
+                to_dt,
+                self._auth_headers(self.order_client, include_authorization=True),
             )
 
             orders_obj = getattr(response, "Orders", None)
@@ -353,12 +390,13 @@ class TraderaClient:
             logger.exception("Tradera get_orders failed")
             return {"error": str(e), "orders": [], "count": 0}
 
+    @retry_on_transient()
+    def _get_item_api_call(self, item_id, headers):
+        return self.public_client.service.GetItem(ItemId=int(item_id), **headers)
+
     def get_item(self, item_id: int) -> dict:
         try:
-            response = self.public_client.service.GetItem(
-                ItemId=int(item_id),
-                **self._auth_headers(self.public_client),
-            )
+            response = self._get_item_api_call(item_id, self._auth_headers(self.public_client))
 
             end_date = getattr(response, "EndDate", None)
             if end_date is not None:
@@ -383,11 +421,15 @@ class TraderaClient:
             logger.exception("Tradera get_item failed")
             return {"error": str(e)}
 
+    @retry_on_transient()
+    def _mark_order_shipped_api_call(self, order_id, headers):
+        return self.order_client.service.SetSellerOrderAsShipped(OrderId=int(order_id), **headers)
+
     def mark_order_shipped(self, order_id: int) -> dict:
         try:
-            self.order_client.service.SetSellerOrderAsShipped(
-                OrderId=int(order_id),
-                **self._auth_headers(self.order_client, include_authorization=True),
+            self._mark_order_shipped_api_call(
+                order_id,
+                self._auth_headers(self.order_client, include_authorization=True),
             )
             return {"order_id": order_id, "status": "shipped"}
         except Exception as e:
