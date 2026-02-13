@@ -7,6 +7,8 @@ Human-readable format for local development.
 import json
 import logging
 from datetime import UTC, datetime
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 EXTRA_FIELDS = ("chat_id", "order_id", "listing_id", "tool_name", "job_name")
 
@@ -33,12 +35,14 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_entry, ensure_ascii=False)
 
 
-def configure_logging(level: str = "INFO", json_format: bool = True) -> None:
+def configure_logging(level: str = "INFO", json_format: bool = True, log_file: str = "") -> None:
     """Configure root logger with either JSON or human-readable format.
 
     Args:
         level: Log level name (DEBUG, INFO, WARNING, ERROR, CRITICAL).
         json_format: If True, use JSON format. If False, use human-readable format.
+        log_file: Optional file path. When set, adds a RotatingFileHandler
+                  (10 MB max, 3 backups) alongside the stream handler.
     """
     root = logging.getLogger()
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
@@ -46,11 +50,17 @@ def configure_logging(level: str = "INFO", json_format: bool = True) -> None:
     # Remove existing handlers to avoid duplicates
     root.handlers.clear()
 
-    handler = logging.StreamHandler()
     if json_format:
-        handler.setFormatter(JSONFormatter())
+        formatter = JSONFormatter()
     else:
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-        )
-    root.addHandler(handler)
+        formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    root.addHandler(stream_handler)
+
+    if log_file:
+        Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+        file_handler = RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=3)
+        file_handler.setFormatter(formatter)
+        root.addHandler(file_handler)

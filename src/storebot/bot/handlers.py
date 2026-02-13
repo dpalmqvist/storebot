@@ -324,7 +324,9 @@ async def poll_orders_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 def main() -> None:
     settings = get_settings()
 
-    configure_logging(level=settings.log_level, json_format=settings.log_json)
+    configure_logging(
+        level=settings.log_level, json_format=settings.log_json, log_file=settings.log_file
+    )
 
     _validate_credentials(settings)
 

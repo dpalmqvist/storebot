@@ -158,13 +158,20 @@ class Agent:
 
     def _call_api(self, messages: list[dict]):
         """Send messages to Claude and return the response."""
-        return self.client.messages.create(
+        response = self.client.messages.create(
             model=self.settings.claude_model,
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=messages,
             tools=TOOLS,
         )
+        logger.info(
+            "API call: input_tokens=%d, output_tokens=%d, stop_reason=%s",
+            response.usage.input_tokens,
+            response.usage.output_tokens,
+            response.stop_reason,
+        )
+        return response
 
     def handle_message(
         self,
@@ -174,6 +181,12 @@ class Agent:
     ) -> AgentResponse:
         if conversation_history is None:
             conversation_history = []
+
+        logger.info(
+            "handle_message: history_messages=%d, has_images=%s",
+            len(conversation_history),
+            bool(image_paths),
+        )
 
         if image_paths:
             content = []
