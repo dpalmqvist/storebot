@@ -1,5 +1,6 @@
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 
 from storebot.logging_config import JSONFormatter, configure_logging
 
@@ -131,3 +132,39 @@ class TestConfigureLogging:
         configure_logging(level="INFO", json_format=True)
 
         assert len(root.handlers) == 1
+
+    def test_file_handler_added(self, tmp_path):
+        log_file = str(tmp_path / "test.log")
+        configure_logging(level="INFO", json_format=True, log_file=log_file)
+        root = logging.getLogger()
+
+        assert len(root.handlers) == 2
+        assert isinstance(root.handlers[0], logging.StreamHandler)
+        assert isinstance(root.handlers[1], RotatingFileHandler)
+        assert isinstance(root.handlers[1].formatter, JSONFormatter)
+
+    def test_file_handler_writes(self, tmp_path):
+        log_file = str(tmp_path / "test.log")
+        configure_logging(level="INFO", json_format=True, log_file=log_file)
+
+        test_logger = logging.getLogger("storebot.test_file")
+        test_logger.info("file handler test")
+
+        content = (tmp_path / "test.log").read_text()
+        data = json.loads(content.strip())
+        assert data["message"] == "file handler test"
+
+    def test_file_handler_creates_parent_dirs(self, tmp_path):
+        log_file = str(tmp_path / "subdir" / "nested" / "test.log")
+        configure_logging(level="INFO", json_format=True, log_file=log_file)
+        root = logging.getLogger()
+
+        assert len(root.handlers) == 2
+        assert (tmp_path / "subdir" / "nested").is_dir()
+
+    def test_no_file_handler_when_empty(self):
+        configure_logging(level="INFO", json_format=True, log_file="")
+        root = logging.getLogger()
+
+        assert len(root.handlers) == 1
+        assert not isinstance(root.handlers[0], RotatingFileHandler)
