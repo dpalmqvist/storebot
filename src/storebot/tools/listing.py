@@ -4,7 +4,8 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from storebot.db import AgentAction, PlatformListing, Product, ProductImage
+from storebot.db import PlatformListing, Product, ProductImage
+from storebot.tools.helpers import log_action
 from storebot.tools.image import encode_image_base64, optimize_for_upload
 
 logger = logging.getLogger(__name__)
@@ -68,15 +69,14 @@ class ListingService:
             session.add(listing)
             session.flush()
 
-            action = AgentAction(
-                agent_name="listing",
-                action_type="create_draft",
+            log_action(
+                session,
+                "listing",
+                "create_draft",
+                {"listing_id": listing.id, "listing_type": listing_type},
                 product_id=product_id,
-                details={"listing_id": listing.id, "listing_type": listing_type},
                 requires_approval=True,
-                executed_at=datetime.now(UTC),
             )
-            session.add(action)
             session.commit()
 
             preview = _format_draft_preview(listing, product)
@@ -173,14 +173,13 @@ class ListingService:
                 session.rollback()
                 return {"error": "Validation failed", "details": errors}
 
-            action = AgentAction(
-                agent_name="listing",
-                action_type="update_draft",
+            log_action(
+                session,
+                "listing",
+                "update_draft",
+                {"listing_id": listing.id, "updated_fields": list(fields.keys())},
                 product_id=listing.product_id,
-                details={"listing_id": listing.id, "updated_fields": list(fields.keys())},
-                executed_at=datetime.now(UTC),
             )
-            session.add(action)
             session.commit()
 
             product = session.get(Product, listing.product_id)
@@ -200,15 +199,14 @@ class ListingService:
             listing.status = "approved"
             now = datetime.now(UTC)
 
-            action = AgentAction(
-                agent_name="listing",
-                action_type="approve_draft",
+            log_action(
+                session,
+                "listing",
+                "approve_draft",
+                {"listing_id": listing.id},
                 product_id=listing.product_id,
-                details={"listing_id": listing.id},
                 approved_at=now,
-                executed_at=now,
             )
-            session.add(action)
             session.commit()
 
             return {"listing_id": listing.id, "status": "approved"}
@@ -305,18 +303,13 @@ class ListingService:
                 if price:
                     product.listing_price = price
 
-            action = AgentAction(
-                agent_name="listing",
-                action_type="publish_listing",
+            log_action(
+                session,
+                "listing",
+                "publish_listing",
+                {"listing_id": listing.id, "external_id": external_id, "url": listing_url},
                 product_id=listing.product_id,
-                details={
-                    "listing_id": listing.id,
-                    "external_id": external_id,
-                    "url": listing_url,
-                },
-                executed_at=now,
             )
-            session.add(action)
             session.commit()
 
             return {
@@ -341,14 +334,13 @@ class ListingService:
             product_id = listing.product_id
             session.delete(listing)
 
-            action = AgentAction(
-                agent_name="listing",
-                action_type="reject_draft",
+            log_action(
+                session,
+                "listing",
+                "reject_draft",
+                {"listing_id": listing_id, "reason": reason},
                 product_id=product_id,
-                details={"listing_id": listing_id, "reason": reason},
-                executed_at=datetime.now(UTC),
             )
-            session.add(action)
             session.commit()
 
             return {"listing_id": listing_id, "status": "rejected", "reason": reason}
@@ -422,14 +414,13 @@ class ListingService:
             session.add(product)
             session.flush()
 
-            action = AgentAction(
-                agent_name="listing",
-                action_type="create_product",
+            log_action(
+                session,
+                "listing",
+                "create_product",
+                {"title": title},
                 product_id=product.id,
-                details={"title": title},
-                executed_at=datetime.now(UTC),
             )
-            session.add(action)
             session.commit()
 
             return {
@@ -470,14 +461,13 @@ class ListingService:
 
             total = session.query(ProductImage).filter_by(product_id=product_id).count()
 
-            action = AgentAction(
-                agent_name="listing",
-                action_type="save_product_image",
+            log_action(
+                session,
+                "listing",
+                "save_product_image",
+                {"image_id": img.id, "file_path": image_path, "is_primary": is_primary},
                 product_id=product_id,
-                details={"image_id": img.id, "file_path": image_path, "is_primary": is_primary},
-                executed_at=datetime.now(UTC),
             )
-            session.add(action)
             session.commit()
 
             return {

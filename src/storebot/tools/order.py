@@ -5,7 +5,8 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from storebot.db import AgentAction, Notification, Order, PlatformListing, Product
+from storebot.db import Notification, Order, PlatformListing, Product
+from storebot.tools.helpers import log_action
 from storebot.tools.postnord import PostNordError, parse_buyer_address
 
 logger = logging.getLogger(__name__)
@@ -106,14 +107,13 @@ class OrderService:
                 if not matched:
                     action_details["items"] = order_data.get("items", [])
 
-                action = AgentAction(
-                    agent_name="order",
-                    action_type="detect_new_order" if matched else "unmatched_order",
+                log_action(
+                    session,
+                    "order",
+                    "detect_new_order" if matched else "unmatched_order",
+                    action_details,
                     product_id=product_id,
-                    details=action_details,
-                    executed_at=datetime.now(UTC),
                 )
-                session.add(action)
 
                 session.commit()
 
@@ -256,20 +256,19 @@ class OrderService:
             order.voucher_id = result["voucher_id"]
             session.commit()
 
-            action = AgentAction(
-                agent_name="order",
-                action_type="create_sale_voucher",
-                product_id=order.product_id,
-                details={
+            log_action(
+                session,
+                "order",
+                "create_sale_voucher",
+                {
                     "order_id": order.id,
                     "voucher_id": result["voucher_id"],
                     "sale_price": sale_price,
                     "vat": vat,
                     "revenue_excl_vat": revenue_excl_vat,
                 },
-                executed_at=datetime.now(UTC),
+                product_id=order.product_id,
             )
-            session.add(action)
             session.commit()
 
         return result
@@ -299,18 +298,17 @@ class OrderService:
                     )
                     tradera_status = "notification_failed"
 
-            action = AgentAction(
-                agent_name="order",
-                action_type="mark_shipped",
-                product_id=order.product_id,
-                details={
+            log_action(
+                session,
+                "order",
+                "mark_shipped",
+                {
                     "order_id": order.id,
                     "tracking_number": tracking_number,
                     "tradera_status": tradera_status,
                 },
-                executed_at=datetime.now(UTC),
+                product_id=order.product_id,
             )
-            session.add(action)
             session.commit()
 
         return {
@@ -390,20 +388,19 @@ class OrderService:
             if label_path:
                 order.label_path = label_path
 
-            action = AgentAction(
-                agent_name="order",
-                action_type="create_shipping_label",
-                product_id=order.product_id,
-                details={
+            log_action(
+                session,
+                "order",
+                "create_shipping_label",
+                {
                     "order_id": order.id,
                     "shipment_id": result["shipment_id"],
                     "tracking_number": result["tracking_number"],
                     "service_code": service_code,
                     "label_path": label_path,
                 },
-                executed_at=datetime.now(UTC),
+                product_id=order.product_id,
             )
-            session.add(action)
             session.commit()
 
         return {
@@ -451,19 +448,18 @@ class OrderService:
 
             order.feedback_left_at = datetime.now(UTC)
 
-            action = AgentAction(
-                agent_name="order",
-                action_type="leave_feedback",
-                product_id=order.product_id,
-                details={
+            log_action(
+                session,
+                "order",
+                "leave_feedback",
+                {
                     "order_id": order.id,
                     "external_order_id": order.external_order_id,
                     "comment": comment,
                     "feedback_type": feedback_type,
                 },
-                executed_at=datetime.now(UTC),
+                product_id=order.product_id,
             )
-            session.add(action)
             session.commit()
 
         return result

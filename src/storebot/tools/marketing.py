@@ -3,7 +3,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from storebot.db import AgentAction, ListingSnapshot, Order, PlatformListing
+from storebot.db import ListingSnapshot, Order, PlatformListing
+from storebot.tools.helpers import log_action
 
 logger = logging.getLogger(__name__)
 
@@ -83,13 +84,12 @@ class MarketingService:
                     }
                 )
 
-            action = AgentAction(
-                agent_name="marketing",
-                action_type="refresh_stats",
-                details={"refreshed": len(refreshed), "listing_id": listing_id},
-                executed_at=datetime.now(UTC),
+            log_action(
+                session,
+                "marketing",
+                "refresh_stats",
+                {"refreshed": len(refreshed), "listing_id": listing_id},
             )
-            session.add(action)
             session.commit()
 
             return {"refreshed": len(refreshed), "listings": refreshed}
@@ -130,13 +130,9 @@ class MarketingService:
             if current_price and acquisition_cost:
                 potential_profit = current_price - acquisition_cost
 
-            action = AgentAction(
-                agent_name="marketing",
-                action_type="analyze_listing",
-                details={"listing_id": listing_id},
-                executed_at=datetime.now(UTC),
+            log_action(
+                session, "marketing", "analyze_listing", {"listing_id": listing_id}
             )
-            session.add(action)
             session.commit()
 
             return {
@@ -219,13 +215,12 @@ class MarketingService:
                 .first()
             )
 
-            action = AgentAction(
-                agent_name="marketing",
-                action_type="performance_report",
-                details={"active": len(active_listings), "sold": len(sold_listings)},
-                executed_at=datetime.now(UTC),
+            log_action(
+                session,
+                "marketing",
+                "performance_report",
+                {"active": len(active_listings), "sold": len(sold_listings)},
             )
-            session.add(action)
             session.commit()
 
             return {
@@ -272,16 +267,12 @@ class MarketingService:
 
             recommendations.sort(key=lambda r: PRIORITY_ORDER.get(r["priority"], 3))
 
-            action = AgentAction(
-                agent_name="marketing",
-                action_type="generate_recommendations",
-                details={
-                    "listing_id": listing_id,
-                    "recommendation_count": len(recommendations),
-                },
-                executed_at=datetime.now(UTC),
+            log_action(
+                session,
+                "marketing",
+                "generate_recommendations",
+                {"listing_id": listing_id, "recommendation_count": len(recommendations)},
             )
-            session.add(action)
             session.commit()
 
             return {

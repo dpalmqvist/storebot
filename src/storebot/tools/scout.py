@@ -3,7 +3,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from storebot.db import AgentAction, Notification, SavedSearch, SeenItem
+from storebot.db import Notification, SavedSearch, SeenItem
+from storebot.tools.helpers import log_action
 
 logger = logging.getLogger(__name__)
 
@@ -50,13 +51,12 @@ class ScoutService:
             session.add(search)
             session.flush()
 
-            action = AgentAction(
-                agent_name="scout",
-                action_type="create_search",
-                details={"search_id": search.id, "query": query, "platform": platform},
-                executed_at=datetime.now(UTC),
+            log_action(
+                session,
+                "scout",
+                "create_search",
+                {"search_id": search.id, "query": query, "platform": platform},
             )
-            session.add(action)
             session.commit()
 
             return {
@@ -114,13 +114,12 @@ class ScoutService:
             for key, value in fields.items():
                 setattr(search, key, value)
 
-            action = AgentAction(
-                agent_name="scout",
-                action_type="update_search",
-                details={"search_id": search_id, "fields": list(fields.keys())},
-                executed_at=datetime.now(UTC),
+            log_action(
+                session,
+                "scout",
+                "update_search",
+                {"search_id": search_id, "fields": list(fields.keys())},
             )
-            session.add(action)
             session.commit()
 
             return {
@@ -141,13 +140,12 @@ class ScoutService:
 
             search.is_active = False
 
-            action = AgentAction(
-                agent_name="scout",
-                action_type="delete_search",
-                details={"search_id": search_id, "query": search.query},
-                executed_at=datetime.now(UTC),
+            log_action(
+                session,
+                "scout",
+                "delete_search",
+                {"search_id": search_id, "query": search.query},
             )
-            session.add(action)
             session.commit()
 
             return {"search_id": search_id, "status": "deleted"}

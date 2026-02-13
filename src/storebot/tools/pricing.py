@@ -1,10 +1,9 @@
 import logging
 import statistics
-from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from storebot.db import AgentAction
+from storebot.tools.helpers import log_action
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +72,7 @@ class PricingService:
             del analysis["blocket"]["error"]
 
         if product_id is not None and self.engine is not None:
-            _log_action(self.engine, product_id, analysis)
+            _log_pricing_action(self.engine, product_id, analysis)
 
         return analysis
 
@@ -137,17 +136,10 @@ def _compute_suggested_range(prices: list[float]) -> dict:
     return {"low": round(q1, 2), "high": round(q3, 2)}
 
 
-def _log_action(engine, product_id: int, analysis: dict) -> None:
+def _log_pricing_action(engine, product_id: int, analysis: dict) -> None:
     try:
         with Session(engine) as session:
-            action = AgentAction(
-                agent_name="pricing",
-                action_type="price_check",
-                product_id=product_id,
-                details=analysis,
-                executed_at=datetime.now(UTC),
-            )
-            session.add(action)
+            log_action(session, "pricing", "price_check", analysis, product_id=product_id)
             session.commit()
     except Exception:
         logger.exception("Failed to log pricing agent action")
