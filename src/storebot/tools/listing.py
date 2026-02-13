@@ -44,6 +44,9 @@ class ListingService:
             if product is None:
                 return {"error": f"Product {product_id} not found"}
 
+            if product.status == "archived":
+                return {"error": f"Product {product_id} is archived — unarchive it first"}
+
             errors = _validate_draft(
                 listing_type=listing_type,
                 start_price=start_price,
@@ -87,7 +90,9 @@ class ListingService:
         with Session(self.engine) as session:
             listings = (
                 session.query(PlatformListing)
+                .join(Product, PlatformListing.product_id == Product.id)
                 .filter(PlatformListing.status == status)
+                .filter(Product.status != "archived")
                 .order_by(PlatformListing.created_at.desc())
                 .all()
             )
@@ -360,7 +365,12 @@ class ListingService:
 
             return {"listing_id": listing_id, "status": "rejected", "reason": reason}
 
-    def search_products(self, query: str | None = None, status: str | None = None) -> dict:
+    def search_products(
+        self,
+        query: str | None = None,
+        status: str | None = None,
+        include_archived: bool = False,
+    ) -> dict:
         """Search the local product database."""
         with Session(self.engine) as session:
             q = session.query(Product)
@@ -377,6 +387,8 @@ class ListingService:
 
             if status:
                 q = q.filter(Product.status == status)
+            elif not include_archived:
+                q = q.filter(Product.status != "archived")
 
             products = q.order_by(Product.created_at.desc()).all()
 
@@ -491,6 +503,75 @@ class ListingService:
                 "file_path": image_path,
                 "is_primary": is_primary,
                 "total_images": total,
+            }
+
+    def archive_product(self, product_id: int) -> dict:
+        """Archive a product, hiding it from normal views."""
+        with Session(self.engine) as session:
+            product = session.get(Product, product_id)
+            if product is None:
+                return {"error": f"Product {product_id} not found"}
+
+            if product.status == "archived":
+                return {"error": f"Product {product_id} is already archived"}
+
+            active_count = (
+                session.query(PlatformListing)
+                .filter_by(product_id=product_id, status="active")
+                .count()
+            )
+            if active_count:
+                return {
+                    "error": f"Cannot archive product {product_id}: "
+                    f"it has {active_count} active listing(s)"
+                }
+
+            product.previous_status = product.status
+            product.status = "archived"
+
+            log_action(
+                session,
+                "listing",
+                "archive_product",
+                {"previous_status": product.previous_status},
+                product_id=product_id,
+            )
+            session.commit()
+
+            return {
+                "product_id": product_id,
+                "status": "archived",
+                "previous_status": product.previous_status,
+            }
+
+    def unarchive_product(self, product_id: int) -> dict:
+        """Restore an archived product to its previous status."""
+        with Session(self.engine) as session:
+            product = session.get(Product, product_id)
+            if product is None:
+                return {"error": f"Product {product_id} not found"}
+
+            if product.status != "archived":
+                return {
+                    "error": f"Product {product_id} is not archived (status: {product.status})"
+                }
+
+            restored_status = product.previous_status or "draft"
+            product.status = restored_status
+            product.previous_status = None
+
+            log_action(
+                session,
+                "listing",
+                "unarchive_product",
+                {"restored_status": restored_status},
+                product_id=product_id,
+            )
+            session.commit()
+
+            return {
+                "product_id": product_id,
+                "status": restored_status,
             }
 
 

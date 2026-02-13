@@ -242,6 +242,8 @@ class Agent:
         "search_products": ("listing", "search_products"),
         "create_product": ("listing", "create_product"),
         "save_product_image": ("listing", "save_product_image"),
+        "archive_product": ("listing", "archive_product"),
+        "unarchive_product": ("listing", "unarchive_product"),
         "check_new_orders": ("order", "check_new_orders"),
         "list_orders": ("order", "list_orders"),
         "get_order": ("order", "get_order"),

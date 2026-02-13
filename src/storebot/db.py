@@ -20,6 +20,7 @@ class Product(Base):
     description: Mapped[str | None] = mapped_column(Text)
     category: Mapped[str | None] = mapped_column(String)
     status: Mapped[str] = mapped_column(String, default="draft")  # draft/listed/sold/archived
+    previous_status: Mapped[str | None] = mapped_column(String)
     acquisition_cost: Mapped[float | None] = mapped_column(Float)
     listing_price: Mapped[float | None] = mapped_column(Float)
     sold_price: Mapped[float | None] = mapped_column(Float)

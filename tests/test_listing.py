@@ -782,3 +782,201 @@ class TestPublishListing:
         call_kwargs = pub_service.tradera.create_listing.call_args.kwargs
         assert call_kwargs["shipping_cost"] == 49
         assert call_kwargs["shipping_options"] is None
+
+
+def _create_product_with_listing(engine, product_status, listing_status, listing_title="Test"):
+    """Create a product with an associated PlatformListing. Returns the product ID."""
+    with Session(engine) as session:
+        p = Product(title=listing_title, status=product_status)
+        session.add(p)
+        session.flush()
+        session.add(
+            PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status=listing_status,
+                listing_type="auction",
+                listing_title=listing_title,
+                listing_description="Test",
+            )
+        )
+        session.commit()
+        return p.id
+
+
+class TestArchiveProduct:
+    def test_archive_draft(self, service, product, engine):
+        result = service.archive_product(product)
+
+        assert "error" not in result
+        assert result["status"] == "archived"
+        assert result["previous_status"] == "draft"
+
+        with Session(engine) as session:
+            p = session.get(Product, product)
+            assert p.status == "archived"
+            assert p.previous_status == "draft"
+
+    def test_archive_listed(self, service, engine):
+        with Session(engine) as session:
+            p = Product(title="Listed item", status="listed")
+            session.add(p)
+            session.commit()
+            pid = p.id
+
+        result = service.archive_product(pid)
+
+        assert "error" not in result
+        assert result["previous_status"] == "listed"
+
+    def test_not_found(self, service):
+        result = service.archive_product(9999)
+        assert "error" in result
+        assert "9999" in result["error"]
+
+    def test_already_archived(self, service, product):
+        service.archive_product(product)
+        result = service.archive_product(product)
+
+        assert "error" in result
+        assert "already archived" in result["error"]
+
+    def test_blocked_by_active_listing(self, service, engine):
+        pid = _create_product_with_listing(engine, "listed", "active")
+
+        result = service.archive_product(pid)
+
+        assert "error" in result
+        assert "active listing" in result["error"]
+
+    def test_allowed_with_ended_listing(self, service, engine):
+        pid = _create_product_with_listing(engine, "draft", "ended")
+
+        result = service.archive_product(pid)
+
+        assert "error" not in result
+        assert result["status"] == "archived"
+
+    def test_logs_agent_action(self, service, product, engine):
+        service.archive_product(product)
+
+        with Session(engine) as session:
+            action = session.query(AgentAction).filter_by(action_type="archive_product").one()
+            assert action.agent_name == "listing"
+            assert action.product_id == product
+            assert action.details["previous_status"] == "draft"
+
+
+class TestUnarchiveProduct:
+    def test_restores_draft(self, service, product, engine):
+        service.archive_product(product)
+        result = service.unarchive_product(product)
+
+        assert "error" not in result
+        assert result["status"] == "draft"
+
+        with Session(engine) as session:
+            p = session.get(Product, product)
+            assert p.status == "draft"
+            assert p.previous_status is None
+
+    def test_restores_listed(self, service, engine):
+        with Session(engine) as session:
+            p = Product(title="Listed item", status="listed")
+            session.add(p)
+            session.commit()
+            pid = p.id
+
+        service.archive_product(pid)
+        result = service.unarchive_product(pid)
+
+        assert result["status"] == "listed"
+
+    def test_not_found(self, service):
+        result = service.unarchive_product(9999)
+        assert "error" in result
+        assert "9999" in result["error"]
+
+    def test_not_archived_error(self, service, product):
+        result = service.unarchive_product(product)
+
+        assert "error" in result
+        assert "not archived" in result["error"]
+
+    def test_fallback_to_draft_when_previous_status_none(self, service, engine):
+        with Session(engine) as session:
+            p = Product(title="No previous", status="archived", previous_status=None)
+            session.add(p)
+            session.commit()
+            pid = p.id
+
+        result = service.unarchive_product(pid)
+
+        assert result["status"] == "draft"
+
+    def test_logs_agent_action(self, service, product, engine):
+        service.archive_product(product)
+        service.unarchive_product(product)
+
+        with Session(engine) as session:
+            action = session.query(AgentAction).filter_by(action_type="unarchive_product").one()
+            assert action.agent_name == "listing"
+            assert action.product_id == product
+            assert action.details["restored_status"] == "draft"
+
+
+class TestArchiveFiltering:
+    def test_search_excludes_archived_by_default(self, service, engine):
+        with Session(engine) as session:
+            session.add(Product(title="Visible", status="draft"))
+            session.add(Product(title="Hidden", status="archived"))
+            session.commit()
+
+        result = service.search_products()
+        assert result["count"] == 1
+        assert result["products"][0]["title"] == "Visible"
+
+    def test_search_explicit_status_archived(self, service, engine):
+        with Session(engine) as session:
+            session.add(Product(title="Visible", status="draft"))
+            session.add(Product(title="Hidden", status="archived"))
+            session.commit()
+
+        result = service.search_products(status="archived")
+        assert result["count"] == 1
+        assert result["products"][0]["title"] == "Hidden"
+
+    def test_search_include_archived_true(self, service, engine):
+        with Session(engine) as session:
+            session.add(Product(title="Visible", status="draft"))
+            session.add(Product(title="Hidden", status="archived"))
+            session.commit()
+
+        result = service.search_products(include_archived=True)
+        assert result["count"] == 2
+
+    def test_list_drafts_excludes_archived_products(self, service, engine):
+        _create_product_with_listing(engine, "draft", "draft", "Active listing")
+        _create_product_with_listing(engine, "archived", "draft", "Archived listing")
+
+        result = service.list_drafts()
+        assert result["count"] == 1
+        assert result["listings"][0]["listing_title"] == "Active listing"
+
+    def test_create_draft_blocked_for_archived_product(self, service, engine):
+        with Session(engine) as session:
+            p = Product(title="Archived", status="archived")
+            session.add(p)
+            session.commit()
+            pid = p.id
+
+        result = service.create_draft(
+            product_id=pid,
+            listing_type="auction",
+            listing_title="Test",
+            listing_description="Test",
+            start_price=100.0,
+        )
+
+        assert "error" in result
+        assert "archived" in result["error"]
