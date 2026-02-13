@@ -431,6 +431,11 @@ class TraderaClient:
                 secret_key, self._auth_headers(self.public_client)
             )
 
+            from zeep.helpers import serialize_object
+
+            response_data = serialize_object(response)
+            logger.debug("FetchToken raw response: %s", response_data)
+
             user_id = getattr(response, "UserId", None)
             token = getattr(response, "Token", None)
             expires = getattr(response, "ExpirationDate", None)
@@ -438,7 +443,10 @@ class TraderaClient:
                 expires = str(expires)
 
             if user_id is None or token is None:
-                return {"error": "FetchToken response missing UserId or Token"}
+                return {
+                    "error": f"FetchToken response missing UserId or Token. "
+                    f"Raw response: {response_data}"
+                }
 
             return {
                 "user_id": user_id,
