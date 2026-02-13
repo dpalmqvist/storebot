@@ -108,9 +108,7 @@ class TestSendDisplayImages:
         update.message.reply_photo = AsyncMock()
         update.message.reply_text = AsyncMock()
 
-        await _send_display_images(
-            update, [{"path": "/nonexistent/photo.jpg", "caption": "Test"}]
-        )
+        await _send_display_images(update, [{"path": "/nonexistent/photo.jpg", "caption": "Test"}])
 
         update.message.reply_photo.assert_not_awaited()
         update.message.reply_text.assert_awaited_once()

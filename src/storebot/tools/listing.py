@@ -553,11 +553,13 @@ class ListingService:
             image_list = []
             display_images = []
             for i, img in enumerate(images):
-                image_list.append({
-                    "id": img.id,
-                    "file_path": img.file_path,
-                    "is_primary": img.is_primary,
-                })
+                image_list.append(
+                    {
+                        "id": img.id,
+                        "file_path": img.file_path,
+                        "is_primary": img.is_primary,
+                    }
+                )
                 if Path(img.file_path).exists():
                     label = "huvudbild" if img.is_primary else f"bild {i + 1}"
                     caption = f"Bild {i + 1} av {len(images)} ({label}) — {product.title}"
