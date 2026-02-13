@@ -2,6 +2,7 @@
 
 import re
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -66,7 +67,18 @@ def authorize_tradera() -> None:
         sandbox=settings.tradera_sandbox,
     )
 
-    result = client.fetch_token(skey)
+    max_attempts = 3
+    delay = 3
+    result = None
+    for attempt in range(1, max_attempts + 1):
+        print(f"\nFetching token (attempt {attempt}/{max_attempts})...")
+        result = client.fetch_token(skey)
+        if "error" not in result:
+            break
+        if attempt < max_attempts:
+            print(f"  Token not ready yet, retrying in {delay}s...")
+            time.sleep(delay)
+            delay *= 2
 
     if "error" in result:
         print(f"\nError fetching token: {result['error']}")
