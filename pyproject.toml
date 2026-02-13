@@ -15,7 +15,7 @@ dependencies = [
     "requests",
     "sqlalchemy>=2.0",
     "sqlite-vec",
-    "pillow",
+    "pillow>=12.1.1",
     "reportlab",
     "pydantic-settings",
     "python-dotenv",
