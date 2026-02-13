@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     # Voucher PDF export
     voucher_export_path: str = "data/vouchers"
 
+    # Access control
+    allowed_chat_ids: str = ""  # comma-separated Telegram user/chat IDs
+
+    # Rate limiting
+    rate_limit_messages: int = 30  # max messages per window
+    rate_limit_window_seconds: int = 60
+
     # Logging
     log_level: str = "INFO"
     log_json: bool = True

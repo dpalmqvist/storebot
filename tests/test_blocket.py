@@ -11,11 +11,6 @@ def client():
     return BlocketClient(bearer_token="test-token-123")
 
 
-@pytest.fixture
-def client_no_token():
-    return BlocketClient(bearer_token="")
-
-
 def _make_doc(**overrides):
     doc = {
         "ad_id": 20753486,
@@ -146,20 +141,9 @@ class TestBlocketSearch:
         assert headers["Authorization"] == "Bearer test-token-123"
         assert headers["User-Agent"] == USER_AGENT
 
-    @patch("storebot.tools.blocket.requests.get")
-    def test_search_omits_auth_without_token(self, mock_get, client_no_token):
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = _make_response()
-        mock_resp.raise_for_status = MagicMock()
-        mock_get.return_value = mock_resp
-
-        client_no_token.search("test")
-
-        call_kwargs = mock_get.call_args
-        headers = call_kwargs.kwargs["headers"]
-        assert "Authorization" not in headers
-        assert headers["User-Agent"] == USER_AGENT
+    def test_rejects_empty_bearer_token(self):
+        with pytest.raises(ValueError, match="bearer_token must not be empty"):
+            BlocketClient(bearer_token="")
 
     @patch("storebot.tools.blocket.requests.get")
     def test_search_handles_http_error(self, mock_get, client):

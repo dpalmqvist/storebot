@@ -1,3 +1,4 @@
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -231,8 +232,18 @@ def _load_sqlite_vec(dbapi_connection, connection_record):
         dbapi_connection.enable_load_extension(True)
         sqlite_vec.load(dbapi_connection)
         dbapi_connection.enable_load_extension(False)
-    except (ImportError, Exception):
+    except Exception:
         pass  # sqlite-vec not installed or unavailable
+
+
+def _secure_db_file(database_path: str) -> None:
+    """Restrict database file permissions to owner-only (0600)."""
+    db_path = Path(database_path)
+    if db_path.exists():
+        try:
+            os.chmod(db_path, 0o600)
+        except OSError:
+            pass  # May fail on non-POSIX systems
 
 
 def create_engine(database_path: str | None = None) -> sa.Engine:
@@ -261,18 +272,19 @@ def init_db(database_path: str | None = None) -> sa.Engine:
     deployed environments without migration files).
     """
     engine = create_engine(database_path)
+    resolved_path = database_path or get_settings().database_path
 
     alembic_ini = _find_alembic_ini()
     if alembic_ini is None:
         Base.metadata.create_all(engine)
-        return engine
+    else:
+        from alembic import command
+        from alembic.config import Config
 
-    from alembic import command
-    from alembic.config import Config
+        alembic_cfg = Config(str(alembic_ini))
+        if database_path:
+            alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{database_path}")
+        command.upgrade(alembic_cfg, "head")
 
-    alembic_cfg = Config(str(alembic_ini))
-    if database_path:
-        alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{database_path}")
-    command.upgrade(alembic_cfg, "head")
-
+    _secure_db_file(resolved_path)
     return engine

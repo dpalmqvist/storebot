@@ -15,6 +15,7 @@ def _update_env_file(env_path: Path, key: str, value: str) -> None:
 
     if not env_path.exists():
         env_path.write_text(f"{line}\n")
+        env_path.chmod(0o600)
         return
 
     content = env_path.read_text()
@@ -22,11 +23,12 @@ def _update_env_file(env_path: Path, key: str, value: str) -> None:
 
     if pattern.search(content):
         env_path.write_text(pattern.sub(lambda m: line, content))
-        return
+    else:
+        if not content.endswith("\n"):
+            content += "\n"
+        env_path.write_text(content + f"{line}\n")
 
-    if not content.endswith("\n"):
-        content += "\n"
-    env_path.write_text(content + f"{line}\n")
+    env_path.chmod(0o600)
 
 
 def _parse_redirect_url(url: str) -> dict:
@@ -97,10 +99,11 @@ def authorize_tradera() -> None:
         print(f"\nError: {result['error']}")
         sys.exit(1)
 
+    token_masked = result["token"][:8] + "..." if len(result["token"]) > 8 else "***"
     print()
     print("Authorization successful!")
     print(f"  User ID: {result.get('user_id', 'N/A')}")
-    print(f"  Token:   {result['token']}")
+    print(f"  Token:   {token_masked}")
     print(f"  Expires: {result.get('expires', 'N/A')}")
     print()
 
@@ -114,7 +117,8 @@ def authorize_tradera() -> None:
         else:
             print(f"Saved TRADERA_USER_TOKEN to {env_path}")
     else:
-        print("Not saved. Add these to your .env manually:")
-        print(f"  TRADERA_USER_TOKEN={result['token']}")
+        print("Not saved. Copy the token from the redirect URL in your browser")
+        print("and add these to your .env manually:")
+        print("  TRADERA_USER_TOKEN=<token from redirect URL>")
         if result.get("user_id"):
             print(f"  TRADERA_USER_ID={result['user_id']}")

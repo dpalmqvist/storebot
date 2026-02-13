@@ -453,8 +453,7 @@ class TraderaClient:
                     received_xml = etree.tostring(recv_env, pretty_print=True).decode()
             except Exception:
                 pass
-            logger.debug("FetchToken sent XML:\n%s", sent_xml)
-            logger.debug("FetchToken received XML:\n%s", received_xml)
+            logger.debug("FetchToken SOAP exchange completed (XML redacted for security)")
 
             token = getattr(response, "AuthToken", None)
             expires = getattr(response, "HardExpirationTime", None)

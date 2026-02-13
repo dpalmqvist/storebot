@@ -96,7 +96,11 @@ class Agent:
             user_id=self.settings.tradera_user_id,
             user_token=self.settings.tradera_user_token,
         )
-        self.blocket = BlocketClient(bearer_token=self.settings.blocket_bearer_token)
+        self.blocket = (
+            BlocketClient(bearer_token=self.settings.blocket_bearer_token)
+            if self.settings.blocket_bearer_token
+            else None
+        )
         self.accounting = (
             AccountingService(
                 engine=self.engine,
@@ -303,8 +307,14 @@ class Agent:
     }
 
     def execute_tool(self, name: str, tool_input: dict) -> dict:
+        if not isinstance(tool_input, dict):
+            return {"error": f"Invalid tool input type for '{name}': expected dict"}
+
         logger.debug(
-            "Executing tool: %s with input: %s", name, tool_input, extra={"tool_name": name}
+            "Executing tool: %s with keys: %s",
+            name,
+            list(tool_input.keys()),
+            extra={"tool_name": name},
         )
 
         entry = self._DISPATCH.get(name)
@@ -313,13 +323,20 @@ class Agent:
 
         service_attr, method_name = entry
         service = getattr(self, service_attr, None)
-        if service is None and service_attr in self._DB_SERVICES:
-            return {
-                "error": f"{self._DB_SERVICES[service_attr]} not available (no database engine)"
-            }
+        if service is None:
+            if service_attr in self._DB_SERVICES:
+                return {
+                    "error": f"{self._DB_SERVICES[service_attr]} not available (no database engine)"
+                }
+            return {"error": f"Service '{service_attr}' not available"}
 
         try:
             return getattr(service, method_name)(**tool_input)
+        except TypeError as e:
+            logger.warning(
+                "Tool input validation failed: %s — %s", name, e, extra={"tool_name": name}
+            )
+            return {"error": f"Invalid arguments for '{name}': {e}"}
         except NotImplementedError:
             return {"error": f"Tool '{name}' is not yet implemented"}
         except Exception as e:

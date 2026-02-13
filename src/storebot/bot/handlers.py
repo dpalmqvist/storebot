@@ -1,4 +1,6 @@
 import logging
+import time
+from collections import defaultdict
 from datetime import time as dt_time
 from pathlib import Path
 
@@ -15,6 +17,27 @@ from storebot.tools.image import resize_for_analysis
 logger = logging.getLogger(__name__)
 
 TELEGRAM_MAX_MESSAGE_LENGTH = 4000
+
+# Per-chat rate limiting: {chat_id: [timestamp, ...]}
+_rate_limit_buckets: dict[int, list[float]] = defaultdict(list)
+
+
+def _parse_allowed_chat_ids(raw: str) -> set[int]:
+    """Parse comma-separated chat IDs into a set. Empty string = empty set (dev mode: all allowed)."""
+    return {int(x) for x in raw.split(",") if x.strip()}
+
+
+def _is_rate_limited(chat_id: int, settings: Settings) -> bool:
+    """Return True if chat_id has exceeded the message rate limit."""
+    now = time.monotonic()
+    window = settings.rate_limit_window_seconds
+    bucket = [t for t in _rate_limit_buckets[chat_id] if now - t < window]
+    _rate_limit_buckets[chat_id] = bucket
+
+    if len(bucket) >= settings.rate_limit_messages:
+        return True
+    bucket.append(now)
+    return False
 
 
 def _truncate(text: str) -> str:
@@ -87,7 +110,25 @@ async def _alert_admin(context: ContextTypes.DEFAULT_TYPE, message: str) -> None
         await context.bot.send_message(chat_id=chat_id, text=message)
 
 
+async def _check_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Check authorization and rate limiting. Returns True if request should proceed."""
+    chat_id = update.effective_chat.id
+    allowed = context.bot_data["allowed_chat_ids"]
+    if allowed and chat_id not in allowed:
+        logger.warning("Unauthorized access attempt", extra={"chat_id": str(chat_id)})
+        await update.message.reply_text("Åtkomst nekad.")
+        return False
+    settings: Settings = context.bot_data["settings"]
+    if _is_rate_limited(chat_id, settings):
+        logger.warning("Rate limit exceeded", extra={"chat_id": str(chat_id)})
+        await update.message.reply_text("För många meddelanden. Vänta en stund.")
+        return False
+    return True
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _check_access(update, context):
+        return
     context.bot_data["owner_chat_id"] = update.effective_chat.id
     await update.message.reply_text(
         "Hej! Jag är din butiksassistent. Skicka mig foton på produkter eller skriv "
@@ -103,6 +144,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _check_access(update, context):
+        return
     await update.message.reply_text(
         "Jag kan hjälpa dig med:\n"
         "- Söka efter liknande produkter på Tradera och Blocket\n"
@@ -123,6 +166,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def new_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _check_access(update, context):
+        return
     conversation: ConversationService = context.bot_data["conversation"]
     chat_id = str(update.effective_chat.id)
     conversation.clear_history(chat_id)
@@ -130,6 +175,8 @@ async def new_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _check_access(update, context):
+        return
     agent: Agent = context.bot_data["agent"]
     try:
         result = agent.handle_message(
@@ -142,6 +189,8 @@ async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _check_access(update, context):
+        return
     photo = update.message.photo[-1]  # Highest resolution
     file = await photo.get_file()
 
@@ -169,14 +218,17 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _check_access(update, context):
+        return
     user_message = update.message.text
     chat_id = str(update.effective_chat.id)
     logger.info("Received text message (len=%d)", len(user_message), extra={"chat_id": chat_id})
-    logger.debug("Message content: %s", user_message[:200], extra={"chat_id": chat_id})
     await _handle_with_conversation(update, context, user_message)
 
 
 async def scout_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _check_access(update, context):
+        return
     agent: Agent = context.bot_data["agent"]
     if not agent.scout:
         await update.message.reply_text("Scout-tjänsten är inte tillgänglig.")
@@ -215,6 +267,8 @@ async def scout_digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def rapport_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _check_access(update, context):
+        return
     agent: Agent = context.bot_data["agent"]
     if not agent.analytics:
         await update.message.reply_text("Analystjänsten är inte tillgänglig.")
@@ -255,6 +309,8 @@ async def weekly_comparison_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def marketing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _check_access(update, context):
+        return
     agent: Agent = context.bot_data["agent"]
     if not agent.marketing:
         await update.message.reply_text("Marknadsföringstjänsten är inte tillgänglig.")
@@ -323,7 +379,6 @@ async def poll_orders_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         for order in new_orders:
             msg = (
                 f"Ny order! #{order['order_id']}\n"
-                f"Köpare: {order.get('buyer_name', 'Okänd')}\n"
                 f"Produkt: #{order['product_id']}\n"
                 f"Belopp: {order.get('sale_price', 0)} kr"
             )
@@ -347,6 +402,8 @@ def main() -> None:
 
     app = Application.builder().token(settings.telegram_bot_token).build()
 
+    app.bot_data["settings"] = settings
+    app.bot_data["allowed_chat_ids"] = _parse_allowed_chat_ids(settings.allowed_chat_ids)
     app.bot_data["agent"] = Agent(settings, engine=engine)
     app.bot_data["conversation"] = ConversationService(
         engine=engine,

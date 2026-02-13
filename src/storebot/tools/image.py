@@ -1,7 +1,12 @@
 import base64
+import io
 from pathlib import Path
 
 from PIL import Image, ImageOps
+
+# Limit decompression to ~50 megapixels to prevent memory exhaustion
+# on resource-constrained devices (Raspberry Pi 5).
+Image.MAX_IMAGE_PIXELS = 50_000_000
 
 
 def _output_path(image_path: str, suffix: str) -> Path:
@@ -59,15 +64,12 @@ def optimize_for_upload(image_path: str, quality: int = 85) -> str:
 def encode_image_base64(image_path: str) -> tuple[str, str]:
     """Read image file and return (base64_data, media_type).
 
-    Supports JPEG, PNG, and WebP.
+    Re-encodes through PIL to strip EXIF metadata (GPS, camera serial, etc.)
+    before base64-encoding.
     """
-    ext_to_media = {
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".png": "image/png",
-        ".webp": "image/webp",
-    }
-    ext = Path(image_path).suffix.lower()
-    media_type = ext_to_media.get(ext, "image/jpeg")
-    data = Path(image_path).read_bytes()
-    return base64.b64encode(data).decode("utf-8"), media_type
+    with Image.open(image_path) as img:
+        img = _prepare_for_jpeg(img)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=90)
+        data = buf.getvalue()
+    return base64.b64encode(data).decode("utf-8"), "image/jpeg"
