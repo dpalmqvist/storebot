@@ -28,6 +28,7 @@ All listings start as **drafts** requiring explicit approval before publishing.
 
 - Python 3.10+ (developed with 3.13)
 - [uv](https://docs.astral.sh/uv/) package manager
+- `sqlite3` CLI tool (`sudo apt install sqlite3` on Debian/Ubuntu) — required by the backup script
 - API keys for the services below
 
 ## Quick start
@@ -327,6 +328,9 @@ Backups include integrity verification, gzip compression, and automatic rotation
 A systemd service file is provided for production deployment.
 
 ```bash
+# Install system dependencies
+sudo apt install sqlite3
+
 # Create a system user
 sudo useradd -r -s /usr/sbin/nologin storebot
 
