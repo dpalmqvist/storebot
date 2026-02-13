@@ -98,7 +98,7 @@ class Order(Base):
     __tablename__ = "orders"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"), nullable=True)
     platform: Mapped[str] = mapped_column(String, nullable=False)
     external_order_id: Mapped[str | None] = mapped_column(String)
     buyer_name: Mapped[str | None] = mapped_column(String)
@@ -116,7 +116,7 @@ class Order(Base):
     label_path: Mapped[str | None] = mapped_column(String)
     feedback_left_at: Mapped[datetime | None] = mapped_column(DateTime)
 
-    product: Mapped["Product"] = relationship(back_populates="orders")
+    product: Mapped["Product | None"] = relationship(back_populates="orders")
 
 
 class AgentAction(Base):

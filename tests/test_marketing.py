@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import sqlalchemy as sa
@@ -14,6 +14,9 @@ from storebot.db import (
     Product,
 )
 from storebot.tools.marketing import MarketingService
+
+# Fixed reference time for deterministic tests
+FIXED_NOW = datetime(2025, 6, 15, 12, 0, 0)
 
 
 @pytest.fixture
@@ -221,16 +224,16 @@ class TestRefreshListingStats:
 
 
 class TestAnalyzeListing:
-    def test_basic_analysis(self, service, engine):
+    @patch("storebot.tools.marketing._naive_now", return_value=FIXED_NOW)
+    def test_basic_analysis(self, _mock_now, service, engine):
         pid = _create_product(engine, acquisition_cost=100.0)
-        now = datetime.now(UTC)
         lid = _create_listing(
             engine,
             pid,
             views=100,
             watchers=10,
-            listed_at=now - timedelta(days=5),
-            ends_at=now + timedelta(days=2),
+            listed_at=FIXED_NOW - timedelta(days=5),
+            ends_at=FIXED_NOW + timedelta(days=2),
         )
         _create_snapshot(engine, lid, views=100, watchers=10, bids=3, current_price=250.0)
 
@@ -243,7 +246,7 @@ class TestAnalyzeListing:
         assert result["watcher_rate"] == 10.0
         assert result["bid_rate"] == 3.0
         assert result["days_active"] == 5
-        assert result["days_remaining"] in (1, 2)  # depends on exact timing
+        assert result["days_remaining"] == 2
         assert result["current_price"] == 250.0
         assert result["potential_profit"] == 150.0
 

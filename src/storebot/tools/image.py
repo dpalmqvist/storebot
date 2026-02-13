@@ -23,11 +23,11 @@ def resize_for_listing(image_path: str, max_size: tuple[int, int] = (1200, 1200)
 
     Returns path to the resized image.
     """
-    img = Image.open(image_path)
-    img = _prepare_for_jpeg(img)
-    img.thumbnail(max_size, Image.LANCZOS)
-    out = _output_path(image_path, "listing").with_suffix(".jpg")
-    img.save(out, "JPEG", quality=90)
+    with Image.open(image_path) as img:
+        img = _prepare_for_jpeg(img)
+        img.thumbnail(max_size, Image.LANCZOS)
+        out = _output_path(image_path, "listing").with_suffix(".jpg")
+        img.save(out, "JPEG", quality=90)
     return str(out)
 
 
@@ -36,11 +36,11 @@ def resize_for_analysis(image_path: str, max_size: tuple[int, int] = (800, 800))
 
     Returns path to the resized image.
     """
-    img = Image.open(image_path)
-    img = _prepare_for_jpeg(img)
-    img.thumbnail(max_size, Image.LANCZOS)
-    out = _output_path(image_path, "analysis").with_suffix(".jpg")
-    img.save(out, "JPEG", quality=80)
+    with Image.open(image_path) as img:
+        img = _prepare_for_jpeg(img)
+        img.thumbnail(max_size, Image.LANCZOS)
+        out = _output_path(image_path, "analysis").with_suffix(".jpg")
+        img.save(out, "JPEG", quality=80)
     return str(out)
 
 
@@ -49,10 +49,10 @@ def optimize_for_upload(image_path: str, quality: int = 85) -> str:
 
     Returns path to the optimized image.
     """
-    img = Image.open(image_path)
-    img = _prepare_for_jpeg(img)
-    out = _output_path(image_path, "optimized").with_suffix(".jpg")
-    img.save(out, "JPEG", quality=quality)
+    with Image.open(image_path) as img:
+        img = _prepare_for_jpeg(img)
+        out = _output_path(image_path, "optimized").with_suffix(".jpg")
+        img.save(out, "JPEG", quality=quality)
     return str(out)
 
 

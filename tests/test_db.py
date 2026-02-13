@@ -11,9 +11,15 @@ def test_tables_created(engine):
         "products",
         "product_images",
         "platform_listings",
+        "listing_snapshots",
         "orders",
+        "vouchers",
+        "voucher_rows",
         "agent_actions",
         "notifications",
+        "conversation_messages",
+        "saved_searches",
+        "seen_items",
     ]
     for table in expected:
         assert table in tables, f"Missing table: {table}"

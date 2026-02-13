@@ -31,8 +31,8 @@ class AccountingService:
         self.export_path = Path(export_path)
 
     def _next_voucher_number(self, session: sa.orm.Session) -> str:
-        result = session.execute(sa.select(sa.func.count()).select_from(Voucher)).scalar()
-        return f"V-{result + 1:03d}"
+        max_id = session.execute(sa.select(sa.func.max(Voucher.id))).scalar()
+        return f"V-{(max_id or 0) + 1:03d}"
 
     def create_voucher(
         self,

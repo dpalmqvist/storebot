@@ -82,7 +82,9 @@ These are set automatically by the `storebot-authorize-tradera` CLI command (see
 | `BLOCKET_BEARER_TOKEN` | | Blocket bearer token for price research |
 | `POSTNORD_API_KEY` | | PostNord API key for shipping labels |
 | `POSTNORD_SENDER_NAME` | | Sender name for shipping labels |
-| `POSTNORD_SENDER_ADDRESS` | | Sender address for shipping labels |
+| `POSTNORD_SENDER_STREET` | | Sender street address for shipping labels |
+| `POSTNORD_SENDER_POSTAL_CODE` | | Sender postal code for shipping labels |
+| `POSTNORD_SENDER_CITY` | | Sender city for shipping labels |
 | `ORDER_POLL_INTERVAL_MINUTES` | `30` | How often to poll Tradera for new orders |
 | `MAX_HISTORY_MESSAGES` | `20` | Conversation history length per chat |
 | `CONVERSATION_TIMEOUT_MINUTES` | `60` | Auto-reset conversation after inactivity |

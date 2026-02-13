@@ -102,43 +102,46 @@ def test_tool_use_message_serialization(engine):
     assert history[1]["content"][0]["type"] == "tool_result"
 
 
-def test_image_message_persistence(engine):
+def test_image_message_persistence(engine, tmp_path, monkeypatch):
     """Image messages store paths and reconstruct on load."""
-    # Create a test image file inside the allowed directory
-    photos_dir = Path("data/photos")
-    photos_dir.mkdir(parents=True, exist_ok=True)
+    # Create a test image file inside tmp_path (isolated from real data dir)
+    photos_dir = tmp_path / "photos"
+    photos_dir.mkdir()
     img_path = photos_dir / "test_persist.jpg"
     img_path.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
 
-    try:
-        svc = ConversationService(engine)
+    # Monkeypatch _validate_image_paths to accept tmp_path
+    def _accept_tmp_paths(paths):
+        return paths if paths else None
 
-        content = [
-            {
-                "type": "image",
-                "source": {"type": "base64", "media_type": "image/jpeg", "data": "abc123"},
-            },
-            {
-                "type": "text",
-                "text": f"En stol\n\n[Bildernas sökvägar: {img_path}]",
-            },
-        ]
+    monkeypatch.setattr("storebot.tools.conversation._validate_image_paths", _accept_tmp_paths)
 
-        messages = [{"role": "user", "content": content}]
-        svc.save_messages("chat1", messages)
+    svc = ConversationService(engine)
 
-        history = svc.load_history("chat1")
-        assert len(history) == 1
+    content = [
+        {
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/jpeg", "data": "abc123"},
+        },
+        {
+            "type": "text",
+            "text": f"En stol\n\n[Bildernas sökvägar: {img_path}]",
+        },
+    ]
 
-        loaded_content = history[0]["content"]
-        # Image should be reconstructed (not placeholder)
-        assert loaded_content[0]["type"] == "image"
-        assert loaded_content[0]["source"]["type"] == "base64"
-        assert loaded_content[0]["source"]["media_type"] == "image/jpeg"
-        # base64 data should be re-encoded from the file, not the original "abc123"
-        assert loaded_content[0]["source"]["data"] != "abc123"
-    finally:
-        img_path.unlink(missing_ok=True)
+    messages = [{"role": "user", "content": content}]
+    svc.save_messages("chat1", messages)
+
+    history = svc.load_history("chat1")
+    assert len(history) == 1
+
+    loaded_content = history[0]["content"]
+    # Image should be reconstructed (not placeholder)
+    assert loaded_content[0]["type"] == "image"
+    assert loaded_content[0]["source"]["type"] == "base64"
+    assert loaded_content[0]["source"]["media_type"] == "image/jpeg"
+    # base64 data should be re-encoded from the file, not the original "abc123"
+    assert loaded_content[0]["source"]["data"] != "abc123"
 
 
 def test_missing_image_file_placeholder(engine):

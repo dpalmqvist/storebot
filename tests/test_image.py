@@ -1,4 +1,5 @@
 import base64
+import os
 
 from PIL import Image
 
@@ -13,6 +14,16 @@ from storebot.tools.image import (
 def _create_test_image(path, size=(2000, 1500), mode="RGB"):
     """Create a test image with the given size and mode."""
     img = Image.new(mode, size, color="red")
+    img.save(str(path))
+    return str(path)
+
+
+def _create_gradient_image(path, size=(800, 600)):
+    """Create a gradient test image that compresses differently at various quality levels."""
+    img = Image.new("RGB", size)
+    for x in range(size[0]):
+        for y in range(size[1]):
+            img.putpixel((x, y), (x % 256, y % 256, (x + y) % 256))
     img.save(str(path))
     return str(path)
 
@@ -86,14 +97,13 @@ class TestOptimizeForUpload:
         assert out.endswith("_optimized.jpg")
 
     def test_custom_quality(self, tmp_path):
-        src = _create_test_image(tmp_path / "photo.jpg", size=(800, 600))
-        out_high = optimize_for_upload(src, quality=95)
-        out_low = optimize_for_upload(src, quality=30)
+        src_high = _create_gradient_image(tmp_path / "gradient_high.jpg")
+        src_low = _create_gradient_image(tmp_path / "gradient_low.jpg")
+        out_high = optimize_for_upload(src_high, quality=95)
+        out_low = optimize_for_upload(src_low, quality=30)
 
-        # Lower quality should generally produce a smaller file
-        import os
-
-        assert os.path.getsize(out_low) <= os.path.getsize(out_high)
+        # Lower quality produces a smaller file (gradient image has enough detail)
+        assert os.path.getsize(out_low) < os.path.getsize(out_high)
 
     def test_converts_rgba(self, tmp_path):
         src = _create_test_image(tmp_path / "alpha.png", size=(400, 300), mode="RGBA")

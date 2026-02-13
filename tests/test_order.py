@@ -172,7 +172,7 @@ class TestCheckNewOrders:
             assert actions[0].agent_name == "order"
             assert actions[0].product_id == product_id
 
-    def test_unmatched_order_skipped(self, service, engine, mock_tradera):
+    def test_unmatched_order_persisted(self, service, engine, mock_tradera):
         mock_tradera.get_orders.return_value = {
             "orders": [_make_tradera_order(item_id="99999")],
             "count": 1,
@@ -180,10 +180,16 @@ class TestCheckNewOrders:
 
         result = service.check_new_orders()
 
-        assert result["count"] == 0
+        assert result["count"] == 1
+        assert result["new_orders"][0]["product_id"] is None
         with Session(engine) as session:
             actions = session.query(AgentAction).filter_by(action_type="unmatched_order").all()
             assert len(actions) == 1
+            # Order should be persisted with null product_id
+            order = session.query(Order).first()
+            assert order is not None
+            assert order.product_id is None
+            assert order.external_order_id == "99"
 
     def test_tradera_error_propagated(self, service, mock_tradera):
         mock_tradera.get_orders.return_value = {"error": "Connection refused"}
@@ -369,6 +375,23 @@ class TestCreateSaleVoucher:
             actions = session.query(AgentAction).filter_by(action_type="create_sale_voucher").all()
             assert len(actions) == 1
             assert actions[0].agent_name == "order"
+
+    def test_unmatched_order_rejected(self, service, engine):
+        with Session(engine) as session:
+            order = Order(
+                product_id=None,
+                platform="tradera",
+                external_order_id="unmatched",
+                sale_price=500.0,
+                status="pending",
+            )
+            session.add(order)
+            session.commit()
+            order_id = order.id
+
+        result = service.create_sale_voucher(order_id)
+
+        assert "no linked product" in result["error"]
 
     def test_no_accounting_service(self, engine, mock_tradera):
         svc = OrderService(engine=engine, tradera=mock_tradera, accounting=None)
