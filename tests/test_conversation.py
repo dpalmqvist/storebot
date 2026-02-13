@@ -114,9 +114,7 @@ def test_image_message_persistence(engine, tmp_path, monkeypatch):
     def _accept_tmp_paths(paths):
         return paths if paths else None
 
-    monkeypatch.setattr(
-        "storebot.tools.conversation._validate_image_paths", _accept_tmp_paths
-    )
+    monkeypatch.setattr("storebot.tools.conversation._validate_image_paths", _accept_tmp_paths)
 
     svc = ConversationService(engine)
 
