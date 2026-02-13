@@ -10,6 +10,14 @@ from storebot.retry import retry_on_transient
 logger = logging.getLogger(__name__)
 
 
+def _parse_int_config(value: str, name: str) -> int:
+    """Parse a string config value as an integer, raising ValueError with a clear message."""
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        raise ValueError(f"{name} must be an integer, got: {value!r}")
+
+
 class TraderaClient:
     """Client for Tradera SOAP API via zeep.
 
@@ -35,10 +43,10 @@ class TraderaClient:
         user_token: str = "",
         timeout: int = 30,
     ):
-        self.app_id = app_id
+        self._app_id = _parse_int_config(app_id, "TRADERA_APP_ID")
+        self._user_id = _parse_int_config(user_id, "TRADERA_USER_ID") if user_id else 0
         self.app_key = app_key
         self.sandbox = sandbox
-        self.user_id = user_id
         self.user_token = user_token
         self.timeout = timeout
         self._search_client = None
@@ -85,7 +93,7 @@ class TraderaClient:
 
     def _auth_headers(self, client, include_authorization: bool = False) -> dict:
         auth = client.get_element("{http://api.tradera.com}AuthenticationHeader")(
-            AppId=int(self.app_id), AppKey=self.app_key
+            AppId=self._app_id, AppKey=self.app_key
         )
         config = client.get_element("{http://api.tradera.com}ConfigurationHeader")(
             Sandbox=int(self.sandbox), MaxResultAge=0
@@ -93,7 +101,7 @@ class TraderaClient:
         headers = [auth, config]
         if include_authorization:
             authz = client.get_element("{http://api.tradera.com}AuthorizationHeader")(
-                UserId=int(self.user_id), Token=self.user_token
+                UserId=self._user_id, Token=self.user_token
             )
             headers.append(authz)
         return {"_soapheaders": headers}

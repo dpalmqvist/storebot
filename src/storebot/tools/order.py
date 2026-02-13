@@ -68,23 +68,9 @@ class OrderService:
                         break
 
                 if product_id is None:
-                    # Unmatched order — log but still create record
                     logger.warning("No local listing found for Tradera order %s", ext_id)
-                    # We need a product_id for the FK — skip unmatched orders
-                    action = AgentAction(
-                        agent_name="order",
-                        action_type="unmatched_order",
-                        details={
-                            "external_order_id": ext_id,
-                            "buyer_name": order_data.get("buyer_name"),
-                            "items": order_data.get("items", []),
-                        },
-                        executed_at=datetime.now(UTC),
-                    )
-                    session.add(action)
-                    session.commit()
-                    continue
 
+                matched = product_id is not None
                 order = Order(
                     product_id=product_id,
                     platform="tradera",
@@ -99,26 +85,32 @@ class OrderService:
                 session.add(order)
                 session.flush()
 
-                notification = Notification(
-                    type="new_order",
-                    product_id=product_id,
-                    message_text=(
-                        f"Ny order! #{order.id} — "
-                        f"{order_data.get('buyer_name', 'Okänd köpare')} "
-                        f"köpte produkt #{product_id} för {sale_price} kr"
-                    ),
-                )
-                session.add(notification)
+                if matched:
+                    notification = Notification(
+                        type="new_order",
+                        product_id=product_id,
+                        message_text=(
+                            f"Ny order! #{order.id} — "
+                            f"{order_data.get('buyer_name', 'Okänd köpare')} "
+                            f"köpte produkt #{product_id} för {sale_price} kr"
+                        ),
+                    )
+                    session.add(notification)
+
+                action_details = {
+                    "order_id": order.id,
+                    "external_order_id": ext_id,
+                    "sale_price": sale_price,
+                    "buyer_name": order_data.get("buyer_name"),
+                }
+                if not matched:
+                    action_details["items"] = order_data.get("items", [])
 
                 action = AgentAction(
                     agent_name="order",
-                    action_type="detect_new_order",
+                    action_type="detect_new_order" if matched else "unmatched_order",
                     product_id=product_id,
-                    details={
-                        "order_id": order.id,
-                        "external_order_id": ext_id,
-                        "sale_price": sale_price,
-                    },
+                    details=action_details,
                     executed_at=datetime.now(UTC),
                 )
                 session.add(action)
@@ -144,7 +136,7 @@ class OrderService:
             if not order:
                 return {"error": f"Order {order_id} not found"}
 
-            product = session.get(Product, order.product_id)
+            product = session.get(Product, order.product_id) if order.product_id else None
             return {
                 "order_id": order.id,
                 "product_id": order.product_id,
@@ -244,7 +236,7 @@ class OrderService:
                 # Actual shipping expense (6250 debit) is recorded when paying the carrier.
                 rows.append({"account": 3001, "debit": 0, "credit": shipping_cost})
 
-            product = session.get(Product, order.product_id)
+            product = session.get(Product, order.product_id) if order.product_id else None
             product_title = product.title if product else f"Produkt #{order.product_id}"
 
             result = self.accounting.create_voucher(
@@ -360,7 +352,7 @@ class OrderService:
             if not order.buyer_address:
                 return {"error": f"Order {order_id} saknar köparadress"}
 
-            product = session.get(Product, order.product_id)
+            product = session.get(Product, order.product_id) if order.product_id else None
             if not product or not product.weight_grams:
                 return {"error": f"Produkt för order {order_id} saknar vikt (weight_grams)"}
 
@@ -487,7 +479,7 @@ class OrderService:
 
             result_orders = []
             for o in orders:
-                product = session.get(Product, o.product_id)
+                product = session.get(Product, o.product_id) if o.product_id else None
                 result_orders.append(
                     {
                         "order_id": o.id,
