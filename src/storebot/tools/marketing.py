@@ -1,10 +1,9 @@
 import logging
-from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
 from storebot.db import ListingSnapshot, Order, PlatformListing
-from storebot.tools.helpers import log_action
+from storebot.tools.helpers import log_action, naive_now
 
 logger = logging.getLogger(__name__)
 
@@ -16,11 +15,6 @@ def _listing_category(listing: PlatformListing) -> str:
     if listing.product and listing.product.category:
         return listing.product.category
     return "Okänd"
-
-
-def _naive_now() -> datetime:
-    """Current UTC time as a naive datetime (for comparison with SQLite-stored values)."""
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _listing_summary(listing: PlatformListing) -> dict:
@@ -116,7 +110,7 @@ class MarketingService:
             watcher_rate = (watchers / views * 100) if views > 0 else 0.0
             bid_rate = (latest_bids / views * 100) if views > 0 else 0.0
 
-            now = _naive_now()
+            now = naive_now()
             days_active = (now - listing.listed_at).days if listing.listed_at else 0
             days_remaining = (listing.ends_at - now).days if listing.ends_at else None
 
@@ -382,7 +376,7 @@ class MarketingService:
         )
         bids = latest_snapshot.bids if latest_snapshot else 0
 
-        now = _naive_now()
+        now = naive_now()
         days_active = (now - listing.listed_at).days if listing.listed_at else 0
         days_remaining = (listing.ends_at - now).days if listing.ends_at else None
 

@@ -5,6 +5,11 @@ from datetime import UTC, datetime
 from storebot.db import AgentAction
 
 
+def naive_now() -> datetime:
+    """Current UTC time as a naive datetime (for comparison with SQLite-stored values)."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 def log_action(
     session,
     agent_name: str,

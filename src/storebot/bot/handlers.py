@@ -84,6 +84,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/orders — Kolla efter nya ordrar\n"
         "/scout — Kör alla sparade sökningar nu\n"
         "/marketing — Visa marknadsföringsrapport\n"
+        "/rapport — Affärsrapport (sammanfattning + lönsamhet + lager)\n"
         "/new — Starta en ny konversation\n"
     )
 
@@ -96,11 +97,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "- Hantera ordrar och leveranser\n"
         "- Bokföring (verifikationer som PDF)\n"
         "- Sparade sökningar (scout) — hitta nya fynd automatiskt\n"
-        "- Marknadsföring — prestanda, statistik och förbättringsförslag\n\n"
+        "- Marknadsföring — prestanda, statistik och förbättringsförslag\n"
+        "- Analys — affärssammanfattning, lönsamhet, lagerrapport, periodjämförelse\n\n"
         "Kommandon:\n"
         "/orders — Kolla efter nya ordrar\n"
         "/scout — Kör alla sparade sökningar nu\n"
         "/marketing — Visa marknadsföringsrapport\n"
+        "/rapport — Affärsrapport (sammanfattning + lönsamhet + lager)\n"
         "/new — Starta en ny konversation\n\n"
         "Skicka foton på en produkt eller beskriv vad du vill göra."
     )
@@ -189,6 +192,43 @@ async def scout_digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception:
         logger.exception("Error in scout digest job")
         await _alert_admin(context, "Fel i scout-jobbet. Kontrollera loggarna.")
+
+
+async def rapport_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    agent: Agent = context.bot_data["agent"]
+    if not agent.analytics:
+        await update.message.reply_text("Analystjänsten är inte tillgänglig.")
+        return
+
+    try:
+        summary = agent.analytics.business_summary()
+        profitability = agent.analytics.profitability_report()
+        inventory = agent.analytics.inventory_report()
+        text = agent.analytics._format_full_report(summary, profitability, inventory)
+        await update.message.reply_text(_truncate(text))
+    except Exception:
+        logger.exception("Error running rapport command")
+        await update.message.reply_text("Något gick fel vid rapportgenereringen. Försök igen.")
+
+
+async def weekly_comparison_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    agent: Agent = context.bot_data.get("agent")
+    if not agent or not agent.analytics:
+        return
+
+    try:
+        result = agent.analytics.period_comparison()
+        text = agent.analytics._format_comparison(result)
+
+        chat_id = context.bot_data.get("owner_chat_id")
+        if not chat_id:
+            logger.warning("No owner_chat_id set — cannot send weekly comparison")
+            return
+
+        await context.bot.send_message(chat_id=chat_id, text=_truncate(text))
+    except Exception:
+        logger.exception("Error in weekly comparison job")
+        await _alert_admin(context, "Fel i veckorapport-jobbet. Kontrollera loggarna.")
 
 
 async def marketing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -291,6 +331,7 @@ def main() -> None:
     app.add_handler(CommandHandler("orders", orders_command))
     app.add_handler(CommandHandler("scout", scout_command))
     app.add_handler(CommandHandler("marketing", marketing_command))
+    app.add_handler(CommandHandler("rapport", rapport_command))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
@@ -325,6 +366,14 @@ def main() -> None:
             "Marketing refresh scheduled daily at %02d:00",
             settings.marketing_refresh_hour,
         )
+
+        # Weekly business comparison (Sundays at 18:00)
+        app.job_queue.run_daily(
+            weekly_comparison_job,
+            time=dt_time(hour=18),
+            days=(6,),
+        )
+        logger.info("Weekly business comparison scheduled Sundays at 18:00")
 
     logger.info("Starting bot...")
     app.run_polling()

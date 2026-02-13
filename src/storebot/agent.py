@@ -6,6 +6,7 @@ import anthropic
 
 from storebot.config import get_settings
 from storebot.tools.accounting import AccountingService
+from storebot.tools.analytics import AnalyticsService
 from storebot.tools.blocket import BlocketClient
 from storebot.tools.definitions import TOOLS
 from storebot.tools.image import encode_image_base64
@@ -45,6 +46,7 @@ Du kan:
 - Hantera sparade sökningar (scout): skapa, lista, uppdatera, ta bort
 - Köra sparade sökningar manuellt eller alla på en gång för att hitta nya fynd
 - Marknadsföring: uppdatera annonsstatistik, analysera prestanda, skapa rapporter, ge förbättringsförslag
+- Analys: affärssammanfattning, lönsamhet per produkt/kategori/källa, lagerrapport, periodjämförelse, inköpskanalanalys
 
 VIKTIGT — Orderhantering:
 1. Markera ALDRIG en order som skickad utan ägarens uttryckliga bekräftelse.
@@ -152,6 +154,7 @@ class Agent:
             if self.engine
             else None
         )
+        self.analytics = AnalyticsService(engine=self.engine) if self.engine else None
 
     def _call_api(self, messages: list[dict]):
         """Send messages to Claude and return the response."""
@@ -259,6 +262,11 @@ class Agent:
         "analyze_listing": ("marketing", "analyze_listing"),
         "get_performance_report": ("marketing", "get_performance_report"),
         "get_recommendations": ("marketing", "get_recommendations"),
+        "business_summary": ("analytics", "business_summary"),
+        "profitability_report": ("analytics", "profitability_report"),
+        "inventory_report": ("analytics", "inventory_report"),
+        "period_comparison": ("analytics", "period_comparison"),
+        "sourcing_analysis": ("analytics", "sourcing_analysis"),
     }
 
     # Services that require a database engine (service_attr → display name)
@@ -268,6 +276,7 @@ class Agent:
         "accounting": "AccountingService",
         "scout": "ScoutService",
         "marketing": "MarketingService",
+        "analytics": "AnalyticsService",
     }
 
     def execute_tool(self, name: str, tool_input: dict) -> dict:
