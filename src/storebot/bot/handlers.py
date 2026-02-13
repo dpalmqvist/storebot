@@ -14,6 +14,43 @@ from storebot.tools.image import resize_for_analysis
 
 logger = logging.getLogger(__name__)
 
+TELEGRAM_MAX_MESSAGE_LENGTH = 4000
+
+
+def _truncate(text: str) -> str:
+    """Truncate text to fit Telegram message limits."""
+    if len(text) > TELEGRAM_MAX_MESSAGE_LENGTH:
+        return text[:TELEGRAM_MAX_MESSAGE_LENGTH] + "\n\n...avkortat"
+    return text
+
+
+async def _handle_with_conversation(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_message: str,
+    image_paths: list[str] | None = None,
+    error_text: str = "Något gick fel. Försök igen.",
+) -> None:
+    """Shared logic for handle_text and handle_photo: load history, call agent, save, reply."""
+    agent: Agent = context.bot_data["agent"]
+    conversation: ConversationService = context.bot_data["conversation"]
+    chat_id = str(update.effective_chat.id)
+
+    history = conversation.load_history(chat_id)
+
+    try:
+        result = agent.handle_message(
+            user_message,
+            image_paths=image_paths,
+            conversation_history=history,
+        )
+        new_messages = result.messages[len(history) :]
+        conversation.save_messages(chat_id, new_messages)
+        await update.message.reply_text(result.text)
+    except Exception:
+        logger.exception("Error in conversation handler")
+        await update.message.reply_text(error_text)
+
 
 def _validate_credentials(settings: Settings) -> None:
     """Log warnings for missing credentials at startup. Does not crash."""
@@ -89,10 +126,6 @@ async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    agent: Agent = context.bot_data["agent"]
-    conversation: ConversationService = context.bot_data["conversation"]
-    chat_id = str(update.effective_chat.id)
-
     photo = update.message.photo[-1]  # Highest resolution
     file = await photo.get_file()
 
@@ -106,43 +139,19 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     analysis_path = resize_for_analysis(str(file_path))
     caption = update.message.caption or ""
 
-    history = conversation.load_history(chat_id)
-
-    try:
-        result = agent.handle_message(
-            caption,
-            image_paths=[analysis_path],
-            conversation_history=history,
-        )
-        new_messages = result.messages[len(history) :]
-        conversation.save_messages(chat_id, new_messages)
-        await update.message.reply_text(result.text)
-    except Exception:
-        logger.exception("Error handling photo")
-        await update.message.reply_text("Något gick fel vid bildanalysen. Försök igen.")
+    await _handle_with_conversation(
+        update,
+        context,
+        caption,
+        image_paths=[analysis_path],
+        error_text="Något gick fel vid bildanalysen. Försök igen.",
+    )
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    agent: Agent = context.bot_data["agent"]
-    conversation: ConversationService = context.bot_data["conversation"]
-    chat_id = str(update.effective_chat.id)
     user_message = update.message.text
-
     logger.info("Received message: %s", user_message[:100])
-
-    history = conversation.load_history(chat_id)
-
-    try:
-        result = agent.handle_message(
-            user_message,
-            conversation_history=history,
-        )
-        new_messages = result.messages[len(history) :]
-        conversation.save_messages(chat_id, new_messages)
-        await update.message.reply_text(result.text)
-    except Exception:
-        logger.exception("Error handling message")
-        await update.message.reply_text("Något gick fel. Försök igen.")
+    await _handle_with_conversation(update, context, user_message)
 
 
 async def scout_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -154,9 +163,7 @@ async def scout_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     try:
         result = agent.scout.run_all_searches()
         digest = result.get("digest", "Inga nya fynd.")
-        if len(digest) > 4000:
-            digest = digest[:4000] + "\n\n...avkortat"
-        await update.message.reply_text(digest)
+        await update.message.reply_text(_truncate(digest))
     except Exception:
         logger.exception("Error running scout command")
         await update.message.reply_text("Något gick fel vid scout-sökningen. Försök igen.")
@@ -178,9 +185,7 @@ async def scout_digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             return
 
         digest = result.get("digest", "")
-        if len(digest) > 4000:
-            digest = digest[:4000] + "\n\n...avkortat"
-        await context.bot.send_message(chat_id=chat_id, text=digest)
+        await context.bot.send_message(chat_id=chat_id, text=_truncate(digest))
     except Exception:
         logger.exception("Error in scout digest job")
         await _alert_admin(context, "Fel i scout-jobbet. Kontrollera loggarna.")
@@ -195,9 +200,7 @@ async def marketing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     try:
         report = agent.marketing.get_performance_report()
         text = agent.marketing._format_report(report)
-        if len(text) > 4000:
-            text = text[:4000] + "\n\n...avkortat"
-        await update.message.reply_text(text)
+        await update.message.reply_text(_truncate(text))
     except Exception:
         logger.exception("Error running marketing command")
         await update.message.reply_text(
@@ -228,9 +231,7 @@ async def marketing_refresh_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             lines.append(f"Annons #{rec['listing_id']}: {rec['suggestion']}")
             lines.append(f"  Anledning: {rec['reason']}\n")
         text = "\n".join(lines).strip()
-        if len(text) > 4000:
-            text = text[:4000] + "\n\n...avkortat"
-        await context.bot.send_message(chat_id=chat_id, text=text)
+        await context.bot.send_message(chat_id=chat_id, text=_truncate(text))
     except Exception:
         logger.exception("Error in marketing refresh job")
         await _alert_admin(context, "Fel i marknadsföringsjobbet. Kontrollera loggarna.")

@@ -3,7 +3,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from storebot.db import AgentAction, ListingSnapshot, Order, PlatformListing
+from storebot.db import ListingSnapshot, Order, PlatformListing
+from storebot.tools.helpers import log_action
 
 logger = logging.getLogger(__name__)
 
@@ -83,13 +84,12 @@ class MarketingService:
                     }
                 )
 
-            action = AgentAction(
-                agent_name="marketing",
-                action_type="refresh_stats",
-                details={"refreshed": len(refreshed), "listing_id": listing_id},
-                executed_at=datetime.now(UTC),
+            log_action(
+                session,
+                "marketing",
+                "refresh_stats",
+                {"refreshed": len(refreshed), "listing_id": listing_id},
             )
-            session.add(action)
             session.commit()
 
             return {"refreshed": len(refreshed), "listings": refreshed}
@@ -130,13 +130,7 @@ class MarketingService:
             if current_price and acquisition_cost:
                 potential_profit = current_price - acquisition_cost
 
-            action = AgentAction(
-                agent_name="marketing",
-                action_type="analyze_listing",
-                details={"listing_id": listing_id},
-                executed_at=datetime.now(UTC),
-            )
-            session.add(action)
+            log_action(session, "marketing", "analyze_listing", {"listing_id": listing_id})
             session.commit()
 
             return {
@@ -219,13 +213,12 @@ class MarketingService:
                 .first()
             )
 
-            action = AgentAction(
-                agent_name="marketing",
-                action_type="performance_report",
-                details={"active": len(active_listings), "sold": len(sold_listings)},
-                executed_at=datetime.now(UTC),
+            log_action(
+                session,
+                "marketing",
+                "performance_report",
+                {"active": len(active_listings), "sold": len(sold_listings)},
             )
-            session.add(action)
             session.commit()
 
             return {
@@ -272,16 +265,12 @@ class MarketingService:
 
             recommendations.sort(key=lambda r: PRIORITY_ORDER.get(r["priority"], 3))
 
-            action = AgentAction(
-                agent_name="marketing",
-                action_type="generate_recommendations",
-                details={
-                    "listing_id": listing_id,
-                    "recommendation_count": len(recommendations),
-                },
-                executed_at=datetime.now(UTC),
+            log_action(
+                session,
+                "marketing",
+                "generate_recommendations",
+                {"listing_id": listing_id, "recommendation_count": len(recommendations)},
             )
-            session.add(action)
             session.commit()
 
             return {
@@ -382,7 +371,6 @@ class MarketingService:
         category_avg_views: dict[str, float],
     ) -> list[dict]:
         """Evaluate a single listing and return applicable recommendations."""
-        recs = []
         views = listing.views or 0
         watchers = listing.watchers or 0
 
@@ -401,58 +389,77 @@ class MarketingService:
         cat = _listing_category(listing)
         avg_views = category_avg_views.get(cat, 0)
 
-        # Relist: ended with watchers but no sale
+        recs = []
+        for check in (
+            self._check_relist,
+            self._check_reprice_lower,
+            self._check_reprice_raise,
+            self._check_improve_content,
+            self._check_extend_duration,
+            self._check_category_opportunity,
+        ):
+            rec = check(listing, views, watchers, bids, days_active, days_remaining, avg_views)
+            if rec:
+                recs.append(rec)
+        return recs
+
+    @staticmethod
+    def _check_relist(listing, views, watchers, bids, days_active, days_remaining, avg_views):
         if listing.status == "ended" and watchers > 0:
-            recs.append(
-                {
-                    "listing_id": listing.id,
-                    "type": "relist",
-                    "priority": "high",
-                    "suggestion": "Lägg upp igen \u2014 annonsen hade bevakare men såldes inte.",
-                    "reason": f"{watchers} bevakare visar intresse.",
-                }
-            )
+            return {
+                "listing_id": listing.id,
+                "type": "relist",
+                "priority": "high",
+                "suggestion": "Lägg upp igen \u2014 annonsen hade bevakare men såldes inte.",
+                "reason": f"{watchers} bevakare visar intresse.",
+            }
 
-        # Reprice lower: high views, zero bids
+    @staticmethod
+    def _check_reprice_lower(
+        listing, views, watchers, bids, days_active, days_remaining, avg_views
+    ):
         if listing.status == "active" and views >= 20 and bids == 0:
-            recs.append(
-                {
-                    "listing_id": listing.id,
-                    "type": "reprice_lower",
-                    "priority": "medium",
-                    "suggestion": "Överväg att sänka priset \u2014 många visningar men inga bud.",
-                    "reason": f"{views} visningar, 0 bud.",
-                }
-            )
+            return {
+                "listing_id": listing.id,
+                "type": "reprice_lower",
+                "priority": "medium",
+                "suggestion": "Överväg att sänka priset \u2014 många visningar men inga bud.",
+                "reason": f"{views} visningar, 0 bud.",
+            }
 
-        # Reprice raise: high watcher ratio + multiple bids
+    @staticmethod
+    def _check_reprice_raise(
+        listing, views, watchers, bids, days_active, days_remaining, avg_views
+    ):
         if listing.status == "active" and views > 0:
             watcher_rate = watchers / views
             if watcher_rate > 0.1 and bids >= 3:
-                recs.append(
-                    {
-                        "listing_id": listing.id,
-                        "type": "reprice_raise",
-                        "priority": "low",
-                        "suggestion": "Startpriset kan vara för lågt \u2014 högt intresse och flera bud.",
-                        "reason": f"{watchers} bevakare ({watcher_rate:.0%} av visningar), {bids} bud.",
-                    }
-                )
+                return {
+                    "listing_id": listing.id,
+                    "type": "reprice_raise",
+                    "priority": "low",
+                    "suggestion": "Startpriset kan vara för lågt \u2014 högt intresse och flera bud.",
+                    "reason": f"{watchers} bevakare ({watcher_rate:.0%} av visningar), {bids} bud.",
+                }
 
-        # Improve content: views below category avg after 3+ days
+    @staticmethod
+    def _check_improve_content(
+        listing, views, watchers, bids, days_active, days_remaining, avg_views
+    ):
         if listing.status == "active" and days_active >= 3 and avg_views > 0:
             if views < avg_views * 0.5:
-                recs.append(
-                    {
-                        "listing_id": listing.id,
-                        "type": "improve_content",
-                        "priority": "medium",
-                        "suggestion": "Förbättra titel eller bilder \u2014 visningarna ligger under snittet.",
-                        "reason": f"{views} visningar vs kategorisnitt {avg_views:.0f}.",
-                    }
-                )
+                return {
+                    "listing_id": listing.id,
+                    "type": "improve_content",
+                    "priority": "medium",
+                    "suggestion": "Förbättra titel eller bilder \u2014 visningarna ligger under snittet.",
+                    "reason": f"{views} visningar vs kategorisnitt {avg_views:.0f}.",
+                }
 
-        # Extend duration: ending soon with watchers but no bids
+    @staticmethod
+    def _check_extend_duration(
+        listing, views, watchers, bids, days_active, days_remaining, avg_views
+    ):
         if (
             listing.status == "active"
             and days_remaining is not None
@@ -460,26 +467,23 @@ class MarketingService:
             and watchers > 0
             and bids == 0
         ):
-            recs.append(
-                {
-                    "listing_id": listing.id,
-                    "type": "extend_duration",
-                    "priority": "high",
-                    "suggestion": "Förläng annonsen \u2014 den slutar snart och har bevakare.",
-                    "reason": f"Slutar om {days_remaining} dag(ar), {watchers} bevakare, 0 bud.",
-                }
-            )
+            return {
+                "listing_id": listing.id,
+                "type": "extend_duration",
+                "priority": "high",
+                "suggestion": "Förläng annonsen \u2014 den slutar snart och har bevakare.",
+                "reason": f"Slutar om {days_remaining} dag(ar), {watchers} bevakare, 0 bud.",
+            }
 
-        # Category opportunity: listing with 2x avg views
+    @staticmethod
+    def _check_category_opportunity(
+        listing, views, watchers, bids, days_active, days_remaining, avg_views
+    ):
         if listing.status == "active" and avg_views > 0 and views > avg_views * 2:
-            recs.append(
-                {
-                    "listing_id": listing.id,
-                    "type": "category_opportunity",
-                    "priority": "low",
-                    "suggestion": "Populär kategori \u2014 överväg att lägga upp fler liknande.",
-                    "reason": f"{views} visningar, kategorisnittet är {avg_views:.0f}.",
-                }
-            )
-
-        return recs
+            return {
+                "listing_id": listing.id,
+                "type": "category_opportunity",
+                "priority": "low",
+                "suggestion": "Populär kategori \u2014 överväg att lägga upp fler liknande.",
+                "reason": f"{views} visningar, kategorisnittet är {avg_views:.0f}.",
+            }

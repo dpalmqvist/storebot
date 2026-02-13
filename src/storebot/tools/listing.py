@@ -4,7 +4,8 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from storebot.db import AgentAction, PlatformListing, Product, ProductImage
+from storebot.db import PlatformListing, Product, ProductImage
+from storebot.tools.helpers import log_action
 from storebot.tools.image import encode_image_base64, optimize_for_upload
 
 logger = logging.getLogger(__name__)
@@ -68,15 +69,14 @@ class ListingService:
             session.add(listing)
             session.flush()
 
-            action = AgentAction(
-                agent_name="listing",
-                action_type="create_draft",
+            log_action(
+                session,
+                "listing",
+                "create_draft",
+                {"listing_id": listing.id, "listing_type": listing_type},
                 product_id=product_id,
-                details={"listing_id": listing.id, "listing_type": listing_type},
                 requires_approval=True,
-                executed_at=datetime.now(UTC),
             )
-            session.add(action)
             session.commit()
 
             preview = _format_draft_preview(listing, product)
@@ -173,14 +173,13 @@ class ListingService:
                 session.rollback()
                 return {"error": "Validation failed", "details": errors}
 
-            action = AgentAction(
-                agent_name="listing",
-                action_type="update_draft",
+            log_action(
+                session,
+                "listing",
+                "update_draft",
+                {"listing_id": listing.id, "updated_fields": list(fields.keys())},
                 product_id=listing.product_id,
-                details={"listing_id": listing.id, "updated_fields": list(fields.keys())},
-                executed_at=datetime.now(UTC),
             )
-            session.add(action)
             session.commit()
 
             product = session.get(Product, listing.product_id)
@@ -200,15 +199,14 @@ class ListingService:
             listing.status = "approved"
             now = datetime.now(UTC)
 
-            action = AgentAction(
-                agent_name="listing",
-                action_type="approve_draft",
+            log_action(
+                session,
+                "listing",
+                "approve_draft",
+                {"listing_id": listing.id},
                 product_id=listing.product_id,
-                details={"listing_id": listing.id},
                 approved_at=now,
-                executed_at=now,
             )
-            session.add(action)
             session.commit()
 
             return {"listing_id": listing.id, "status": "approved"}
@@ -219,76 +217,22 @@ class ListingService:
             return {"error": "Tradera client not configured"}
 
         with Session(self.engine) as session:
+            error = self._validate_for_publish(session, listing_id)
+            if error:
+                return error
             listing = session.get(PlatformListing, listing_id)
-            if listing is None:
-                return {"error": f"Listing {listing_id} not found"}
 
-            if listing.status != "approved":
-                return {
-                    "error": f"Cannot publish listing with status '{listing.status}', must be 'approved'"
-                }
+            encoded_images = self._prepare_images(session, listing.product_id)
+            if isinstance(encoded_images, dict):
+                return encoded_images  # error dict
 
-            if listing.platform != "tradera":
-                return {
-                    "error": f"Cannot publish to platform '{listing.platform}', only 'tradera' supported"
-                }
-
-            if not listing.tradera_category_id:
-                return {"error": "Listing must have a tradera_category_id to publish"}
-
-            images = (
-                session.query(ProductImage)
-                .filter_by(product_id=listing.product_id)
-                .order_by(ProductImage.is_primary.desc(), ProductImage.id)
-                .all()
-            )
-            if not images:
-                return {
-                    "error": "Product has no images, at least one image is required to publish"
-                }
-
-            # Optimize and encode images (primary first due to ordering above)
-            encoded_images = [
-                encode_image_base64(optimize_for_upload(img.file_path)) for img in images
-            ]
-
-            duration = listing.duration_days or 7
-
-            details = listing.details or {}
-            shipping_options = details.get("shipping_options")
-            shipping_condition = details.get("shipping_condition")
-            shipping_cost = None if shipping_options else details.get("shipping_cost")
-
-            create_result = self.tradera.create_listing(
-                title=listing.listing_title,
-                description=listing.listing_description,
-                category_id=listing.tradera_category_id,
-                duration_days=duration,
-                listing_type=listing.listing_type,
-                start_price=listing.start_price,
-                buy_it_now_price=listing.buy_it_now_price,
-                shipping_cost=shipping_cost,
-                shipping_options=shipping_options,
-                shipping_condition=shipping_condition,
-            )
-
+            create_result = self._create_tradera_listing(listing, encoded_images)
             if "error" in create_result:
                 return {"error": f"Tradera API error: {create_result['error']}"}
 
             external_id = str(create_result["item_id"])
             listing_url = create_result["url"]
-
-            # Image upload is non-fatal -- listing is already created on Tradera
-            upload_result = self.tradera.upload_images(
-                item_id=int(external_id),
-                images=encoded_images,
-            )
-            if "error" in upload_result:
-                logger.warning(
-                    "Image upload failed for listing %s: %s",
-                    listing_id,
-                    upload_result["error"],
-                )
+            duration = listing.duration_days or 7
 
             now = datetime.now(UTC)
             ends_at = now + timedelta(days=duration)
@@ -305,18 +249,13 @@ class ListingService:
                 if price:
                     product.listing_price = price
 
-            action = AgentAction(
-                agent_name="listing",
-                action_type="publish_listing",
+            log_action(
+                session,
+                "listing",
+                "publish_listing",
+                {"listing_id": listing.id, "external_id": external_id, "url": listing_url},
                 product_id=listing.product_id,
-                details={
-                    "listing_id": listing.id,
-                    "external_id": external_id,
-                    "url": listing_url,
-                },
-                executed_at=now,
             )
-            session.add(action)
             session.commit()
 
             return {
@@ -327,6 +266,75 @@ class ListingService:
                 "listed_at": now.isoformat(),
                 "ends_at": ends_at.isoformat(),
             }
+
+    @staticmethod
+    def _validate_for_publish(session: Session, listing_id: int) -> dict | None:
+        """Validate that a listing is ready for publishing. Returns error dict or None."""
+        listing = session.get(PlatformListing, listing_id)
+        if listing is None:
+            return {"error": f"Listing {listing_id} not found"}
+        if listing.status != "approved":
+            return {
+                "error": f"Cannot publish listing with status '{listing.status}', must be 'approved'"
+            }
+        if listing.platform != "tradera":
+            return {
+                "error": f"Cannot publish to platform '{listing.platform}', only 'tradera' supported"
+            }
+        if not listing.tradera_category_id:
+            return {"error": "Listing must have a tradera_category_id to publish"}
+        return None
+
+    @staticmethod
+    def _prepare_images(session: Session, product_id: int) -> list[tuple] | dict:
+        """Load, optimize, and encode product images. Returns encoded images or error dict."""
+        images = (
+            session.query(ProductImage)
+            .filter_by(product_id=product_id)
+            .order_by(ProductImage.is_primary.desc(), ProductImage.id)
+            .all()
+        )
+        if not images:
+            return {"error": "Product has no images, at least one image is required to publish"}
+        return [encode_image_base64(optimize_for_upload(img.file_path)) for img in images]
+
+    def _create_tradera_listing(self, listing: PlatformListing, encoded_images: list) -> dict:
+        """Create listing on Tradera and upload images."""
+        duration = listing.duration_days or 7
+        details = listing.details or {}
+        shipping_options = details.get("shipping_options")
+        shipping_condition = details.get("shipping_condition")
+        shipping_cost = None if shipping_options else details.get("shipping_cost")
+
+        create_result = self.tradera.create_listing(
+            title=listing.listing_title,
+            description=listing.listing_description,
+            category_id=listing.tradera_category_id,
+            duration_days=duration,
+            listing_type=listing.listing_type,
+            start_price=listing.start_price,
+            buy_it_now_price=listing.buy_it_now_price,
+            shipping_cost=shipping_cost,
+            shipping_options=shipping_options,
+            shipping_condition=shipping_condition,
+        )
+
+        if "error" in create_result:
+            return create_result
+
+        # Image upload is non-fatal -- listing is already created on Tradera
+        upload_result = self.tradera.upload_images(
+            item_id=int(create_result["item_id"]),
+            images=encoded_images,
+        )
+        if "error" in upload_result:
+            logger.warning(
+                "Image upload failed for listing %s: %s",
+                listing.id,
+                upload_result["error"],
+            )
+
+        return create_result
 
     def reject_draft(self, listing_id: int, reason: str = "") -> dict:
         """Reject and delete a draft listing."""
@@ -341,14 +349,13 @@ class ListingService:
             product_id = listing.product_id
             session.delete(listing)
 
-            action = AgentAction(
-                agent_name="listing",
-                action_type="reject_draft",
+            log_action(
+                session,
+                "listing",
+                "reject_draft",
+                {"listing_id": listing_id, "reason": reason},
                 product_id=product_id,
-                details={"listing_id": listing_id, "reason": reason},
-                executed_at=datetime.now(UTC),
             )
-            session.add(action)
             session.commit()
 
             return {"listing_id": listing_id, "status": "rejected", "reason": reason}
@@ -422,14 +429,13 @@ class ListingService:
             session.add(product)
             session.flush()
 
-            action = AgentAction(
-                agent_name="listing",
-                action_type="create_product",
+            log_action(
+                session,
+                "listing",
+                "create_product",
+                {"title": title},
                 product_id=product.id,
-                details={"title": title},
-                executed_at=datetime.now(UTC),
             )
-            session.add(action)
             session.commit()
 
             return {
@@ -470,14 +476,13 @@ class ListingService:
 
             total = session.query(ProductImage).filter_by(product_id=product_id).count()
 
-            action = AgentAction(
-                agent_name="listing",
-                action_type="save_product_image",
+            log_action(
+                session,
+                "listing",
+                "save_product_image",
+                {"image_id": img.id, "file_path": image_path, "is_primary": is_primary},
                 product_id=product_id,
-                details={"image_id": img.id, "file_path": image_path, "is_primary": is_primary},
-                executed_at=datetime.now(UTC),
             )
-            session.add(action)
             session.commit()
 
             return {

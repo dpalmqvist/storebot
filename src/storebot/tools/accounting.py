@@ -215,7 +215,7 @@ class AccountingService:
             logger.info("Exported voucher PDF: %s", filepath)
             return str(filepath)
 
-    def export_vouchers_pdf(self, from_date: str, to_date: str) -> str:
+    def export_vouchers_pdf(self, from_date: str, to_date: str) -> dict:
         self.export_path.mkdir(parents=True, exist_ok=True)
 
         from_dt = datetime.fromisoformat(from_date)
@@ -259,4 +259,4 @@ class AccountingService:
             doc.build(story)
 
             logger.info("Exported %d vouchers to PDF: %s", len(vouchers), filepath)
-            return str(filepath)
+            return {"pdf_path": str(filepath)}

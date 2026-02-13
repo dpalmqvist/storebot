@@ -306,8 +306,13 @@ class TraderaClient:
     def _get_shipping_options_api_call(self, request, headers):
         return self.public_client.service.GetShippingOptions(request=request, **headers)
 
-    def get_shipping_options(self, from_country: str = "SE") -> dict:
-        """Get available shipping options from Tradera."""
+    def get_shipping_options(
+        self, weight_grams: int | None = None, from_country: str = "SE"
+    ) -> dict:
+        """Get available shipping options from Tradera.
+
+        If weight_grams is provided, filters to options that support the given weight.
+        """
         try:
             request = {"FromCountryCodes": [from_country]}
             response = self._get_shipping_options_api_call(
@@ -326,6 +331,15 @@ class TraderaClient:
                     continue
                 for prod in getattr(products, "ShippingProduct", None) or []:
                     options.append(self._parse_shipping_product(prod, weight_limit))
+
+            if weight_grams is not None:
+                options = [
+                    opt
+                    for opt in options
+                    if opt.get("weight_limit_grams") is None
+                    or opt["weight_limit_grams"] >= weight_grams
+                ]
+                return {"shipping_options": options, "filtered_by_weight_grams": weight_grams}
 
             return {"shipping_options": options}
 
