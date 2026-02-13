@@ -110,7 +110,9 @@ def authorize_tradera() -> None:
         _update_env_file(env_path, "TRADERA_USER_TOKEN", result["token"])
         if result.get("user_id"):
             _update_env_file(env_path, "TRADERA_USER_ID", result["user_id"])
-        print(f"Saved TRADERA_USER_TOKEN and TRADERA_USER_ID to {env_path}")
+            print(f"Saved TRADERA_USER_TOKEN and TRADERA_USER_ID to {env_path}")
+        else:
+            print(f"Saved TRADERA_USER_TOKEN to {env_path}")
     else:
         print("Not saved. Add these to your .env manually:")
         print(f"  TRADERA_USER_TOKEN={result['token']}")
