@@ -133,6 +133,8 @@ Tradera uses a SOAP/XML API for searching and listing items.
 
 **Rate limits:** 100 API calls per 24 hours (can request an increase from Tradera).
 
+**Customer messaging:** The Tradera SOAP API does not expose any methods for reading or answering buyer questions/messages. Customer communication handling will require email integration (parsing Tradera notification emails via IMAP).
+
 WSDL endpoints:
 - SearchService: `https://api.tradera.com/v3/searchservice.asmx?WSDL`
 - PublicService: `https://api.tradera.com/v3/publicservice.asmx?WSDL`
