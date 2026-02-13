@@ -582,4 +582,68 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "business_summary",
+        "description": "Affärssammanfattning för en period: intäkter, kostnader, bruttovinst, marginal, antal sålda, lagerstatus, snittid till försäljning.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "period": {
+                    "type": "string",
+                    "description": "Period: YYYY-MM (månad), YYYY-QN (kvartal), YYYY (år). Utelämna för innevarande månad.",
+                },
+            },
+        },
+    },
+    {
+        "name": "profitability_report",
+        "description": "Lönsamhetsrapport: nettovinst per produkt, aggregerat per kategori och inköpskälla. Topp/botten 5.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "period": {
+                    "type": "string",
+                    "description": "Period: YYYY-MM, YYYY-QN eller YYYY. Utelämna för innevarande månad.",
+                },
+            },
+        },
+    },
+    {
+        "name": "inventory_report",
+        "description": "Lagerrapport: lagervärde, statusfördelning, åldersanalys (0-7d, 8-14d, 15-30d, 30+d), lista på gamla artiklar.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "period_comparison",
+        "description": "Periodjämförelse: två perioder sida vid sida med skillnader i intäkter, vinst, antal och marginal. Standard: denna månad vs förra.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "period_a": {
+                    "type": "string",
+                    "description": "Första perioden (YYYY-MM, YYYY-QN, YYYY). Standard: innevarande månad.",
+                },
+                "period_b": {
+                    "type": "string",
+                    "description": "Andra perioden att jämföra med. Standard: föregående månad.",
+                },
+            },
+        },
+    },
+    {
+        "name": "sourcing_analysis",
+        "description": "Inköpskanalanalys: ROI per källa (loppis, dödsbo, tradera etc.), antal inköpta/sålda, marginal, snittid till försäljning.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "period": {
+                    "type": "string",
+                    "description": "Period: YYYY-MM, YYYY-QN eller YYYY. Utelämna för innevarande månad.",
+                },
+            },
+        },
+    },
 ]

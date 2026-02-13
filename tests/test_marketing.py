@@ -224,7 +224,7 @@ class TestRefreshListingStats:
 
 
 class TestAnalyzeListing:
-    @patch("storebot.tools.marketing._naive_now", return_value=FIXED_NOW)
+    @patch("storebot.tools.marketing.naive_now", return_value=FIXED_NOW)
     def test_basic_analysis(self, _mock_now, service, engine):
         pid = _create_product(engine, acquisition_cost=100.0)
         lid = _create_listing(
