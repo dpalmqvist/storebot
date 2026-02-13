@@ -454,10 +454,7 @@ class TraderaClient:
                 expires = str(expires)
 
             if token is None:
-                return {
-                    "error": f"FetchToken response missing AuthToken. "
-                    f"Raw XML:\n{raw_xml}"
-                }
+                return {"error": f"FetchToken response missing AuthToken. Raw XML:\n{raw_xml}"}
 
             return {
                 "token": token,
