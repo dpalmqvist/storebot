@@ -439,14 +439,22 @@ class TraderaClient:
             finally:
                 self.public_client.plugins.remove(history)
 
-            raw_xml = None
+            sent_xml = None
+            received_xml = None
             try:
-                envelope = history.last_received.get("envelope")
-                if envelope is not None:
-                    raw_xml = etree.tostring(envelope, pretty_print=True).decode()
+                sent_env = history.last_sent.get("envelope")
+                if sent_env is not None:
+                    sent_xml = etree.tostring(sent_env, pretty_print=True).decode()
             except Exception:
                 pass
-            logger.debug("FetchToken raw XML response:\n%s", raw_xml)
+            try:
+                recv_env = history.last_received.get("envelope")
+                if recv_env is not None:
+                    received_xml = etree.tostring(recv_env, pretty_print=True).decode()
+            except Exception:
+                pass
+            logger.debug("FetchToken sent XML:\n%s", sent_xml)
+            logger.debug("FetchToken received XML:\n%s", received_xml)
 
             token = getattr(response, "AuthToken", None)
             expires = getattr(response, "HardExpirationTime", None)
@@ -454,7 +462,11 @@ class TraderaClient:
                 expires = str(expires)
 
             if token is None:
-                return {"error": f"FetchToken response missing AuthToken. Raw XML:\n{raw_xml}"}
+                return {
+                    "error": f"FetchToken response missing AuthToken. Raw XML:\n{received_xml}",
+                    "sent_xml": sent_xml,
+                    "response_repr": repr(response),
+                }
 
             return {
                 "token": token,

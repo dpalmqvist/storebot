@@ -51,6 +51,8 @@ def authorize_tradera() -> None:
 
     print("Tradera Authorization")
     print("=" * 40)
+    print(f"  App ID:  {settings.tradera_app_id}")
+    print(f"  Sandbox: {settings.tradera_sandbox}")
     print()
     print("Open this URL in your browser and log in to grant access:")
     print()
@@ -68,6 +70,10 @@ def authorize_tradera() -> None:
 
     if "error" in result:
         print(f"\nError fetching token: {result['error']}")
+        if "sent_xml" in result:
+            print(f"\nSent SOAP request:\n{result['sent_xml']}")
+        if "response_repr" in result:
+            print(f"\nParsed response object: {result['response_repr']}")
         sys.exit(1)
 
     print()
