@@ -97,9 +97,7 @@ class OrderService:
         session.add(order)
         session.flush()
 
-        logger.info(
-            "Imported new order %s from Tradera", ext_id, extra={"order_id": order.id}
-        )
+        logger.info("Imported new order %s from Tradera", ext_id, extra={"order_id": order.id})
 
         matched = product_id is not None
         if matched:

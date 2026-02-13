@@ -237,9 +237,7 @@ async def weekly_comparison_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
         await context.bot.send_message(chat_id=chat_id, text=_truncate(text))
     except Exception:
-        logger.exception(
-            "Error in weekly comparison job", extra={"job_name": "weekly_comparison"}
-        )
+        logger.exception("Error in weekly comparison job", extra={"job_name": "weekly_comparison"})
         await _alert_admin(context, "Fel i veckorapport-jobbet. Kontrollera loggarna.")
 
 
@@ -288,9 +286,7 @@ async def marketing_refresh_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         text = "\n".join(lines).strip()
         await context.bot.send_message(chat_id=chat_id, text=_truncate(text))
     except Exception:
-        logger.exception(
-            "Error in marketing refresh job", extra={"job_name": "marketing_refresh"}
-        )
+        logger.exception("Error in marketing refresh job", extra={"job_name": "marketing_refresh"})
         await _alert_admin(context, "Fel i marknadsföringsjobbet. Kontrollera loggarna.")
 
 
