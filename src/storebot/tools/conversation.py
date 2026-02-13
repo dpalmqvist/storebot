@@ -125,10 +125,17 @@ def _reconstruct_image_blocks(content, image_paths):
 
 
 class ConversationService:
-    def __init__(self, engine: sa.Engine, max_messages: int = 20, timeout_minutes: int = 60):
+    def __init__(
+        self,
+        engine: sa.Engine,
+        max_messages: int = 20,
+        timeout_minutes: int = 60,
+        max_content_bytes: int = 1_000_000,
+    ):
         self.engine = engine
         self.max_messages = max_messages
         self.timeout_minutes = timeout_minutes
+        self.max_content_bytes = max_content_bytes
 
     def save_messages(self, chat_id: str, messages: list[dict]) -> None:
         """Save a list of message dicts to the database."""
@@ -149,7 +156,8 @@ class ConversationService:
             session.commit()
 
     def load_history(self, chat_id: str) -> list[dict]:
-        """Load recent conversation history for a chat, respecting timeout and max messages."""
+        """Load recent conversation history for a chat, respecting timeout, max messages,
+        and max content size to prevent excessive API payloads."""
         cutoff = datetime.now(UTC) - timedelta(minutes=self.timeout_minutes)
 
         with sa.orm.Session(self.engine) as session:
@@ -163,12 +171,21 @@ class ConversationService:
                 .all()
             )
 
-            # Take last N messages and build result while session is open
             messages = []
+            total_bytes = 0
             for row in rows[-self.max_messages :]:
                 content = row.content
                 if row.image_paths:
                     content = _reconstruct_image_blocks(content, row.image_paths)
+                size = len(str(content).encode("utf-8", errors="replace"))
+                if total_bytes + size > self.max_content_bytes and messages:
+                    logger.info(
+                        "Truncating conversation history at %d bytes (limit %d)",
+                        total_bytes,
+                        self.max_content_bytes,
+                    )
+                    break
+                total_bytes += size
                 messages.append({"role": row.role, "content": content})
 
         return messages

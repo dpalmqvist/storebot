@@ -16,5 +16,14 @@ StartLimitBurst=5
 TimeoutStopSec=30
 SyslogIdentifier=storebot
 
+# Security hardening
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/storebot/data /opt/storebot/backups
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=512M
+
 [Install]
 WantedBy=multi-user.target

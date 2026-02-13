@@ -90,6 +90,8 @@ class PricingService:
             return {"error": str(e), "items": []}
 
     def _search_blocket(self, query: str, category: str | None) -> dict:
+        if not self.blocket:
+            return {"error": "Blocket client not available", "items": []}
         try:
             kwargs: dict = {"query": query}
             if category is not None:

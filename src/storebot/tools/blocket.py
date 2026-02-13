@@ -20,13 +20,15 @@ class BlocketClient:
     """
 
     def __init__(self, bearer_token: str):
+        if not bearer_token:
+            raise ValueError("Blocket bearer_token must not be empty")
         self.bearer_token = bearer_token
 
     def _headers(self) -> dict:
-        headers = {"User-Agent": USER_AGENT}
-        if self.bearer_token:
-            headers["Authorization"] = f"Bearer {self.bearer_token}"
-        return headers
+        return {
+            "User-Agent": USER_AGENT,
+            "Authorization": f"Bearer {self.bearer_token}",
+        }
 
     @retry_on_transient()
     def _get(self, url: str, headers: dict, params: dict | None = None) -> requests.Response:

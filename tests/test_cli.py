@@ -147,7 +147,9 @@ class TestAuthorizeTraderaCLI:
         authorize_tradera()
 
         output = capsys.readouterr().out
-        assert "TRADERA_USER_TOKEN=my-token" in output
+        # Token should be masked in output (not printed in full)
+        assert "my-token" not in output
+        assert "TRADERA_USER_TOKEN=<token from redirect URL>" in output
         assert "TRADERA_USER_ID=999" in output
 
     @patch("storebot.cli.Settings")

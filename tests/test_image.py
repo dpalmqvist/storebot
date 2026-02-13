@@ -122,19 +122,21 @@ class TestEncodeImageBase64:
         decoded = base64.b64decode(data)
         assert len(decoded) > 0
 
-    def test_png_media_type(self, tmp_path):
+    def test_png_reencoded_as_jpeg(self, tmp_path):
+        """PNG inputs are re-encoded as JPEG (EXIF stripping converts all to JPEG)."""
         src = _create_test_image(tmp_path / "test.png", size=(100, 100))
         _, media_type = encode_image_base64(src)
 
-        assert media_type == "image/png"
+        assert media_type == "image/jpeg"
 
-    def test_webp_media_type(self, tmp_path):
+    def test_webp_reencoded_as_jpeg(self, tmp_path):
+        """WebP inputs are re-encoded as JPEG (EXIF stripping converts all to JPEG)."""
         img = Image.new("RGB", (100, 100), color="blue")
         path = tmp_path / "test.webp"
         img.save(str(path), "WEBP")
 
         _, media_type = encode_image_base64(str(path))
-        assert media_type == "image/webp"
+        assert media_type == "image/jpeg"
 
     def test_roundtrip(self, tmp_path):
         src = _create_test_image(tmp_path / "test.jpg", size=(100, 100))

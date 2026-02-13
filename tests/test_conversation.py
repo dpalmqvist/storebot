@@ -108,7 +108,11 @@ def test_image_message_persistence(engine, tmp_path, monkeypatch):
     photos_dir = tmp_path / "photos"
     photos_dir.mkdir()
     img_path = photos_dir / "test_persist.jpg"
-    img_path.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
+    # Create a valid 1x1 JPEG for PIL to open
+    from PIL import Image as _PILImage
+
+    _img = _PILImage.new("RGB", (1, 1), color="red")
+    _img.save(str(img_path), "JPEG")
 
     # Monkeypatch _validate_image_paths to accept tmp_path
     def _accept_tmp_paths(paths):

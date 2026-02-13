@@ -106,9 +106,7 @@ class OrderService:
                     type="new_order",
                     product_id=product_id,
                     message_text=(
-                        f"Ny order! #{order.id} — "
-                        f"{order_data.get('buyer_name', 'Okänd köpare')} "
-                        f"köpte produkt #{product_id} för {sale_price} kr"
+                        f"Ny order! #{order.id} — produkt #{product_id} för {sale_price} kr"
                     ),
                 )
             )
@@ -117,7 +115,6 @@ class OrderService:
             "order_id": order.id,
             "external_order_id": ext_id,
             "sale_price": sale_price,
-            "buyer_name": order_data.get("buyer_name"),
         }
         if not matched:
             action_details["items"] = order_data.get("items", [])
