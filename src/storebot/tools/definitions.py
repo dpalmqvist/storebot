@@ -440,6 +440,23 @@ TOOLS = [
         },
     },
     {
+        "name": "get_product_images",
+        "description": "Hämta och visa produktbilder. Använd för att granska bilder innan godkännande/publicering av annons.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "product_id": {
+                    "type": "integer",
+                    "description": "Product ID (optional if listing_id is given)",
+                },
+                "listing_id": {
+                    "type": "integer",
+                    "description": "Listing ID — resolves to product automatically (optional if product_id is given)",
+                },
+            },
+        },
+    },
+    {
         "name": "save_product_image",
         "description": "Save an image to a product. Use after create_product to attach photos.",
         "input_schema": {

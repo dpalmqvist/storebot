@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from storebot.bot.handlers import _alert_admin, _validate_credentials
+from storebot.bot.handlers import _alert_admin, _send_display_images, _validate_credentials
 from storebot.config import Settings
 
 
@@ -74,6 +74,47 @@ class TestValidateCredentials:
 
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert any("PostNord" in r.message for r in warnings)
+
+
+class TestSendDisplayImages:
+    @pytest.mark.asyncio
+    async def test_sends_photos(self, tmp_path):
+        img = tmp_path / "test.jpg"
+        img.write_bytes(b"fake-jpeg")
+
+        update = MagicMock()
+        update.message.reply_photo = AsyncMock()
+
+        await _send_display_images(
+            update, [{"path": str(img), "caption": "Bild 1 av 1 (huvudbild)"}]
+        )
+
+        update.message.reply_photo.assert_awaited_once()
+        call_kwargs = update.message.reply_photo.call_args
+        assert call_kwargs.kwargs["caption"] == "Bild 1 av 1 (huvudbild)"
+
+    @pytest.mark.asyncio
+    async def test_no_op_on_empty_list(self):
+        update = MagicMock()
+        update.message.reply_photo = AsyncMock()
+
+        await _send_display_images(update, [])
+
+        update.message.reply_photo.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_graceful_on_missing_file(self):
+        update = MagicMock()
+        update.message.reply_photo = AsyncMock()
+        update.message.reply_text = AsyncMock()
+
+        await _send_display_images(
+            update, [{"path": "/nonexistent/photo.jpg", "caption": "Test"}]
+        )
+
+        update.message.reply_photo.assert_not_awaited()
+        update.message.reply_text.assert_awaited_once()
+        assert "saknas" in update.message.reply_text.call_args[0][0]
 
 
 class TestAlertAdmin:

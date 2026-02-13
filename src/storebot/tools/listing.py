@@ -512,6 +512,65 @@ class ListingService:
                 "total_images": total,
             }
 
+    def get_product_images(
+        self,
+        product_id: int | None = None,
+        listing_id: int | None = None,
+    ) -> dict:
+        """Get product images for review. Accepts product_id or listing_id (resolves to product)."""
+        from pathlib import Path
+
+        if product_id is None and listing_id is None:
+            return {"error": "Either product_id or listing_id is required"}
+
+        with Session(self.engine) as session:
+            if listing_id is not None and product_id is None:
+                listing = session.get(PlatformListing, listing_id)
+                if listing is None:
+                    return {"error": f"Listing {listing_id} not found"}
+                product_id = listing.product_id
+
+            product = session.get(Product, product_id)
+            if product is None:
+                return {"error": f"Product {product_id} not found"}
+
+            images = (
+                session.query(ProductImage)
+                .filter_by(product_id=product_id)
+                .order_by(ProductImage.is_primary.desc(), ProductImage.id)
+                .all()
+            )
+
+            if not images:
+                return {
+                    "product_id": product_id,
+                    "product_title": product.title,
+                    "image_count": 0,
+                    "images": [],
+                    "_display_images": [],
+                }
+
+            image_list = []
+            display_images = []
+            for i, img in enumerate(images):
+                image_list.append({
+                    "id": img.id,
+                    "file_path": img.file_path,
+                    "is_primary": img.is_primary,
+                })
+                if Path(img.file_path).exists():
+                    label = "huvudbild" if img.is_primary else f"bild {i + 1}"
+                    caption = f"Bild {i + 1} av {len(images)} ({label}) — {product.title}"
+                    display_images.append({"path": img.file_path, "caption": caption})
+
+            return {
+                "product_id": product_id,
+                "product_title": product.title,
+                "image_count": len(images),
+                "images": image_list,
+                "_display_images": display_images,
+            }
+
     def archive_product(self, product_id: int) -> dict:
         """Archive a product, hiding it from normal views."""
         with Session(self.engine) as session:
