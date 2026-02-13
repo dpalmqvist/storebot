@@ -263,6 +263,13 @@ class ListingService:
             )
             session.commit()
 
+            logger.info(
+                "Published listing %s to Tradera (item_id=%s)",
+                listing.id,
+                external_id,
+                extra={"listing_id": listing.id},
+            )
+
             return {
                 "listing_id": listing.id,
                 "external_id": external_id,

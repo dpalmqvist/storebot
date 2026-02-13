@@ -185,8 +185,11 @@ class PostNordClient:
         shipment_data = shipment_response.get("shipments", [{}])[0]
         parcel = shipment_data.get("parcels", [{}])[0]
 
+        shipment_id = shipment_data.get("shipmentId", "")
+        logger.info("Created PostNord shipment: %s", shipment_id)
+
         return {
-            "shipment_id": shipment_data.get("shipmentId", ""),
+            "shipment_id": shipment_id,
             "tracking_number": parcel.get("parcelNumber", ""),
             "label_base64": shipment_response.get("labelPrintout", ""),
         }
@@ -216,6 +219,8 @@ class PostNordClient:
                 f"PostNord API error: {resp.status_code}",
                 status_code=resp.status_code,
             )
+
+        logger.info("Retrieved shipping label for shipment: %s", shipment_id)
 
         # Response may be direct PDF or JSON with base64
         content_type = resp.headers.get("Content-Type", "")

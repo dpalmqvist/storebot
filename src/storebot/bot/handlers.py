@@ -48,7 +48,7 @@ async def _handle_with_conversation(
         conversation.save_messages(chat_id, new_messages)
         await update.message.reply_text(result.text)
     except Exception:
-        logger.exception("Error in conversation handler")
+        logger.exception("Error in conversation handler", extra={"chat_id": chat_id})
         await update.message.reply_text(error_text)
 
 
@@ -137,7 +137,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     file_path = photos_dir / f"{file.file_unique_id}.jpg"
     await file.download_to_drive(str(file_path))
-    logger.info("Downloaded photo: %s", file_path)
+    logger.info(
+        "Downloaded photo: %s",
+        file_path,
+        extra={"chat_id": str(update.effective_chat.id)},
+    )
 
     analysis_path = resize_for_analysis(str(file_path))
     caption = update.message.caption or ""
@@ -153,7 +157,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_message = update.message.text
-    logger.info("Received message: %s", user_message[:100])
+    chat_id = str(update.effective_chat.id)
+    logger.info("Received text message (len=%d)", len(user_message), extra={"chat_id": chat_id})
+    logger.debug("Message content: %s", user_message[:200], extra={"chat_id": chat_id})
     await _handle_with_conversation(update, context, user_message)
 
 
@@ -173,6 +179,7 @@ async def scout_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def scout_digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.info("Starting scheduled job: scout_digest", extra={"job_name": "scout_digest"})
     agent: Agent = context.bot_data.get("agent")
     if not agent or not agent.scout:
         return
@@ -190,7 +197,7 @@ async def scout_digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         digest = result.get("digest", "")
         await context.bot.send_message(chat_id=chat_id, text=_truncate(digest))
     except Exception:
-        logger.exception("Error in scout digest job")
+        logger.exception("Error in scout digest job", extra={"job_name": "scout_digest"})
         await _alert_admin(context, "Fel i scout-jobbet. Kontrollera loggarna.")
 
 
@@ -212,6 +219,9 @@ async def rapport_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def weekly_comparison_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.info(
+        "Starting scheduled job: weekly_comparison", extra={"job_name": "weekly_comparison"}
+    )
     agent: Agent = context.bot_data.get("agent")
     if not agent or not agent.analytics:
         return
@@ -227,7 +237,7 @@ async def weekly_comparison_job(context: ContextTypes.DEFAULT_TYPE) -> None:
 
         await context.bot.send_message(chat_id=chat_id, text=_truncate(text))
     except Exception:
-        logger.exception("Error in weekly comparison job")
+        logger.exception("Error in weekly comparison job", extra={"job_name": "weekly_comparison"})
         await _alert_admin(context, "Fel i veckorapport-jobbet. Kontrollera loggarna.")
 
 
@@ -249,6 +259,9 @@ async def marketing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def marketing_refresh_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.info(
+        "Starting scheduled job: marketing_refresh", extra={"job_name": "marketing_refresh"}
+    )
     agent: Agent = context.bot_data.get("agent")
     if not agent or not agent.marketing:
         return
@@ -273,11 +286,12 @@ async def marketing_refresh_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         text = "\n".join(lines).strip()
         await context.bot.send_message(chat_id=chat_id, text=_truncate(text))
     except Exception:
-        logger.exception("Error in marketing refresh job")
+        logger.exception("Error in marketing refresh job", extra={"job_name": "marketing_refresh"})
         await _alert_admin(context, "Fel i marknadsföringsjobbet. Kontrollera loggarna.")
 
 
 async def poll_orders_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.info("Starting scheduled job: poll_orders", extra={"job_name": "poll_orders"})
     agent: Agent = context.bot_data.get("agent")
     if not agent or not agent.order:
         return
@@ -303,7 +317,7 @@ async def poll_orders_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             await context.bot.send_message(chat_id=chat_id, text=msg)
 
     except Exception:
-        logger.exception("Error in order polling job")
+        logger.exception("Error in order polling job", extra={"job_name": "poll_orders"})
         await _alert_admin(context, "Fel i orderpolling-jobbet. Kontrollera loggarna.")
 
 

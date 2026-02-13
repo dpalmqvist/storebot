@@ -213,6 +213,7 @@ class Agent:
                     }
                 )
 
+            logger.info("Agent turn completed: %d tool calls", len(tool_blocks))
             messages.append({"role": "user", "content": tool_results})
 
             response = self._call_api(messages)
@@ -282,7 +283,9 @@ class Agent:
     }
 
     def execute_tool(self, name: str, tool_input: dict) -> dict:
-        logger.info("Executing tool: %s with input: %s", name, tool_input)
+        logger.debug(
+            "Executing tool: %s with input: %s", name, tool_input, extra={"tool_name": name}
+        )
 
         entry = self._DISPATCH.get(name)
         if entry is None:
@@ -300,5 +303,5 @@ class Agent:
         except NotImplementedError:
             return {"error": f"Tool '{name}' is not yet implemented"}
         except Exception as e:
-            logger.exception("Tool execution failed: %s", name)
+            logger.exception("Tool execution failed: %s", name, extra={"tool_name": name})
             return {"error": str(e)}
