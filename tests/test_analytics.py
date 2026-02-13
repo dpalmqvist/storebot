@@ -412,6 +412,21 @@ class TestPeriodComparison:
         assert result["period_b"]["period"] == "2025-12"
 
     @patch("storebot.tools.analytics.naive_now", return_value=FIXED_NOW)
+    def test_only_period_a_defaults_period_b_to_previous(self, _mock, service, engine):
+        """When only period_a is given, period_b defaults to the month before it."""
+        result = service.period_comparison(period_a="2025-06")
+
+        assert result["period_a"]["period"] == "2025-06"
+        assert result["period_b"]["period"] == "2025-05"
+
+    @patch("storebot.tools.analytics.naive_now", return_value=FIXED_NOW)
+    def test_only_period_a_january_wraps_year(self, _mock, service, engine):
+        result = service.period_comparison(period_a="2026-01")
+
+        assert result["period_a"]["period"] == "2026-01"
+        assert result["period_b"]["period"] == "2025-12"
+
+    @patch("storebot.tools.analytics.naive_now", return_value=FIXED_NOW)
     def test_division_by_zero(self, _mock, service, engine):
         """When period B has zero revenue, percent_change should be None."""
         pid = _create_product(engine, acquisition_cost=50.0)

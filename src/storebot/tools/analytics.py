@@ -308,13 +308,15 @@ class AnalyticsService:
 
     def period_comparison(self, period_a: str | None = None, period_b: str | None = None) -> dict:
         """Two periods side-by-side with deltas. Default: current month vs previous month."""
-        if period_a is None and period_b is None:
+        if period_a is None:
             now = naive_now()
             period_a = f"{now.year}-{now.month:02d}"
-            if now.month == 1:
-                period_b = f"{now.year - 1}-12"
+        if period_b is None:
+            start_a, _ = _parse_period(period_a)
+            if start_a.month == 1:
+                period_b = f"{start_a.year - 1}-12"
             else:
-                period_b = f"{now.year}-{now.month - 1:02d}"
+                period_b = f"{start_a.year}-{start_a.month - 1:02d}"
 
         summary_a = self.business_summary(period_a)
         summary_b = self.business_summary(period_b)
