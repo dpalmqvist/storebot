@@ -208,6 +208,11 @@ class OrderService:
             if order.voucher_id:
                 return {"error": f"Order {order_id} already has voucher #{order.voucher_id}"}
 
+            if not order.product_id:
+                return {
+                    "error": f"Order {order_id} has no linked product — reconcile before creating voucher"
+                }
+
             if not order.sale_price or order.sale_price <= 0:
                 return {"error": f"Order {order_id} has no valid sale price"}
 

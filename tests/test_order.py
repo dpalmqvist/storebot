@@ -376,6 +376,23 @@ class TestCreateSaleVoucher:
             assert len(actions) == 1
             assert actions[0].agent_name == "order"
 
+    def test_unmatched_order_rejected(self, service, engine):
+        with Session(engine) as session:
+            order = Order(
+                product_id=None,
+                platform="tradera",
+                external_order_id="unmatched",
+                sale_price=500.0,
+                status="pending",
+            )
+            session.add(order)
+            session.commit()
+            order_id = order.id
+
+        result = service.create_sale_voucher(order_id)
+
+        assert "no linked product" in result["error"]
+
     def test_no_accounting_service(self, engine, mock_tradera):
         svc = OrderService(engine=engine, tradera=mock_tradera, accounting=None)
         product_id = _create_product(engine)
