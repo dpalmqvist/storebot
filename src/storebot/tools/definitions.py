@@ -384,7 +384,7 @@ TOOLS = [
     },
     {
         "name": "search_products",
-        "description": "Search the local product database.",
+        "description": "Search the local product database. Archived products are hidden by default.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -392,6 +392,11 @@ TOOLS = [
                 "status": {
                     "type": "string",
                     "description": "Filter by status: draft, listed, sold, archived",
+                },
+                "include_archived": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Include archived products in results (default false)",
                 },
             },
         },
@@ -448,6 +453,28 @@ TOOLS = [
                 },
             },
             "required": ["product_id", "image_path"],
+        },
+    },
+    {
+        "name": "archive_product",
+        "description": "Archive a product, hiding it from normal search and listing views. Cannot archive products with active marketplace listings.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "product_id": {"type": "integer", "description": "Product ID to archive"},
+            },
+            "required": ["product_id"],
+        },
+    },
+    {
+        "name": "unarchive_product",
+        "description": "Restore an archived product to its previous status (draft, listed, etc.).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "product_id": {"type": "integer", "description": "Product ID to unarchive"},
+            },
+            "required": ["product_id"],
         },
     },
     {
