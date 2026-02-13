@@ -24,6 +24,17 @@ def _truncate(text: str) -> str:
     return text
 
 
+async def _send_display_images(update: Update, display_images: list[dict]) -> None:
+    """Send product images to the user via Telegram."""
+    for img in display_images:
+        try:
+            with open(img["path"], "rb") as f:
+                await update.message.reply_photo(photo=f, caption=img.get("caption", ""))
+        except FileNotFoundError:
+            logger.warning("Display image not found: %s", img["path"])
+            await update.message.reply_text(f"Bildfilen saknas: {img['path']}")
+
+
 async def _handle_with_conversation(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -46,6 +57,8 @@ async def _handle_with_conversation(
         )
         new_messages = result.messages[len(history) :]
         conversation.save_messages(chat_id, new_messages)
+        if result.display_images:
+            await _send_display_images(update, result.display_images)
         await update.message.reply_text(result.text)
     except Exception:
         logger.exception("Error in conversation handler", extra={"chat_id": chat_id})

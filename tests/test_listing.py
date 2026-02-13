@@ -804,6 +804,103 @@ def _create_product_with_listing(engine, product_status, listing_status, listing
         return p.id
 
 
+class TestGetProductImages:
+    def test_by_product_id(self, service, product, tmp_path, engine):
+        img1 = tmp_path / "photo1.jpg"
+        img1.write_bytes(b"fake1")
+        img2 = tmp_path / "photo2.jpg"
+        img2.write_bytes(b"fake2")
+
+        service.save_product_image(product, str(img1), is_primary=True)
+        service.save_product_image(product, str(img2))
+
+        result = service.get_product_images(product_id=product)
+
+        assert "error" not in result
+        assert result["product_id"] == product
+        assert result["image_count"] == 2
+        assert len(result["images"]) == 2
+        # Primary image first
+        assert result["images"][0]["is_primary"] is True
+        assert len(result["_display_images"]) == 2
+        assert "huvudbild" in result["_display_images"][0]["caption"]
+
+    def test_by_listing_id(self, service, product, tmp_path, engine):
+        img = tmp_path / "photo.jpg"
+        img.write_bytes(b"fake")
+        service.save_product_image(product, str(img), is_primary=True)
+
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Test",
+            listing_description="Test",
+            start_price=100.0,
+        )
+
+        result = service.get_product_images(listing_id=draft["listing_id"])
+
+        assert "error" not in result
+        assert result["product_id"] == product
+        assert result["image_count"] == 1
+
+    def test_no_images(self, service, product):
+        result = service.get_product_images(product_id=product)
+
+        assert "error" not in result
+        assert result["image_count"] == 0
+        assert result["images"] == []
+        assert result["_display_images"] == []
+
+    def test_product_not_found(self, service):
+        result = service.get_product_images(product_id=9999)
+        assert "error" in result
+        assert "9999" in result["error"]
+
+    def test_listing_not_found(self, service):
+        result = service.get_product_images(listing_id=9999)
+        assert "error" in result
+        assert "9999" in result["error"]
+
+    def test_no_id_given(self, service):
+        result = service.get_product_images()
+        assert "error" in result
+
+    def test_missing_file_excluded_from_display(self, service, product, tmp_path, engine):
+        img_exists = tmp_path / "exists.jpg"
+        img_exists.write_bytes(b"real")
+        missing_path = str(tmp_path / "gone.jpg")
+
+        service.save_product_image(product, str(img_exists), is_primary=True)
+        # Manually insert a record with a missing file
+        with Session(engine) as session:
+            session.add(ProductImage(product_id=product, file_path=missing_path))
+            session.commit()
+
+        result = service.get_product_images(product_id=product)
+
+        assert result["image_count"] == 2
+        assert len(result["images"]) == 2
+        # Only the existing file should be in _display_images
+        assert len(result["_display_images"]) == 1
+        assert result["_display_images"][0]["path"] == str(img_exists)
+
+    def test_primary_image_ordering(self, service, product, tmp_path):
+        img1 = tmp_path / "first.jpg"
+        img1.write_bytes(b"first")
+        img2 = tmp_path / "primary.jpg"
+        img2.write_bytes(b"primary")
+
+        service.save_product_image(product, str(img1))
+        service.save_product_image(product, str(img2), is_primary=True)
+
+        result = service.get_product_images(product_id=product)
+
+        # Primary should come first despite being added second
+        assert result["images"][0]["file_path"] == str(img2)
+        assert result["images"][0]["is_primary"] is True
+
+
 class TestArchiveProduct:
     def test_archive_draft(self, service, product, engine):
         result = service.archive_product(product)

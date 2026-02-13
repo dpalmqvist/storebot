@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 class AgentResponse:
     text: str
     messages: list[dict] = field(default_factory=list)
+    display_images: list[dict] = field(default_factory=list)
 
 
 SYSTEM_PROMPT = """Du är en AI-assistent för en svensk lanthandel som säljer renoverade möbler, \
@@ -45,6 +46,7 @@ Du kan:
 - Söka i produktdatabasen
 - Hantera sparade sökningar (scout): skapa, lista, uppdatera, ta bort
 - Köra sparade sökningar manuellt eller alla på en gång för att hitta nya fynd
+- Visa produktbilder direkt i chatten med get_product_images (använd för att granska bilder innan godkännande)
 - Marknadsföring: uppdatera annonsstatistik, analysera prestanda, skapa rapporter, ge förbättringsförslag
 - Analys: affärssammanfattning, lönsamhet per produkt/kategori/källa, lagerrapport, periodjämförelse, inköpskanalanalys
 
@@ -210,6 +212,7 @@ class Agent:
             messages = conversation_history + [{"role": "user", "content": user_message}]
 
         response = self._call_api(messages)
+        all_display_images = []
 
         while response.stop_reason == "tool_use":
             tool_blocks = [b for b in response.content if b.type == "tool_use"]
@@ -218,6 +221,9 @@ class Agent:
             tool_results = []
             for tool_block in tool_blocks:
                 result = self.execute_tool(tool_block.name, tool_block.input)
+                display_images = result.pop("_display_images", None)
+                if display_images:
+                    all_display_images.extend(display_images)
                 tool_results.append(
                     {
                         "type": "tool_result",
@@ -235,7 +241,7 @@ class Agent:
 
         text_blocks = [b for b in response.content if b.type == "text"]
         text = text_blocks[0].text if text_blocks else ""
-        return AgentResponse(text=text, messages=messages)
+        return AgentResponse(text=text, messages=messages, display_images=all_display_images)
 
     # Maps tool name → (service_attr, method_name).
     # service_attr is None for tools that don't require a DB-backed service.
@@ -256,6 +262,7 @@ class Agent:
         "search_products": ("listing", "search_products"),
         "create_product": ("listing", "create_product"),
         "save_product_image": ("listing", "save_product_image"),
+        "get_product_images": ("listing", "get_product_images"),
         "archive_product": ("listing", "archive_product"),
         "unarchive_product": ("listing", "unarchive_product"),
         "check_new_orders": ("order", "check_new_orders"),
