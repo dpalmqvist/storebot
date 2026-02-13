@@ -324,12 +324,19 @@ class MarketingService:
             result = self.tradera.get_item(int(external_id))
             if "error" in result:
                 logger.warning(
-                    "Failed to fetch stats for item %s: %s", external_id, result["error"]
+                    "Failed to fetch stats for item %s: %s",
+                    external_id,
+                    result["error"],
+                    extra={"job_name": "marketing_refresh"},
                 )
                 return None
             return result
         except Exception:
-            logger.exception("Failed to fetch Tradera stats for item %s", external_id)
+            logger.exception(
+                "Failed to fetch Tradera stats for item %s",
+                external_id,
+                extra={"job_name": "marketing_refresh"},
+            )
             return None
 
     def _compute_trend(self, snapshots: list[ListingSnapshot]) -> str:

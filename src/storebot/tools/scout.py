@@ -253,7 +253,11 @@ class ScoutService:
             result = self.tradera.search(**kwargs)
             return result.get("items", [])
         except Exception:
-            logger.exception("Scout: Tradera search failed for query '%s'", search.query)
+            logger.exception(
+                "Scout: Tradera search failed for query '%s'",
+                search.query,
+                extra={"job_name": "scout_digest"},
+            )
             return []
 
     def _search_blocket(self, search: SavedSearch) -> list[dict]:
@@ -271,7 +275,11 @@ class ScoutService:
             result = self.blocket.search(**kwargs)
             return result.get("items", [])
         except Exception:
-            logger.exception("Scout: Blocket search failed for query '%s'", search.query)
+            logger.exception(
+                "Scout: Blocket search failed for query '%s'",
+                search.query,
+                extra={"job_name": "scout_digest"},
+            )
             return []
 
     def _format_digest(self, results: list[dict]) -> str:
