@@ -28,11 +28,10 @@ def _mock_settings(**overrides):
     return settings
 
 
-def _mock_token_response(user_id=42, token="my-token", expires="2027-06-01"):
+def _mock_token_response(token="my-token", expires="2027-06-01"):
     """Create a mock TraderaClient with a successful fetch_token response."""
     mock_client = MagicMock()
     mock_client.fetch_token.return_value = {
-        "user_id": user_id,
         "token": token,
         "expires": expires,
     }
@@ -42,16 +41,16 @@ def _mock_token_response(user_id=42, token="my-token", expires="2027-06-01"):
 class TestFetchToken:
     def test_fetch_token_success(self, tradera_client):
         response = MagicMock()
-        response.UserId = 99999
-        response.Token = "abc-token-xyz"
-        response.ExpirationDate = "2027-01-01T00:00:00"
+        response.AuthToken = "abc-token-xyz"
+        response.HardExpirationTime = "2027-01-01T00:00:00"
         tradera_client._public_client.service.FetchToken.return_value = response
+        tradera_client._public_client.plugins = []
 
         result = tradera_client.fetch_token("test-secret-key")
 
-        assert result["user_id"] == 99999
         assert result["token"] == "abc-token-xyz"
         assert result["expires"] == "2027-01-01T00:00:00"
+        assert "user_id" not in result
 
         call_kwargs = tradera_client._public_client.service.FetchToken.call_args.kwargs
         assert call_kwargs["userId"] == 0
@@ -59,10 +58,10 @@ class TestFetchToken:
 
     def test_fetch_token_missing_fields(self, tradera_client):
         response = MagicMock()
-        response.UserId = None
-        response.Token = None
-        response.ExpirationDate = None
+        response.AuthToken = None
+        response.HardExpirationTime = None
         tradera_client._public_client.service.FetchToken.return_value = response
+        tradera_client._public_client.plugins = []
 
         result = tradera_client.fetch_token("test-secret-key")
 
@@ -70,6 +69,7 @@ class TestFetchToken:
 
     def test_fetch_token_exception(self, tradera_client):
         tradera_client._public_client.service.FetchToken.side_effect = Exception("SOAP fault")
+        tradera_client._public_client.plugins = []
 
         result = tradera_client.fetch_token("test-secret-key")
 
@@ -108,14 +108,14 @@ class TestAuthorizeTraderaCLI:
         mock_input.side_effect = ["", "y"]
 
         env_file = tmp_path / ".env"
-        env_file.write_text("TRADERA_USER_ID=\nTRADERA_USER_TOKEN=\n")
+        env_file.write_text("TRADERA_USER_TOKEN=\n")
         monkeypatch.chdir(tmp_path)
 
         authorize_tradera()
 
         content = env_file.read_text()
-        assert "TRADERA_USER_ID=42" in content
         assert "TRADERA_USER_TOKEN=my-token" in content
+        assert "TRADERA_USER_ID" not in content
 
     @patch("storebot.cli.TraderaClient")
     @patch("storebot.cli.Settings")
@@ -129,8 +129,9 @@ class TestAuthorizeTraderaCLI:
         authorize_tradera()
 
         output = capsys.readouterr().out
-        assert "TRADERA_USER_ID=42" in output
         assert "TRADERA_USER_TOKEN=my-token" in output
+        # Only the token should be in the manual save instructions, not user_id
+        assert "TRADERA_USER_ID=" not in output
 
     @patch("storebot.cli.TraderaClient")
     @patch("storebot.cli.Settings")
