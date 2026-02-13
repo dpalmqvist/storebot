@@ -220,47 +220,49 @@ class Agent:
         text = text_blocks[0].text if text_blocks else ""
         return AgentResponse(text=text, messages=messages)
 
-    # Maps tool names to the service attribute they require (None = no DB needed)
-    _TOOL_SERVICE = {
-        "search_tradera": None,
-        "search_blocket": None,
-        "get_blocket_ad": None,
-        "price_check": None,
-        "get_categories": None,
-        "get_shipping_options": None,
-        "create_draft_listing": "listing",
-        "list_draft_listings": "listing",
-        "get_draft_listing": "listing",
-        "update_draft_listing": "listing",
-        "reject_draft_listing": "listing",
-        "approve_draft_listing": "listing",
-        "publish_listing": "listing",
-        "search_products": "listing",
-        "create_product": "listing",
-        "save_product_image": "listing",
-        "check_new_orders": "order",
-        "list_orders": "order",
-        "get_order": "order",
-        "create_sale_voucher": "order",
-        "mark_order_shipped": "order",
-        "create_shipping_label": "order",
-        "list_orders_pending_feedback": "order",
-        "leave_feedback": "order",
-        "create_voucher": "accounting",
-        "export_vouchers": "accounting",
-        "create_saved_search": "scout",
-        "list_saved_searches": "scout",
-        "update_saved_search": "scout",
-        "delete_saved_search": "scout",
-        "run_saved_search": "scout",
-        "run_all_saved_searches": "scout",
-        "refresh_listing_stats": "marketing",
-        "analyze_listing": "marketing",
-        "get_performance_report": "marketing",
-        "get_recommendations": "marketing",
+    # Maps tool name → (service_attr, method_name).
+    # service_attr is None for tools that don't require a DB-backed service.
+    _DISPATCH = {
+        "search_tradera": ("tradera", "search"),
+        "search_blocket": ("blocket", "search"),
+        "get_blocket_ad": ("blocket", "get_ad"),
+        "price_check": ("pricing", "price_check"),
+        "get_categories": ("tradera", "get_categories"),
+        "get_shipping_options": ("tradera", "get_shipping_options"),
+        "create_draft_listing": ("listing", "create_draft"),
+        "list_draft_listings": ("listing", "list_drafts"),
+        "get_draft_listing": ("listing", "get_draft"),
+        "update_draft_listing": ("listing", "update_draft"),
+        "reject_draft_listing": ("listing", "reject_draft"),
+        "approve_draft_listing": ("listing", "approve_draft"),
+        "publish_listing": ("listing", "publish_listing"),
+        "search_products": ("listing", "search_products"),
+        "create_product": ("listing", "create_product"),
+        "save_product_image": ("listing", "save_product_image"),
+        "check_new_orders": ("order", "check_new_orders"),
+        "list_orders": ("order", "list_orders"),
+        "get_order": ("order", "get_order"),
+        "create_sale_voucher": ("order", "create_sale_voucher"),
+        "mark_order_shipped": ("order", "mark_shipped"),
+        "create_shipping_label": ("order", "create_shipping_label"),
+        "list_orders_pending_feedback": ("order", "list_orders_pending_feedback"),
+        "leave_feedback": ("order", "leave_feedback"),
+        "create_voucher": ("accounting", "create_voucher"),
+        "export_vouchers": ("accounting", "export_vouchers_pdf"),
+        "create_saved_search": ("scout", "create_search"),
+        "list_saved_searches": ("scout", "list_searches"),
+        "update_saved_search": ("scout", "update_search"),
+        "delete_saved_search": ("scout", "delete_search"),
+        "run_saved_search": ("scout", "run_search"),
+        "run_all_saved_searches": ("scout", "run_all_searches"),
+        "refresh_listing_stats": ("marketing", "refresh_listing_stats"),
+        "analyze_listing": ("marketing", "analyze_listing"),
+        "get_performance_report": ("marketing", "get_performance_report"),
+        "get_recommendations": ("marketing", "get_recommendations"),
     }
 
-    _SERVICE_NAMES = {
+    # Services that require a database engine (service_attr → display name)
+    _DB_SERVICES = {
         "listing": "ListingService",
         "order": "OrderService",
         "accounting": "AccountingService",
@@ -271,100 +273,17 @@ class Agent:
     def execute_tool(self, name: str, tool_input: dict) -> dict:
         logger.info("Executing tool: %s with input: %s", name, tool_input)
 
-        required_service = self._TOOL_SERVICE.get(name)
-        if required_service is not None and not getattr(self, required_service):
-            service_name = self._SERVICE_NAMES[required_service]
-            return {"error": f"{service_name} not available (no database engine)"}
+        entry = self._DISPATCH.get(name)
+        if entry is None:
+            return {"error": f"Unknown tool: {name}"}
+
+        service_attr, method_name = entry
+        service = getattr(self, service_attr, None)
+        if service is None and service_attr in self._DB_SERVICES:
+            return {"error": f"{self._DB_SERVICES[service_attr]} not available (no database engine)"}
 
         try:
-            match name:
-                case "search_tradera":
-                    return self.tradera.search(**tool_input)
-                case "search_blocket":
-                    return self.blocket.search(**tool_input)
-                case "get_blocket_ad":
-                    return self.blocket.get_ad(**tool_input)
-                case "price_check":
-                    return self.pricing.price_check(**tool_input)
-                case "get_categories":
-                    return self.tradera.get_categories(**tool_input)
-                case "get_shipping_options":
-                    weight = tool_input.get("weight_grams")
-                    result = self.tradera.get_shipping_options()
-                    if "error" not in result and weight is not None:
-                        result["shipping_options"] = [
-                            opt
-                            for opt in result["shipping_options"]
-                            if opt.get("weight_limit_grams") is None
-                            or opt["weight_limit_grams"] >= weight
-                        ]
-                        result["filtered_by_weight_grams"] = weight
-                    return result
-                case "create_draft_listing":
-                    return self.listing.create_draft(**tool_input)
-                case "list_draft_listings":
-                    return self.listing.list_drafts(**tool_input)
-                case "get_draft_listing":
-                    return self.listing.get_draft(**tool_input)
-                case "update_draft_listing":
-                    listing_id = tool_input.pop("listing_id")
-                    return self.listing.update_draft(listing_id, **tool_input)
-                case "reject_draft_listing":
-                    return self.listing.reject_draft(**tool_input)
-                case "approve_draft_listing":
-                    return self.listing.approve_draft(**tool_input)
-                case "publish_listing":
-                    return self.listing.publish_listing(**tool_input)
-                case "search_products":
-                    return self.listing.search_products(**tool_input)
-                case "create_product":
-                    return self.listing.create_product(**tool_input)
-                case "save_product_image":
-                    return self.listing.save_product_image(**tool_input)
-                case "check_new_orders":
-                    return self.order.check_new_orders()
-                case "list_orders":
-                    return self.order.list_orders(**tool_input)
-                case "get_order":
-                    return self.order.get_order(**tool_input)
-                case "create_sale_voucher":
-                    return self.order.create_sale_voucher(**tool_input)
-                case "mark_order_shipped":
-                    return self.order.mark_shipped(**tool_input)
-                case "create_shipping_label":
-                    return self.order.create_shipping_label(**tool_input)
-                case "list_orders_pending_feedback":
-                    return self.order.list_orders_pending_feedback()
-                case "leave_feedback":
-                    return self.order.leave_feedback(**tool_input)
-                case "create_voucher":
-                    return self.accounting.create_voucher(**tool_input)
-                case "export_vouchers":
-                    path = self.accounting.export_vouchers_pdf(**tool_input)
-                    return {"pdf_path": path}
-                case "create_saved_search":
-                    return self.scout.create_search(**tool_input)
-                case "list_saved_searches":
-                    return self.scout.list_searches(**tool_input)
-                case "update_saved_search":
-                    search_id = tool_input.pop("search_id")
-                    return self.scout.update_search(search_id, **tool_input)
-                case "delete_saved_search":
-                    return self.scout.delete_search(**tool_input)
-                case "run_saved_search":
-                    return self.scout.run_search(**tool_input)
-                case "run_all_saved_searches":
-                    return self.scout.run_all_searches()
-                case "refresh_listing_stats":
-                    return self.marketing.refresh_listing_stats(**tool_input)
-                case "analyze_listing":
-                    return self.marketing.analyze_listing(**tool_input)
-                case "get_performance_report":
-                    return self.marketing.get_performance_report()
-                case "get_recommendations":
-                    return self.marketing.get_recommendations(**tool_input)
-                case _:
-                    return {"error": f"Unknown tool: {name}"}
+            return getattr(service, method_name)(**tool_input)
         except NotImplementedError:
             return {"error": f"Tool '{name}' is not yet implemented"}
         except Exception as e:

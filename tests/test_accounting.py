@@ -173,9 +173,9 @@ class TestExportVouchersPdf:
         accounting.create_voucher(description="V1", rows=rows, transaction_date="2026-03-01")
         accounting.create_voucher(description="V2", rows=rows, transaction_date="2026-03-15")
 
-        path = accounting.export_vouchers_pdf("2026-03-01", "2026-03-31")
-        assert Path(path).exists()
-        assert path.endswith(".pdf")
+        result = accounting.export_vouchers_pdf("2026-03-01", "2026-03-31")
+        assert Path(result["pdf_path"]).exists()
+        assert result["pdf_path"].endswith(".pdf")
 
     def test_no_vouchers_in_range_raises(self, accounting):
         with pytest.raises(ValueError, match="Inga verifikationer"):
