@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from storebot.cli import _update_env_file, authorize_tradera
+from storebot.cli import _parse_redirect_url, _update_env_file, authorize_tradera
 from storebot.tools.tradera import TraderaClient
 
 
@@ -28,16 +28,6 @@ def _mock_settings(**overrides):
     return settings
 
 
-def _mock_token_response(token="my-token", expires="2027-06-01"):
-    """Create a mock TraderaClient with a successful fetch_token response."""
-    mock_client = MagicMock()
-    mock_client.fetch_token.return_value = {
-        "token": token,
-        "expires": expires,
-    }
-    return mock_client
-
-
 class TestFetchToken:
     def test_fetch_token_success(self, tradera_client):
         response = MagicMock()
@@ -50,7 +40,6 @@ class TestFetchToken:
 
         assert result["token"] == "abc-token-xyz"
         assert result["expires"] == "2027-01-01T00:00:00"
-        assert "user_id" not in result
 
         call_kwargs = tradera_client._public_client.service.FetchToken.call_args.kwargs
         assert call_kwargs["userId"] == 0
@@ -77,35 +66,66 @@ class TestFetchToken:
         assert "SOAP fault" in result["error"]
 
 
+class TestParseRedirectUrl:
+    def test_parse_full_url(self):
+        url = (
+            "http://localhost:8080/auth/accept"
+            "?userId=1943555"
+            "&token=fe67c960-9a2a-4c4d-80de-afc42dfcf674"
+            "&exp=2027-08-13T16%3a58%3a59.6840692%2b02%3a00"
+        )
+        result = _parse_redirect_url(url)
+
+        assert result["token"] == "fe67c960-9a2a-4c4d-80de-afc42dfcf674"
+        assert result["user_id"] == "1943555"
+        assert "2027-08-13" in result["expires"]
+
+    def test_parse_token_only(self):
+        url = "http://localhost:8080/auth/accept?token=abc-def"
+        result = _parse_redirect_url(url)
+
+        assert result["token"] == "abc-def"
+        assert "user_id" not in result
+        assert "expires" not in result
+
+    def test_missing_token_returns_error(self):
+        url = "http://localhost:8080/auth/accept?userId=123"
+        result = _parse_redirect_url(url)
+
+        assert "error" in result
+
+    def test_handles_whitespace(self):
+        url = "  http://localhost:8080/auth/accept?token=abc  "
+        result = _parse_redirect_url(url)
+
+        assert result["token"] == "abc"
+
+
 class TestAuthorizeTraderaCLI:
-    @patch("storebot.cli.TraderaClient")
     @patch("storebot.cli.Settings")
-    def test_missing_app_id_exits(self, mock_settings_cls, mock_client_cls):
+    def test_missing_app_id_exits(self, mock_settings_cls):
         mock_settings_cls.return_value = _mock_settings(tradera_app_id="")
 
         with pytest.raises(SystemExit) as exc_info:
             authorize_tradera()
         assert exc_info.value.code == 1
 
-    @patch("storebot.cli.TraderaClient")
     @patch("storebot.cli.Settings")
-    def test_missing_public_key_exits(self, mock_settings_cls, mock_client_cls):
+    def test_missing_public_key_exits(self, mock_settings_cls):
         mock_settings_cls.return_value = _mock_settings(tradera_public_key="")
 
         with pytest.raises(SystemExit) as exc_info:
             authorize_tradera()
         assert exc_info.value.code == 1
 
-    @patch("storebot.cli.TraderaClient")
     @patch("storebot.cli.Settings")
     @patch("builtins.input")
     def test_successful_flow_saves_to_env(
-        self, mock_input, mock_settings_cls, mock_client_cls, tmp_path, monkeypatch
+        self, mock_input, mock_settings_cls, tmp_path, monkeypatch
     ):
         mock_settings_cls.return_value = _mock_settings()
-        mock_client_cls.return_value = _mock_token_response()
-
-        mock_input.side_effect = ["", "y"]
+        redirect = "http://localhost:8080/auth/accept?userId=999&token=my-token&exp=2027-06-01"
+        mock_input.side_effect = [redirect, "y"]
 
         env_file = tmp_path / ".env"
         env_file.write_text("TRADERA_USER_TOKEN=\n")
@@ -115,35 +135,36 @@ class TestAuthorizeTraderaCLI:
 
         content = env_file.read_text()
         assert "TRADERA_USER_TOKEN=my-token" in content
-        assert "TRADERA_USER_ID" not in content
+        assert "TRADERA_USER_ID=999" in content
 
-    @patch("storebot.cli.TraderaClient")
     @patch("storebot.cli.Settings")
     @patch("builtins.input")
-    def test_successful_flow_no_save(self, mock_input, mock_settings_cls, mock_client_cls, capsys):
+    def test_successful_flow_no_save(self, mock_input, mock_settings_cls, capsys):
         mock_settings_cls.return_value = _mock_settings()
-        mock_client_cls.return_value = _mock_token_response()
-
-        mock_input.side_effect = ["", "n"]
+        redirect = "http://localhost:8080/auth/accept?userId=999&token=my-token&exp=2027-06-01"
+        mock_input.side_effect = [redirect, "n"]
 
         authorize_tradera()
 
         output = capsys.readouterr().out
         assert "TRADERA_USER_TOKEN=my-token" in output
-        # Only the token should be in the manual save instructions, not user_id
-        assert "TRADERA_USER_ID=" not in output
+        assert "TRADERA_USER_ID=999" in output
 
-    @patch("storebot.cli.TraderaClient")
     @patch("storebot.cli.Settings")
     @patch("builtins.input")
-    def test_fetch_token_error_exits(self, mock_input, mock_settings_cls, mock_client_cls):
+    def test_empty_url_exits(self, mock_input, mock_settings_cls):
         mock_settings_cls.return_value = _mock_settings()
-
-        mock_client = MagicMock()
-        mock_client.fetch_token.return_value = {"error": "Token not found"}
-        mock_client_cls.return_value = mock_client
-
         mock_input.side_effect = [""]
+
+        with pytest.raises(SystemExit) as exc_info:
+            authorize_tradera()
+        assert exc_info.value.code == 1
+
+    @patch("storebot.cli.Settings")
+    @patch("builtins.input")
+    def test_url_without_token_exits(self, mock_input, mock_settings_cls):
+        mock_settings_cls.return_value = _mock_settings()
+        mock_input.side_effect = ["http://localhost:8080/auth/accept?userId=123"]
 
         with pytest.raises(SystemExit) as exc_info:
             authorize_tradera()

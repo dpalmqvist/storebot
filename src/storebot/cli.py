@@ -4,9 +4,9 @@ import re
 import sys
 import uuid
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from storebot.config import Settings
-from storebot.tools.tradera import TraderaClient
 
 
 def _update_env_file(env_path: Path, key: str, value: str) -> None:
@@ -27,6 +27,30 @@ def _update_env_file(env_path: Path, key: str, value: str) -> None:
     if not content.endswith("\n"):
         content += "\n"
     env_path.write_text(content + f"{line}\n")
+
+
+def _parse_redirect_url(url: str) -> dict:
+    """Parse token, userId and expiration from Tradera's redirect URL.
+
+    Expected format:
+      http://localhost:8080/auth/accept?userId=123&token=abc-def&exp=2027-...
+    """
+    parsed = urlparse(url.strip())
+    params = parse_qs(parsed.query)
+
+    token = params.get("token", [None])[0]
+    user_id = params.get("userId", [None])[0]
+    expires = params.get("exp", [None])[0]
+
+    if not token:
+        return {"error": "No 'token' parameter found in the redirect URL."}
+
+    result = {"token": token}
+    if user_id:
+        result["user_id"] = user_id
+    if expires:
+        result["expires"] = expires
+    return result
 
 
 def authorize_tradera() -> None:
@@ -58,38 +82,39 @@ def authorize_tradera() -> None:
     print()
     print(f"  {url}")
     print()
-    input("Press Enter after you have completed the login on Tradera...")
+    print("After granting access, you will be redirected to a localhost URL.")
+    print("Copy the FULL redirect URL from your browser's address bar and paste it below.")
+    print()
+    redirect_url = input("Redirect URL: ").strip()
 
-    client = TraderaClient(
-        app_id=settings.tradera_app_id,
-        app_key=settings.tradera_app_key,
-        sandbox=settings.tradera_sandbox,
-    )
+    if not redirect_url:
+        print("Error: No URL provided.")
+        sys.exit(1)
 
-    result = client.fetch_token(skey)
+    result = _parse_redirect_url(redirect_url)
 
     if "error" in result:
-        print(f"\nError fetching token: {result['error']}")
-        if "sent_xml" in result:
-            print(f"\nSent SOAP request:\n{result['sent_xml']}")
-        if "response_repr" in result:
-            print(f"\nParsed response object: {result['response_repr']}")
+        print(f"\nError: {result['error']}")
         sys.exit(1)
 
     print()
     print("Authorization successful!")
+    print(f"  User ID: {result.get('user_id', 'N/A')}")
     print(f"  Token:   {result['token']}")
-    print(f"  Expires: {result['expires']}")
-    print()
-    print("Note: TRADERA_USER_ID is not returned by FetchToken.")
-    print("      Find your user ID in your Tradera profile and set it manually.")
+    print(f"  Expires: {result.get('expires', 'N/A')}")
     print()
 
-    answer = input("Save token to .env? [Y/n] ").strip().lower()
+    answer = input("Save credentials to .env? [Y/n] ").strip().lower()
     if answer in ("", "y", "yes"):
         env_path = Path(".env")
         _update_env_file(env_path, "TRADERA_USER_TOKEN", result["token"])
-        print(f"Saved TRADERA_USER_TOKEN to {env_path}")
+        if result.get("user_id"):
+            _update_env_file(env_path, "TRADERA_USER_ID", result["user_id"])
+            print(f"Saved TRADERA_USER_TOKEN and TRADERA_USER_ID to {env_path}")
+        else:
+            print(f"Saved TRADERA_USER_TOKEN to {env_path}")
     else:
-        print("Not saved. Add this to your .env manually:")
+        print("Not saved. Add these to your .env manually:")
         print(f"  TRADERA_USER_TOKEN={result['token']}")
+        if result.get("user_id"):
+            print(f"  TRADERA_USER_ID={result['user_id']}")
