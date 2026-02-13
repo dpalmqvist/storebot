@@ -280,7 +280,9 @@ class Agent:
         service_attr, method_name = entry
         service = getattr(self, service_attr, None)
         if service is None and service_attr in self._DB_SERVICES:
-            return {"error": f"{self._DB_SERVICES[service_attr]} not available (no database engine)"}
+            return {
+                "error": f"{self._DB_SERVICES[service_attr]} not available (no database engine)"
+            }
 
         try:
             return getattr(service, method_name)(**tool_input)

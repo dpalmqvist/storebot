@@ -46,88 +46,95 @@ class OrderService:
                 if existing:
                     continue
 
-                # Match Tradera items to local listings
-                product_id = None
-                sale_price = order_data.get("sub_total", 0)
-                for item in order_data.get("items", []):
-                    item_id = str(item.get("item_id", ""))
-                    listing = (
-                        session.query(PlatformListing)
-                        .filter(
-                            PlatformListing.external_id == item_id,
-                            PlatformListing.platform == "tradera",
-                        )
-                        .first()
-                    )
-                    if listing:
-                        product_id = listing.product_id
-                        listing.status = "sold"
-                        product = session.get(Product, listing.product_id)
-                        if product:
-                            product.status = "sold"
-                            product.sold_price = sale_price
-                        break
-
-                if product_id is None:
-                    logger.warning("No local listing found for Tradera order %s", ext_id)
-
-                matched = product_id is not None
-                order = Order(
-                    product_id=product_id,
-                    platform="tradera",
-                    external_order_id=ext_id,
-                    buyer_name=order_data.get("buyer_name"),
-                    buyer_address=order_data.get("buyer_address"),
-                    sale_price=sale_price,
-                    shipping_cost=order_data.get("shipping_cost", 0),
-                    status="pending",
-                    ordered_at=datetime.now(UTC),
-                )
-                session.add(order)
-                session.flush()
-
-                if matched:
-                    notification = Notification(
-                        type="new_order",
-                        product_id=product_id,
-                        message_text=(
-                            f"Ny order! #{order.id} — "
-                            f"{order_data.get('buyer_name', 'Okänd köpare')} "
-                            f"köpte produkt #{product_id} för {sale_price} kr"
-                        ),
-                    )
-                    session.add(notification)
-
-                action_details = {
-                    "order_id": order.id,
-                    "external_order_id": ext_id,
-                    "sale_price": sale_price,
-                    "buyer_name": order_data.get("buyer_name"),
-                }
-                if not matched:
-                    action_details["items"] = order_data.get("items", [])
-
-                log_action(
-                    session,
-                    "order",
-                    "detect_new_order" if matched else "unmatched_order",
-                    action_details,
-                    product_id=product_id,
-                )
-
+                imported = self._import_single_order(session, order_data, ext_id)
                 session.commit()
-
-                new_orders.append(
-                    {
-                        "order_id": order.id,
-                        "external_order_id": ext_id,
-                        "product_id": product_id,
-                        "buyer_name": order_data.get("buyer_name"),
-                        "sale_price": sale_price,
-                    }
-                )
+                new_orders.append(imported)
 
         return {"new_orders": new_orders, "count": len(new_orders)}
+
+    def _match_order_to_product(
+        self, session: Session, order_data: dict, sale_price: float
+    ) -> int | None:
+        """Try to match a Tradera order to a local product via listing external_id."""
+        for item in order_data.get("items", []):
+            item_id = str(item.get("item_id", ""))
+            listing = (
+                session.query(PlatformListing)
+                .filter(
+                    PlatformListing.external_id == item_id,
+                    PlatformListing.platform == "tradera",
+                )
+                .first()
+            )
+            if listing:
+                listing.status = "sold"
+                product = session.get(Product, listing.product_id)
+                if product:
+                    product.status = "sold"
+                    product.sold_price = sale_price
+                return listing.product_id
+        return None
+
+    def _import_single_order(self, session: Session, order_data: dict, ext_id: str) -> dict:
+        """Create an Order record, match to product, notify, and log."""
+        sale_price = order_data.get("sub_total", 0)
+        product_id = self._match_order_to_product(session, order_data, sale_price)
+
+        if product_id is None:
+            logger.warning("No local listing found for Tradera order %s", ext_id)
+
+        order = Order(
+            product_id=product_id,
+            platform="tradera",
+            external_order_id=ext_id,
+            buyer_name=order_data.get("buyer_name"),
+            buyer_address=order_data.get("buyer_address"),
+            sale_price=sale_price,
+            shipping_cost=order_data.get("shipping_cost", 0),
+            status="pending",
+            ordered_at=datetime.now(UTC),
+        )
+        session.add(order)
+        session.flush()
+
+        matched = product_id is not None
+        if matched:
+            session.add(
+                Notification(
+                    type="new_order",
+                    product_id=product_id,
+                    message_text=(
+                        f"Ny order! #{order.id} — "
+                        f"{order_data.get('buyer_name', 'Okänd köpare')} "
+                        f"köpte produkt #{product_id} för {sale_price} kr"
+                    ),
+                )
+            )
+
+        action_details = {
+            "order_id": order.id,
+            "external_order_id": ext_id,
+            "sale_price": sale_price,
+            "buyer_name": order_data.get("buyer_name"),
+        }
+        if not matched:
+            action_details["items"] = order_data.get("items", [])
+
+        log_action(
+            session,
+            "order",
+            "detect_new_order" if matched else "unmatched_order",
+            action_details,
+            product_id=product_id,
+        )
+
+        return {
+            "order_id": order.id,
+            "external_order_id": ext_id,
+            "product_id": product_id,
+            "buyer_name": order_data.get("buyer_name"),
+            "sale_price": sale_price,
+        }
 
     def get_order(self, order_id: int) -> dict:
         """Return order details including product title."""
