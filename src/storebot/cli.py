@@ -72,18 +72,18 @@ def authorize_tradera() -> None:
 
     print()
     print("Authorization successful!")
-    print(f"  User ID: {result['user_id']}")
     print(f"  Token:   {result['token']}")
     print(f"  Expires: {result['expires']}")
     print()
+    print("Note: TRADERA_USER_ID is not returned by FetchToken.")
+    print("      Find your user ID in your Tradera profile and set it manually.")
+    print()
 
-    answer = input("Save to .env? [Y/n] ").strip().lower()
+    answer = input("Save token to .env? [Y/n] ").strip().lower()
     if answer in ("", "y", "yes"):
         env_path = Path(".env")
-        _update_env_file(env_path, "TRADERA_USER_ID", str(result["user_id"]))
         _update_env_file(env_path, "TRADERA_USER_TOKEN", result["token"])
-        print(f"Saved to {env_path}")
+        print(f"Saved TRADERA_USER_TOKEN to {env_path}")
     else:
-        print("Not saved. Add these to your .env manually:")
-        print(f"  TRADERA_USER_ID={result['user_id']}")
+        print("Not saved. Add this to your .env manually:")
         print(f"  TRADERA_USER_TOKEN={result['token']}")

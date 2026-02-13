@@ -3,6 +3,8 @@ from datetime import UTC, datetime, timedelta
 
 import requests
 import zeep
+from lxml import etree
+from zeep.plugins import HistoryPlugin
 from zeep.transports import Transport
 
 from storebot.retry import retry_on_transient
@@ -427,29 +429,34 @@ class TraderaClient:
         during the authorization URL step.
         """
         try:
-            response = self._fetch_token_api_call(
-                secret_key, self._auth_headers(self.public_client)
-            )
+            history = HistoryPlugin()
+            self.public_client.plugins.append(history)
 
-            from zeep.helpers import serialize_object
+            try:
+                response = self._fetch_token_api_call(
+                    secret_key, self._auth_headers(self.public_client)
+                )
+            finally:
+                self.public_client.plugins.remove(history)
 
-            response_data = serialize_object(response)
-            logger.debug("FetchToken raw response: %s", response_data)
+            raw_xml = None
+            try:
+                envelope = history.last_received.get("envelope")
+                if envelope is not None:
+                    raw_xml = etree.tostring(envelope, pretty_print=True).decode()
+            except Exception:
+                pass
+            logger.debug("FetchToken raw XML response:\n%s", raw_xml)
 
-            user_id = getattr(response, "UserId", None)
-            token = getattr(response, "Token", None)
-            expires = getattr(response, "ExpirationDate", None)
+            token = getattr(response, "AuthToken", None)
+            expires = getattr(response, "HardExpirationTime", None)
             if expires is not None:
                 expires = str(expires)
 
-            if user_id is None or token is None:
-                return {
-                    "error": f"FetchToken response missing UserId or Token. "
-                    f"Raw response: {response_data}"
-                }
+            if token is None:
+                return {"error": f"FetchToken response missing AuthToken. Raw XML:\n{raw_xml}"}
 
             return {
-                "user_id": user_id,
                 "token": token,
                 "expires": expires,
             }
