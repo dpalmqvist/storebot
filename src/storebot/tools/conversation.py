@@ -171,9 +171,11 @@ class ConversationService:
                 .all()
             )
 
+            # Iterate newest-first so truncation drops oldest messages,
+            # keeping the most recent context for the agent.
             messages = []
             total_bytes = 0
-            for row in rows[-self.max_messages :]:
+            for row in reversed(rows[-self.max_messages :]):
                 content = row.content
                 if row.image_paths:
                     content = _reconstruct_image_blocks(content, row.image_paths)
@@ -187,6 +189,7 @@ class ConversationService:
                     break
                 total_bytes += size
                 messages.append({"role": row.role, "content": content})
+            messages.reverse()
 
         return messages
 
