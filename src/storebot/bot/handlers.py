@@ -65,7 +65,9 @@ def _split_message(text: str) -> list[str]:
         return chunks
 
     # Split, then verify header length matches actual chunk count (may shift at digit boundaries)
-    header_len = len(f"({len(text) // TELEGRAM_MAX_MESSAGE_LENGTH + 1}/{len(text) // TELEGRAM_MAX_MESSAGE_LENGTH + 1})\n")
+    header_len = len(
+        f"({len(text) // TELEGRAM_MAX_MESSAGE_LENGTH + 1}/{len(text) // TELEGRAM_MAX_MESSAGE_LENGTH + 1})\n"
+    )
     chunks = _do_split(TELEGRAM_MAX_MESSAGE_LENGTH - header_len)
     actual_header_len = len(f"({len(chunks)}/{len(chunks)})\n")
     if actual_header_len > header_len:
