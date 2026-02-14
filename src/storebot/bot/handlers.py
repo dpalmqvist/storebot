@@ -112,9 +112,10 @@ async def _handle_with_conversation(
     conversation: ConversationService = context.bot_data["conversation"]
     chat_id = str(update.effective_chat.id)
 
-    history = conversation.load_history(chat_id)
+    history: list[dict] = []
 
     try:
+        history = conversation.load_history(chat_id)
         result = agent.handle_message(
             user_message,
             image_paths=image_paths,
@@ -125,8 +126,13 @@ async def _handle_with_conversation(
         if result.display_images:
             await _send_display_images(update, result.display_images)
         await _reply(update, result.text)
-    except Exception:
-        logger.exception("Error in conversation handler", extra={"chat_id": chat_id})
+    except Exception as exc:
+        logger.exception(
+            "Error in conversation handler: %s: %s",
+            type(exc).__name__,
+            exc,
+            extra={"chat_id": chat_id, "history_len": len(history)},
+        )
         await update.message.reply_text(error_text)
 
 
