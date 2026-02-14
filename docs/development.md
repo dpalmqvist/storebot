@@ -76,7 +76,7 @@ The agent loop in `agent.py` works as follows:
 
 ### Tool Dispatch
 
-Tool definitions live in `tools/definitions.py`. The agent's `_dispatch_tool` method maps tool names to service method calls. Each service is initialized in the `Agent.__init__` method with the shared SQLAlchemy engine and settings.
+Tool definitions live in `tools/definitions.py`. The agent's `execute_tool` method maps tool names (via the `_DISPATCH` dict) to service method calls. Each service is initialized in the `Agent.__init__` method with the shared SQLAlchemy engine and settings.
 
 ### Sub-Agents
 
@@ -175,7 +175,7 @@ In tests, Alembic is bypassed and tables are created directly via `Base.metadata
 2. Create a migration: `alembic revision --autogenerate -m "add table_name table"`
 3. Review the generated migration in `alembic/versions/`
 4. Test with `alembic upgrade head`
-5. Add the `conftest.py` engine fixture handles `create_all()` for tests automatically
+5. Note: the `conftest.py` engine fixture handles `create_all()` for tests automatically — no extra setup needed
 
 ## Testing
 
