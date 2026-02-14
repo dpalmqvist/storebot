@@ -463,6 +463,76 @@ class ListingService:
                 "status": product.status,
             }
 
+    _MISSING = object()
+
+    def update_product(
+        self,
+        product_id: int,
+        title: str | None = _MISSING,
+        description: str | None = _MISSING,
+        category: str | None = _MISSING,
+        condition: str | None = _MISSING,
+        materials: str | None = _MISSING,
+        era: str | None = _MISSING,
+        dimensions: str | None = _MISSING,
+        source: str | None = _MISSING,
+        acquisition_cost: float | None = _MISSING,
+        weight_grams: int | None = _MISSING,
+    ) -> dict:
+        """Update fields on an existing product. Pass None to clear a field."""
+        updatable = {
+            "title",
+            "description",
+            "category",
+            "condition",
+            "materials",
+            "era",
+            "dimensions",
+            "source",
+            "acquisition_cost",
+            "weight_grams",
+        }
+        updates = {k: v for k, v in locals().items() if k in updatable and v is not self._MISSING}
+
+        if acquisition_cost is not self._MISSING and acquisition_cost is not None:
+            if acquisition_cost < 0:
+                return {"error": "acquisition_cost must be >= 0"}
+        if weight_grams is not self._MISSING and weight_grams is not None:
+            if weight_grams <= 0:
+                return {"error": "weight_grams must be > 0"}
+
+        with Session(self.engine) as session:
+            product = session.get(Product, product_id)
+            if product is None:
+                return {"error": f"Product {product_id} not found"}
+
+            if not updates:
+                return {
+                    "product_id": product.id,
+                    "title": product.title,
+                    "status": product.status,
+                    "updated_fields": [],
+                }
+
+            for key, value in updates.items():
+                setattr(product, key, value)
+
+            log_action(
+                session,
+                "listing",
+                "update_product",
+                {"updated_fields": list(updates.keys())},
+                product_id=product_id,
+            )
+            session.commit()
+
+            return {
+                "product_id": product.id,
+                "title": product.title,
+                "status": product.status,
+                "updated_fields": list(updates.keys()),
+            }
+
     def save_product_image(
         self,
         product_id: int,

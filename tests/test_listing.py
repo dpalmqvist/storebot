@@ -436,6 +436,84 @@ class TestCreateProduct:
             assert action.details["title"] == "Teststol"
 
 
+class TestUpdateProduct:
+    def test_update_single_field(self, service, product, engine):
+        result = service.update_product(product, acquisition_cost=150.0)
+
+        assert "error" not in result
+        assert result["updated_fields"] == ["acquisition_cost"]
+
+        with Session(engine) as session:
+            p = session.get(Product, product)
+            assert p.acquisition_cost == 150.0
+
+    def test_update_multiple_fields(self, service, product, engine):
+        result = service.update_product(
+            product,
+            description="Ny beskrivning",
+            category="möbler",
+            weight_grams=3500,
+        )
+
+        assert "error" not in result
+        assert sorted(result["updated_fields"]) == ["category", "description", "weight_grams"]
+
+        with Session(engine) as session:
+            p = session.get(Product, product)
+            assert p.description == "Ny beskrivning"
+            assert p.category == "möbler"
+            assert p.weight_grams == 3500
+
+    def test_not_found(self, service):
+        result = service.update_product(9999, title="Nope")
+        assert "error" in result
+        assert "9999" in result["error"]
+
+    def test_no_fields_returns_current(self, service, product):
+        result = service.update_product(product)
+
+        assert "error" not in result
+        assert result["product_id"] == product
+        assert result["updated_fields"] == []
+
+    def test_clear_field_to_none(self, service, product, engine):
+        service.update_product(product, era="1950-tal")
+        result = service.update_product(product, era=None)
+
+        assert "error" not in result
+        assert "era" in result["updated_fields"]
+
+        with Session(engine) as session:
+            p = session.get(Product, product)
+            assert p.era is None
+
+    def test_negative_acquisition_cost_rejected(self, service, product):
+        result = service.update_product(product, acquisition_cost=-10.0)
+        assert "error" in result
+        assert "acquisition_cost" in result["error"]
+
+    def test_zero_weight_rejected(self, service, product):
+        result = service.update_product(product, weight_grams=0)
+        assert "error" in result
+        assert "weight_grams" in result["error"]
+
+    def test_no_fields_skips_audit_log(self, service, product, engine):
+        service.update_product(product)
+
+        with Session(engine) as session:
+            count = session.query(AgentAction).filter_by(action_type="update_product").count()
+            assert count == 0
+
+    def test_logs_agent_action(self, service, product, engine):
+        service.update_product(product, era="1950-tal")
+
+        with Session(engine) as session:
+            action = session.query(AgentAction).filter_by(action_type="update_product").one()
+            assert action.agent_name == "listing"
+            assert action.details["updated_fields"] == ["era"]
+            assert action.product_id == product
+
+
 class TestSaveProductImage:
     def test_save_image(self, service, product, tmp_path, engine):
         img_path = tmp_path / "photo.jpg"

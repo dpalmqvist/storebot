@@ -265,6 +265,7 @@ class Agent:
         "publish_listing": ("listing", "publish_listing"),
         "search_products": ("listing", "search_products"),
         "create_product": ("listing", "create_product"),
+        "update_product": ("listing", "update_product"),
         "save_product_image": ("listing", "save_product_image"),
         "get_product_images": ("listing", "get_product_images"),
         "archive_product": ("listing", "archive_product"),
