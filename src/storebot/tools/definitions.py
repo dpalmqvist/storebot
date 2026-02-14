@@ -440,6 +440,48 @@ TOOLS = [
         },
     },
     {
+        "name": "update_product",
+        "description": "Uppdatera fält på en befintlig produkt. Ange bara de fält som ska ändras.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "product_id": {"type": "integer", "description": "Product ID to update"},
+                "title": {"type": "string", "description": "Product title in Swedish"},
+                "description": {
+                    "type": "string",
+                    "description": "Detailed product description in Swedish",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Product category (e.g. möbler, belysning, kuriosa)",
+                },
+                "condition": {
+                    "type": "string",
+                    "description": "Condition (e.g. utmärkt skick, bra skick, renoveringsobjekt)",
+                },
+                "materials": {
+                    "type": "string",
+                    "description": "Materials (e.g. ek, mässing, glas)",
+                },
+                "era": {
+                    "type": "string",
+                    "description": "Era or period (e.g. 1940-tal, jugend, art deco)",
+                },
+                "dimensions": {"type": "string", "description": "Dimensions (e.g. 60x40x80 cm)"},
+                "source": {
+                    "type": "string",
+                    "description": "Where it was acquired (e.g. loppis, dödsbo, tradera)",
+                },
+                "acquisition_cost": {"type": "number", "description": "Purchase cost in SEK"},
+                "weight_grams": {
+                    "type": "integer",
+                    "description": "Weight in grams (required for shipping labels)",
+                },
+            },
+            "required": ["product_id"],
+        },
+    },
+    {
         "name": "get_product_images",
         "description": "Hämta och visa produktbilder. Använd för att granska bilder innan godkännande/publicering av annons.",
         "input_schema": {

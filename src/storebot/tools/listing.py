@@ -463,6 +463,59 @@ class ListingService:
                 "status": product.status,
             }
 
+    def update_product(
+        self,
+        product_id: int,
+        title: str | None = None,
+        description: str | None = None,
+        category: str | None = None,
+        condition: str | None = None,
+        materials: str | None = None,
+        era: str | None = None,
+        dimensions: str | None = None,
+        source: str | None = None,
+        acquisition_cost: float | None = None,
+        weight_grams: int | None = None,
+    ) -> dict:
+        """Update fields on an existing product."""
+        updatable = {
+            "title",
+            "description",
+            "category",
+            "condition",
+            "materials",
+            "era",
+            "dimensions",
+            "source",
+            "acquisition_cost",
+            "weight_grams",
+        }
+        updates = {k: v for k, v in locals().items() if k in updatable and v is not None}
+
+        with Session(self.engine) as session:
+            product = session.get(Product, product_id)
+            if product is None:
+                return {"error": f"Product {product_id} not found"}
+
+            for key, value in updates.items():
+                setattr(product, key, value)
+
+            log_action(
+                session,
+                "listing",
+                "update_product",
+                {"updated_fields": list(updates.keys())},
+                product_id=product_id,
+            )
+            session.commit()
+
+            return {
+                "product_id": product.id,
+                "title": product.title,
+                "status": product.status,
+                "updated_fields": list(updates.keys()),
+            }
+
     def save_product_image(
         self,
         product_id: int,
