@@ -149,7 +149,7 @@ In tests, Alembic is bypassed and tables are created directly via `Base.metadata
 
 1. Add the tool implementation to the relevant service in `src/storebot/tools/`
 2. Add the tool definition to `src/storebot/tools/definitions.py` (name, description, input schema)
-3. Add dispatch logic in `agent.py`'s `_dispatch_tool` method
+3. Add dispatch logic in `agent.py`'s `_DISPATCH` dict (used by `execute_tool`)
 4. Add tests in `tests/`
 5. Update the system prompt in `agent.py` if the tool needs specific usage instructions
 
