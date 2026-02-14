@@ -231,11 +231,11 @@ class TestTraderaGetOrders:
 
         client.get_orders(from_date="2026-01-01", to_date="2026-01-31")
 
-        call_kwargs = client._order_client.service.GetSellerOrders.call_args
-        assert call_kwargs.kwargs["DateFrom"].year == 2026
-        assert call_kwargs.kwargs["DateFrom"].month == 1
-        assert call_kwargs.kwargs["DateTo"].month == 1
-        assert call_kwargs.kwargs["DateTo"].day == 31
+        request = client._order_client.service.GetSellerOrders.call_args.kwargs["request"]
+        assert request["DateFrom"].year == 2026
+        assert request["DateFrom"].month == 1
+        assert request["DateTo"].month == 1
+        assert request["DateTo"].day == 31
 
 
 class TestTraderaGetItem:
