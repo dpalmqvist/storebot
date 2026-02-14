@@ -3,8 +3,83 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from storebot.bot.handlers import _alert_admin, _send_display_images, _validate_credentials
+from storebot.bot.handlers import (
+    TELEGRAM_MAX_MESSAGE_LENGTH,
+    _alert_admin,
+    _send_display_images,
+    _split_message,
+    _validate_credentials,
+)
 from storebot.config import Settings
+
+
+class TestSplitMessage:
+    def test_short_message_returned_as_is(self):
+        result = _split_message("Hello")
+        assert result == ["Hello"]
+
+    def test_exact_limit_not_split(self):
+        text = "x" * TELEGRAM_MAX_MESSAGE_LENGTH
+        result = _split_message(text)
+        assert result == [text]
+
+    def test_over_limit_splits_into_multiple(self):
+        text = "x" * (TELEGRAM_MAX_MESSAGE_LENGTH + 1)
+        result = _split_message(text)
+        assert len(result) >= 2
+        assert result[0].startswith("(1/")
+        assert result[1].startswith("(2/")
+
+    def test_splits_at_paragraph_boundary(self):
+        half = TELEGRAM_MAX_MESSAGE_LENGTH // 2
+        text = "a" * half + "\n\n" + "b" * half
+        result = _split_message(text)
+        assert len(result) == 2
+        assert result[0].endswith("a" * half)
+        assert "b" * half in result[1]
+
+    def test_splits_at_line_boundary(self):
+        half = TELEGRAM_MAX_MESSAGE_LENGTH // 2
+        text = "a" * half + "\n" + "b" * half
+        result = _split_message(text)
+        assert len(result) == 2
+        assert result[0].endswith("a" * half)
+
+    def test_splits_at_word_boundary(self):
+        # No newlines — should split at space
+        word = "word "
+        text = word * (TELEGRAM_MAX_MESSAGE_LENGTH // len(word) + 100)
+        result = _split_message(text)
+        assert len(result) >= 2
+        # First chunk content (after header) should end at a word boundary
+        content = result[0].split("\n", 1)[1]
+        assert content.endswith("word")
+
+    def test_dense_text_without_breaks(self):
+        # No spaces, newlines, or paragraphs — must hard-cut
+        text = "x" * (TELEGRAM_MAX_MESSAGE_LENGTH * 3)
+        result = _split_message(text)
+        assert len(result) >= 3
+        for part in result:
+            assert len(part) <= TELEGRAM_MAX_MESSAGE_LENGTH
+
+    def test_headers_format(self):
+        text = "x" * (TELEGRAM_MAX_MESSAGE_LENGTH * 2)
+        result = _split_message(text)
+        total = len(result)
+        for i, part in enumerate(result):
+            assert part.startswith(f"({i + 1}/{total})\n")
+
+    def test_no_content_lost(self):
+        text = "Hello world! " * 500
+        result = _split_message(text)
+        # Strip headers and rejoin
+        content = " ".join(part.split("\n", 1)[1] for part in result)
+        # All words from the original should appear in the reassembled content
+        assert content.split() == text.split()
+
+    def test_empty_string(self):
+        assert _split_message("") == [""]
 
 
 class TestValidateCredentials:
