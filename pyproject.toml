@@ -19,6 +19,7 @@ dependencies = [
     "reportlab>=4.0,<5.0",
     "pydantic-settings>=2.0,<3.0",
     "python-dotenv>=1.0,<2.0",
+    "textual>=0.89",
 ]
 
 [project.optional-dependencies]
@@ -31,6 +32,7 @@ dev = [
 [project.scripts]
 storebot = "storebot.bot.handlers:main"
 storebot-authorize-tradera = "storebot.cli:authorize_tradera"
+storebot-logs = "storebot.tui.log_viewer:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/storebot"]
