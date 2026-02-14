@@ -82,14 +82,15 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **Product management** — `create_product` (with all optional fields: condition, materials, era, dimensions, source, acquisition_cost, weight_grams) and `save_product_image` (with is_primary logic).
 - **Image processing** — `resize_for_listing` (1200px), `resize_for_analysis` (800px), `optimize_for_upload` (JPEG compress), `encode_image_base64`. All handle EXIF rotation and RGBA conversion.
 - **Accounting** — `AccountingService` with local voucher storage (SQLite), double-entry bookkeeping with BAS-kontoplan, PDF export (single + batch), debit/credit balance validation.
-- **Agent loop** — `agent.py` with Claude API tool loop, 36 tool definitions, vision support (base64 image content blocks), Swedish system prompt with image workflow guidance.
-- **Telegram bot** — `handlers.py` with `/start`, `/help`, `/scout`, text message handling, and photo handling (download, resize, forward to agent with vision).
+- **Agent loop** — `agent.py` with Claude API tool loop, 44 tool definitions, vision support (base64 image content blocks), Swedish system prompt with image workflow guidance.
+- **Telegram bot** — `handlers.py` with `/start`, `/help`, `/new`, `/orders`, `/scout`, `/marketing`, `/rapport`, text message handling, and photo handling (download, resize, forward to agent with vision).
 - **Config** — Pydantic Settings from `.env`, all service credentials.
 - **Deployment** — systemd service file, SQLite backup script with cron rotation.
 - **Order Agent** — `OrderService` with full order workflow: `check_new_orders` (polls Tradera, imports orders, updates listings/products), `get_order`, `list_orders`, `create_sale_voucher` (automatic VAT/revenue/fee calculation), `mark_shipped` (with Tradera notification, persists tracking number), `create_shipping_label` (PostNord integration). Scheduled polling via Telegram `job_queue`.
 - **Conversation history** — `ConversationService` persists messages in SQLite per `chat_id`, with configurable message limit and timeout. Stores image file paths (not base64), re-encodes on load. `/new` command to reset. `AgentResponse` dataclass returns full message history from agent.
 - **Scout Agent** — `ScoutService` with saved search CRUD (`create_search`, `list_searches`, `update_search`, `delete_search`), per-search and batch execution (`run_search`, `run_all_searches`), deduplication via `SeenItem` table, Swedish digest formatting. Daily scheduled job via Telegram `job_queue` and `/scout` command for manual trigger.
 - **Marketing Agent** — `MarketingService` with listing performance tracking (`refresh_listing_stats`, `analyze_listing`), aggregate reporting (`get_performance_report`), and rules-based recommendations (6 types: relist, reprice_lower, reprice_raise, improve_content, extend_duration, category_opportunity). `ListingSnapshot` model for historical tracking. Telegram `/marketing` command and daily scheduled stats refresh.
+- **Analytics** — `AnalyticsService` with `business_summary` (revenue, costs, margin, items sold), `profitability_report` (net profit per product/category/source), `inventory_report` (stock value, aging analysis), `period_comparison` (side-by-side metrics), `sourcing_analysis` (ROI per channel). Telegram `/rapport` command and weekly comparison scheduled job (Sundays 18:00).
 - **Tradera write operations** — `TraderaClient.create_listing()` via RestrictedService SOAP (supports structured `ShippingOptions` or flat `ShippingCost`), `upload_images()`, `get_categories()`, `get_shipping_options()`, `get_shipping_types()`. `ListingService.publish_listing()` orchestrates the full flow: validates approved listing, extracts shipping from details, optimizes/uploads images, creates Tradera listing, updates DB status to active. Agent tool integration with `publish_listing`, `get_categories`, and `get_shipping_options` tools.
 - **Tradera authorization CLI** — `storebot-authorize-tradera` command for obtaining user tokens via consent flow. `TraderaClient.fetch_token()` calls `PublicService.FetchToken`. Saves credentials to `.env`.
 - **PostNord shipping labels** — `PostNordClient` REST client: `create_shipment()`, `get_label()`, `save_label()`. `Address` dataclass for sender/recipient, `parse_buyer_address()` for parsing Swedish addresses. Sandbox/production URL switching. Integrated into `OrderService.create_shipping_label()` with validation (weight, address), PDF label storage, tracking number persistence, and `AgentAction` audit trail.
@@ -108,8 +109,8 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 
 1. **Phase 1 (MVP):** SQLite schema + SQLAlchemy ORM, Tradera/Blocket search tools, Pricing Agent, Listing Agent — **DONE**
 2. **Phase 2:** Telegram bot, Order Agent, local voucher/PDF export — **DONE**
-3. **Phase 3:** Scout Agent (scheduled) — **DONE**, Marketing Agent — **DONE**, MCP server wrappers, social media cross-posting
-4. **Phase 4:** Crop management, custom webshop, wishlist matching, advanced analytics
+3. **Phase 3:** Scout Agent (scheduled) — **DONE**, Marketing Agent — **DONE**, Analytics — **DONE**, MCP server wrappers, social media cross-posting
+4. **Phase 4:** Crop management, custom webshop, wishlist matching
 
 ## Development Setup
 
