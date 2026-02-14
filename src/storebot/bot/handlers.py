@@ -40,11 +40,48 @@ def _is_rate_limited(chat_id: int, settings: Settings) -> bool:
     return False
 
 
-def _truncate(text: str) -> str:
-    """Truncate text to fit Telegram message limits."""
-    if len(text) > TELEGRAM_MAX_MESSAGE_LENGTH:
-        return text[:TELEGRAM_MAX_MESSAGE_LENGTH] + "\n\n...avkortat"
-    return text
+def _split_message(text: str) -> list[str]:
+    """Split text into Telegram-safe chunks with (1/N) headers when needed."""
+    if len(text) <= TELEGRAM_MAX_MESSAGE_LENGTH:
+        return [text]
+
+    # Reserve space for header like "(10/10)\n"
+    header_reserve = 10
+    chunk_size = TELEGRAM_MAX_MESSAGE_LENGTH - header_reserve
+
+    chunks: list[str] = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= chunk_size:
+            chunks.append(remaining)
+            break
+
+        # Try to split at paragraph, then line, then word boundary
+        split_at = remaining.rfind("\n\n", 0, chunk_size)
+        if split_at < chunk_size // 2:
+            split_at = remaining.rfind("\n", 0, chunk_size)
+        if split_at < chunk_size // 2:
+            split_at = remaining.rfind(" ", 0, chunk_size)
+        if split_at < chunk_size // 2:
+            split_at = chunk_size
+
+        chunks.append(remaining[:split_at])
+        remaining = remaining[split_at:].lstrip("\n")
+
+    total = len(chunks)
+    return [f"({i + 1}/{total})\n{chunk}" for i, chunk in enumerate(chunks)]
+
+
+async def _reply(update: Update, text: str) -> None:
+    """Reply with text, splitting into multiple messages if needed."""
+    for part in _split_message(text):
+        await update.message.reply_text(part)
+
+
+async def _send(context: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str) -> None:
+    """Send text to a chat, splitting into multiple messages if needed."""
+    for part in _split_message(text):
+        await context.bot.send_message(chat_id=chat_id, text=part)
 
 
 async def _send_display_images(update: Update, display_images: list[dict]) -> None:
@@ -82,7 +119,7 @@ async def _handle_with_conversation(
         conversation.save_messages(chat_id, new_messages)
         if result.display_images:
             await _send_display_images(update, result.display_images)
-        await update.message.reply_text(result.text)
+        await _reply(update, result.text)
     except Exception:
         logger.exception("Error in conversation handler", extra={"chat_id": chat_id})
         await update.message.reply_text(error_text)
@@ -237,7 +274,7 @@ async def scout_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     try:
         result = agent.scout.run_all_searches()
         digest = result.get("digest", "Inga nya fynd.")
-        await update.message.reply_text(_truncate(digest))
+        await _reply(update, digest)
     except Exception:
         logger.exception("Error running scout command")
         await update.message.reply_text("Något gick fel vid scout-sökningen. Försök igen.")
@@ -260,7 +297,7 @@ async def scout_digest_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             return
 
         digest = result.get("digest", "")
-        await context.bot.send_message(chat_id=chat_id, text=_truncate(digest))
+        await _send(context, chat_id, digest)
     except Exception:
         logger.exception("Error in scout digest job", extra={"job_name": "scout_digest"})
         await _alert_admin(context, "Fel i scout-jobbet. Kontrollera loggarna.")
@@ -279,7 +316,7 @@ async def rapport_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         profitability = agent.analytics.profitability_report()
         inventory = agent.analytics.inventory_report()
         text = agent.analytics._format_full_report(summary, profitability, inventory)
-        await update.message.reply_text(_truncate(text))
+        await _reply(update, text)
     except Exception:
         logger.exception("Error running rapport command")
         await update.message.reply_text("Något gick fel vid rapportgenereringen. Försök igen.")
@@ -302,7 +339,7 @@ async def weekly_comparison_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.warning("No owner_chat_id set — cannot send weekly comparison")
             return
 
-        await context.bot.send_message(chat_id=chat_id, text=_truncate(text))
+        await _send(context, chat_id, text)
     except Exception:
         logger.exception("Error in weekly comparison job", extra={"job_name": "weekly_comparison"})
         await _alert_admin(context, "Fel i veckorapport-jobbet. Kontrollera loggarna.")
@@ -319,7 +356,7 @@ async def marketing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     try:
         report = agent.marketing.get_performance_report()
         text = agent.marketing._format_report(report)
-        await update.message.reply_text(_truncate(text))
+        await _reply(update, text)
     except Exception:
         logger.exception("Error running marketing command")
         await update.message.reply_text(
@@ -353,7 +390,7 @@ async def marketing_refresh_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             lines.append(f"Annons #{rec['listing_id']}: {rec['suggestion']}")
             lines.append(f"  Anledning: {rec['reason']}\n")
         text = "\n".join(lines).strip()
-        await context.bot.send_message(chat_id=chat_id, text=_truncate(text))
+        await _send(context, chat_id, text)
     except Exception:
         logger.exception("Error in marketing refresh job", extra={"job_name": "marketing_refresh"})
         await _alert_admin(context, "Fel i marknadsföringsjobbet. Kontrollera loggarna.")
