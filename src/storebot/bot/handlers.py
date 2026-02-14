@@ -112,9 +112,10 @@ async def _handle_with_conversation(
     conversation: ConversationService = context.bot_data["conversation"]
     chat_id = str(update.effective_chat.id)
 
-    history = conversation.load_history(chat_id)
+    history: list[dict] = []
 
     try:
+        history = conversation.load_history(chat_id)
         result = agent.handle_message(
             user_message,
             image_paths=image_paths,
