@@ -45,29 +45,31 @@ def _split_message(text: str) -> list[str]:
     if len(text) <= TELEGRAM_MAX_MESSAGE_LENGTH:
         return [text]
 
-    # Calculate header size from estimated chunk count, e.g. "(10/10)\n" = 8
-    estimated_total = len(text) // TELEGRAM_MAX_MESSAGE_LENGTH + 1
-    header_len = len(f"({estimated_total}/{estimated_total})\n")
-    chunk_size = TELEGRAM_MAX_MESSAGE_LENGTH - header_len
+    def _do_split(chunk_size: int) -> list[str]:
+        chunks: list[str] = []
+        remaining = text
+        while remaining:
+            if len(remaining) <= chunk_size:
+                chunks.append(remaining)
+                break
+            # Try to split at paragraph, then line, then word boundary
+            split_at = remaining.rfind("\n\n", 0, chunk_size)
+            if split_at < chunk_size // 2:
+                split_at = remaining.rfind("\n", 0, chunk_size)
+            if split_at < chunk_size // 2:
+                split_at = remaining.rfind(" ", 0, chunk_size)
+            if split_at < chunk_size // 2:
+                split_at = chunk_size
+            chunks.append(remaining[:split_at])
+            remaining = remaining[split_at:].lstrip("\n")
+        return chunks
 
-    chunks: list[str] = []
-    remaining = text
-    while remaining:
-        if len(remaining) <= chunk_size:
-            chunks.append(remaining)
-            break
-
-        # Try to split at paragraph, then line, then word boundary
-        split_at = remaining.rfind("\n\n", 0, chunk_size)
-        if split_at < chunk_size // 2:
-            split_at = remaining.rfind("\n", 0, chunk_size)
-        if split_at < chunk_size // 2:
-            split_at = remaining.rfind(" ", 0, chunk_size)
-        if split_at < chunk_size // 2:
-            split_at = chunk_size
-
-        chunks.append(remaining[:split_at])
-        remaining = remaining[split_at:].lstrip("\n")
+    # Split, then verify header length matches actual chunk count (may shift at digit boundaries)
+    header_len = len(f"({len(text) // TELEGRAM_MAX_MESSAGE_LENGTH + 1}/{len(text) // TELEGRAM_MAX_MESSAGE_LENGTH + 1})\n")
+    chunks = _do_split(TELEGRAM_MAX_MESSAGE_LENGTH - header_len)
+    actual_header_len = len(f"({len(chunks)}/{len(chunks)})\n")
+    if actual_header_len > header_len:
+        chunks = _do_split(TELEGRAM_MAX_MESSAGE_LENGTH - actual_header_len)
 
     total = len(chunks)
     return [f"({i + 1}/{total})\n{chunk}" for i, chunk in enumerate(chunks)]
