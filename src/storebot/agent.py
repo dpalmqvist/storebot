@@ -164,13 +164,27 @@ class Agent:
 
     def _call_api(self, messages: list[dict]):
         """Send messages to Claude and return the response."""
-        response = self.client.messages.create(
-            model=self.settings.claude_model,
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            messages=messages,
-            tools=TOOLS,
+        logger.debug(
+            "API call: sending %d messages",
+            len(messages),
         )
+        try:
+            response = self.client.messages.create(
+                model=self.settings.claude_model,
+                max_tokens=4096,
+                system=SYSTEM_PROMPT,
+                messages=messages,
+                tools=TOOLS,
+            )
+        except anthropic.APIError as e:
+            status = getattr(e, "status_code", None)
+            logger.error(
+                "Claude API error: %s (status=%s) — %s",
+                type(e).__name__,
+                status,
+                e,
+            )
+            raise
         logger.info(
             "API call: input_tokens=%d, output_tokens=%d, stop_reason=%s",
             response.usage.input_tokens,

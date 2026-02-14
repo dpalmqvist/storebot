@@ -124,11 +124,40 @@ def _reconstruct_image_blocks(content, image_paths):
     return result
 
 
+def _is_tool_result_message(msg: dict) -> bool:
+    """Check if a message contains tool_result blocks."""
+    content = msg.get("content")
+    if isinstance(content, list):
+        return any(
+            isinstance(block, dict) and block.get("type") == "tool_result" for block in content
+        )
+    return False
+
+
+def _trim_orphaned_tool_messages(messages: list[dict]) -> list[dict]:
+    """Drop leading messages until we find a user text message (not a tool_result).
+
+    When max_messages truncation drops an assistant message containing tool_use
+    blocks, the corresponding user tool_result message becomes orphaned.  The
+    Claude API rejects conversations that start with orphaned tool_results.
+    This function scans forward and drops messages until it finds a clean
+    conversation boundary: a user message with plain text content.
+    """
+    for i, msg in enumerate(messages):
+        if msg["role"] == "user" and not _is_tool_result_message(msg):
+            if i > 0:
+                logger.info(
+                    "Dropped %d orphaned tool-exchange messages from conversation start", i
+                )
+            return messages[i:]
+    return []
+
+
 class ConversationService:
     def __init__(
         self,
         engine: sa.Engine,
-        max_messages: int = 20,
+        max_messages: int = 60,
         timeout_minutes: int = 60,
         max_content_bytes: int = 1_000_000,
     ):
@@ -191,7 +220,7 @@ class ConversationService:
                 messages.append({"role": row.role, "content": content})
             messages.reverse()
 
-        return messages
+        return _trim_orphaned_tool_messages(messages)
 
     def clear_history(self, chat_id: str) -> None:
         """Delete all conversation messages for a chat."""

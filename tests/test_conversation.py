@@ -44,6 +44,95 @@ def test_max_history_messages_limit(engine):
     assert history[2]["content"] == "Message 4"
 
 
+def test_truncation_respects_tool_use_boundaries(engine):
+    """When max_messages drops an assistant tool_use message, the orphaned
+    tool_result that follows must also be dropped so the history starts at
+    a clean conversation boundary."""
+    # max_messages=6 with 8 messages → rows[-6:] = messages 3-8.
+    # Message 3 is an orphaned tool_result (its tool_use in msg 2 was dropped).
+    svc = ConversationService(engine, max_messages=6)
+
+    messages = [
+        {"role": "user", "content": "Hej"},  # msg 1 — dropped
+        {  # msg 2 — dropped (tool_use)
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "Jag söker..."},
+                {
+                    "type": "tool_use",
+                    "id": "toolu_abc",
+                    "name": "search_tradera",
+                    "input": {"query": "stol"},
+                },
+            ],
+        },
+        {  # msg 3 — orphaned tool_result (first in window)
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_abc",
+                    "content": '{"results": []}',
+                },
+            ],
+        },
+        {"role": "assistant", "content": "Inga resultat hittades."},  # msg 4
+        {"role": "user", "content": "Sök på Blocket istället"},  # msg 5
+        {"role": "assistant", "content": "Jag kollar Blocket."},  # msg 6
+        {"role": "user", "content": "Tack"},  # msg 7
+        {"role": "assistant", "content": "Varsågod!"},  # msg 8
+    ]
+    svc.save_messages("chat1", messages)
+
+    history = svc.load_history("chat1")
+
+    # The history must NOT start with an orphaned tool_result.
+    # It should start at message 5 ("Sök på Blocket istället").
+    assert history[0]["role"] == "user"
+    assert history[0]["content"] == "Sök på Blocket istället"
+    assert len(history) == 4  # messages 5-8
+
+
+def test_truncation_preserves_complete_tool_exchange(engine):
+    """When the tool-use pair fits within max_messages, it is preserved."""
+    svc = ConversationService(engine, max_messages=6)
+
+    messages = [
+        {"role": "user", "content": "Hej"},
+        {"role": "assistant", "content": "Hej!"},
+        {"role": "user", "content": "Sök stol"},
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_xyz",
+                    "name": "search_tradera",
+                    "input": {"query": "stol"},
+                },
+            ],
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_xyz",
+                    "content": '{"results": []}',
+                },
+            ],
+        },
+        {"role": "assistant", "content": "Inga resultat."},
+    ]
+    svc.save_messages("chat1", messages)
+
+    history = svc.load_history("chat1")
+    # All 6 messages fit, tool exchange is intact
+    assert len(history) == 6
+    assert history[3]["content"][0]["type"] == "tool_use"
+    assert history[4]["content"][0]["type"] == "tool_result"
+
+
 def test_conversation_timeout(engine):
     """Messages older than the timeout are excluded."""
     svc = ConversationService(engine, timeout_minutes=60)
@@ -89,17 +178,19 @@ def test_tool_use_message_serialization(engine):
     ]
 
     messages = [
+        {"role": "user", "content": "Sök efter ekbord"},
         {"role": "assistant", "content": tool_use_content},
         {"role": "user", "content": tool_result_content},
+        {"role": "assistant", "content": "Inga resultat hittades."},
     ]
     svc.save_messages("chat1", messages)
 
     history = svc.load_history("chat1")
-    assert len(history) == 2
-    assert history[0]["content"][0]["type"] == "text"
-    assert history[0]["content"][1]["type"] == "tool_use"
-    assert history[0]["content"][1]["name"] == "search_tradera"
-    assert history[1]["content"][0]["type"] == "tool_result"
+    assert len(history) == 4
+    assert history[1]["content"][0]["type"] == "text"
+    assert history[1]["content"][1]["type"] == "tool_use"
+    assert history[1]["content"][1]["name"] == "search_tradera"
+    assert history[2]["content"][0]["type"] == "tool_result"
 
 
 def test_image_message_persistence(engine, tmp_path, monkeypatch):
@@ -222,6 +313,7 @@ def test_anthropic_content_block_serialization(engine):
     }
 
     messages = [
+        {"role": "user", "content": "Sök efter stol"},
         {"role": "assistant", "content": [text_block, tool_block]},
     ]
     svc.save_messages("chat1", messages)
@@ -230,9 +322,9 @@ def test_anthropic_content_block_serialization(engine):
     tool_block.model_dump.assert_called_once()
 
     history = svc.load_history("chat1")
-    assert len(history) == 1
-    assert history[0]["content"][0] == {"type": "text", "text": "Hello"}
-    assert history[0]["content"][1]["name"] == "search_tradera"
+    assert len(history) == 2
+    assert history[1]["content"][0] == {"type": "text", "text": "Hello"}
+    assert history[1]["content"][1]["name"] == "search_tradera"
 
 
 def test_extract_image_paths_from_content():
