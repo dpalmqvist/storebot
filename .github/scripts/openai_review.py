@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""OpenAI GPT-5.2 Codex PR code review script for GitHub Actions.
+"""OpenAI GPT-4o PR code review script for GitHub Actions.
 
 Uses only stdlib — no pip dependencies needed on CI runners.
-Fetches PR diff via `gh`, sends to GPT-5.2 Codex for review, posts result as PR comment.
+Fetches PR diff via `gh`, sends to GPT-4o for review, posts result as PR comment.
 """
 
 import json
@@ -90,7 +90,7 @@ def call_openai(api_key: str, diff: str) -> str:
     req = urllib.request.Request(
         "https://api.openai.com/v1/chat/completions",
         data=json.dumps({
-            "model": "gpt-5.2-codex",
+            "model": "gpt-4o",
             "max_tokens": 4096,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -129,13 +129,13 @@ def main() -> None:
 
     diff = truncate_diff(diff)
 
-    print("Calling OpenAI GPT-5.2 Codex...")
+    print("Calling OpenAI GPT-4o...")
     review = call_openai(api_key, diff)
 
     print("Posting review comment...")
     comment = (
-        f"## GPT-5.2 Codex Code Review\n\n{review}\n\n---\n"
-        f"*Automated review by GPT-5.2 Codex — complements the Claude Opus review.*"
+        f"## GPT-4o Code Review\n\n{review}\n\n---\n"
+        f"*Automated review by GPT-4o — complements the Claude Opus review.*"
     )
     run_gh("pr", "comment", pr_number, "--repo", repo, "--body", comment)
     print("Done.")
