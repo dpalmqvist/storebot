@@ -88,14 +88,11 @@ def truncate_diff(diff: str) -> str:
 
 def call_openai(api_key: str, diff: str) -> str:
     req = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
+        "https://api.openai.com/v1/responses",
         data=json.dumps({
             "model": "gpt-5.2-codex",
-            "max_tokens": 4096,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": USER_PROMPT_TEMPLATE.format(diff=diff)},
-            ],
+            "instructions": SYSTEM_PROMPT,
+            "input": USER_PROMPT_TEMPLATE.format(diff=diff),
         }).encode(),
         headers={
             "Authorization": f"Bearer {api_key}",
@@ -103,7 +100,14 @@ def call_openai(api_key: str, diff: str) -> str:
         },
     )
     with urllib.request.urlopen(req, timeout=120) as resp:
-        return json.loads(resp.read())["choices"][0]["message"]["content"]
+        data = json.loads(resp.read())
+        # Extract text from output array: [{type: "message", content: [{type: "text", text: "..."}]}]
+        for item in data.get("output", []):
+            if item.get("type") == "message":
+                for block in item.get("content", []):
+                    if block.get("type") in {"output_text", "text"}:
+                        return block.get("text", "")
+        return data.get("output_text", "")
 
 
 def main() -> None:
