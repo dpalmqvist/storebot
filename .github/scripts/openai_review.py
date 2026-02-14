@@ -102,11 +102,11 @@ def call_openai(api_key: str, diff: str) -> str:
     with urllib.request.urlopen(req, timeout=120) as resp:
         data = json.loads(resp.read())
         # Extract text from output array: [{type: "message", content: [{type: "text", text: "..."}]}]
-        for item in data["output"]:
+        for item in data.get("output", []):
             if item.get("type") == "message":
                 for block in item.get("content", []):
-                    if block.get("type") == "output_text":
-                        return block["text"]
+                    if block.get("type") in {"output_text", "text"}:
+                        return block.get("text", "")
         return data.get("output_text", "")
 
 

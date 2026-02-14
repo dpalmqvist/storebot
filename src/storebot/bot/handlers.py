@@ -45,9 +45,10 @@ def _split_message(text: str) -> list[str]:
     if len(text) <= TELEGRAM_MAX_MESSAGE_LENGTH:
         return [text]
 
-    # Reserve space for header like "(10/10)\n"
-    header_reserve = 10
-    chunk_size = TELEGRAM_MAX_MESSAGE_LENGTH - header_reserve
+    # Calculate header size from estimated chunk count, e.g. "(10/10)\n" = 8
+    estimated_total = len(text) // TELEGRAM_MAX_MESSAGE_LENGTH + 1
+    header_len = len(f"({estimated_total}/{estimated_total})\n")
+    chunk_size = TELEGRAM_MAX_MESSAGE_LENGTH - header_len
 
     chunks: list[str] = []
     remaining = text
