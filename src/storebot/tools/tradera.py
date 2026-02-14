@@ -478,7 +478,9 @@ class TraderaClient:
 
     @retry_on_transient()
     def _get_orders_api_call(self, from_dt, to_dt, headers):
-        return self.order_client.service.GetSellerOrders(request={"DateFrom": from_dt, "DateTo": to_dt}, **headers)
+        return self.order_client.service.GetSellerOrders(
+            request={"DateFrom": from_dt, "DateTo": to_dt}, **headers
+        )
 
     def get_orders(self, from_date: str | None = None, to_date: str | None = None) -> dict:
         try:
@@ -580,7 +582,9 @@ class TraderaClient:
 
     @retry_on_transient()
     def _mark_order_shipped_api_call(self, order_id, headers):
-        return self.order_client.service.SetSellerOrderAsShipped(request={"OrderId": int(order_id)}, **headers)
+        return self.order_client.service.SetSellerOrderAsShipped(
+            request={"OrderId": int(order_id)}, **headers
+        )
 
     def mark_order_shipped(self, order_id: int) -> dict:
         try:
