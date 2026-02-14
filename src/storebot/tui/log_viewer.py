@@ -35,7 +35,7 @@ def fetch_product_rows(session: Session, title_filter: str = "") -> list[tuple]:
             sa.func.count(AgentAction.id).label("action_count"),
         )
         .outerjoin(AgentAction, AgentAction.product_id == Product.id)
-        .group_by(Product.id)
+        .group_by(Product.id, Product.title, Product.status, Product.category)
         .order_by(Product.id.desc())
     )
     if title_filter:
@@ -81,7 +81,7 @@ def fetch_audit_rows(
 def _fetch_distinct(session: Session, column: sa.orm.MappedColumn) -> list[str]:
     """Return sorted distinct values for a column."""
     rows = session.execute(sa.select(column).distinct().order_by(column)).all()
-    return [r[0] for r in rows]
+    return [r[0] for r in rows if r[0] is not None]
 
 
 def _format_ts(ts: datetime | None) -> str:
