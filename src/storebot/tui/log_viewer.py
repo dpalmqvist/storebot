@@ -250,7 +250,7 @@ class AuditLogScreen(Screen):
     @on(DataTable.RowSelected, "#log-table")
     def _row_selected(self, event: DataTable.RowSelected) -> None:
         key = event.row_key.value
-        if key is None:
+        if key is None or key.endswith("_detail"):
             return
 
         table = self.query_one("#log-table", DataTable)
