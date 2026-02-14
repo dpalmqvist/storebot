@@ -446,35 +446,44 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "product_id": {"type": "integer", "description": "Product ID to update"},
-                "title": {"type": "string", "description": "Product title in Swedish"},
+                "title": {
+                    "type": ["string", "null"],
+                    "description": "Product title in Swedish (null to clear)",
+                },
                 "description": {
-                    "type": "string",
-                    "description": "Detailed product description in Swedish",
+                    "type": ["string", "null"],
+                    "description": "Detailed product description in Swedish (null to clear)",
                 },
                 "category": {
-                    "type": "string",
+                    "type": ["string", "null"],
                     "description": "Product category (e.g. möbler, belysning, kuriosa)",
                 },
                 "condition": {
-                    "type": "string",
+                    "type": ["string", "null"],
                     "description": "Condition (e.g. utmärkt skick, bra skick, renoveringsobjekt)",
                 },
                 "materials": {
-                    "type": "string",
+                    "type": ["string", "null"],
                     "description": "Materials (e.g. ek, mässing, glas)",
                 },
                 "era": {
-                    "type": "string",
+                    "type": ["string", "null"],
                     "description": "Era or period (e.g. 1940-tal, jugend, art deco)",
                 },
-                "dimensions": {"type": "string", "description": "Dimensions (e.g. 60x40x80 cm)"},
+                "dimensions": {
+                    "type": ["string", "null"],
+                    "description": "Dimensions (e.g. 60x40x80 cm)",
+                },
                 "source": {
-                    "type": "string",
+                    "type": ["string", "null"],
                     "description": "Where it was acquired (e.g. loppis, dödsbo, tradera)",
                 },
-                "acquisition_cost": {"type": "number", "description": "Purchase cost in SEK"},
+                "acquisition_cost": {
+                    "type": ["number", "null"],
+                    "description": "Purchase cost in SEK",
+                },
                 "weight_grams": {
-                    "type": "integer",
+                    "type": ["integer", "null"],
                     "description": "Weight in grams (required for shipping labels)",
                 },
             },
