@@ -253,29 +253,29 @@ class TraderaClient:
     }
 
     @retry_on_transient()
-    def _upload_image_api_call(self, item_id, image_data, image_format, headers):
+    def _upload_image_api_call(self, request_id, image_data, image_format, headers):
         return self.restricted_client.service.AddItemImage(
-            requestId=int(item_id),
+            requestId=int(request_id),
             imageData=image_data,
             imageFormat=image_format,
             hasMega=True,
             **headers,
         )
 
-    def upload_images(self, item_id: int, images: list[tuple[str, str]]) -> dict:
+    def upload_images(self, request_id: int, images: list[tuple[str, str]]) -> dict:
         """Upload images for a listing on Tradera.
 
         Args:
-            item_id: Tradera item ID.
+            request_id: RequestId from AddItem response.
             images: List of (base64_data, media_type) tuples.
         """
         try:
             headers = self._auth_headers(self.restricted_client, include_authorization=True)
             for base64_data, media_type in images:
                 image_format = self._MEDIA_TYPE_TO_FORMAT.get(media_type, "Jpeg")
-                self._upload_image_api_call(item_id, base64_data, image_format, headers)
+                self._upload_image_api_call(request_id, base64_data, image_format, headers)
 
-            return {"item_id": item_id, "images_uploaded": len(images)}
+            return {"request_id": request_id, "images_uploaded": len(images)}
 
         except Exception as e:
             logger.exception("Tradera upload_images failed")
@@ -287,6 +287,8 @@ class TraderaClient:
 
     def commit_listing(self, request_id: int) -> dict:
         """Commit a listing after uploading images (required when AutoCommit=False)."""
+        if request_id is None:
+            return {"error": "request_id is required"}
         try:
             self._commit_listing_api_call(
                 request_id,

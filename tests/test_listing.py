@@ -576,7 +576,7 @@ class TestPublishListing:
             "item_id": 12345,
             "url": "https://www.tradera.com/item/12345",
         }
-        tradera.upload_images.return_value = {"item_id": 99001, "images_uploaded": 1}
+        tradera.upload_images.return_value = {"request_id": 99001, "images_uploaded": 1}
         tradera.commit_listing.return_value = {"request_id": 99001, "committed": True}
         return tradera
 
@@ -631,10 +631,10 @@ class TestPublishListing:
         call_kwargs = pub_service.tradera.create_listing.call_args.kwargs
         assert call_kwargs["auto_commit"] is False
 
-        # Verify upload_images called with request_id (not item_id)
+        # Verify upload_images called with request_id
         pub_service.tradera.upload_images.assert_called_once()
         upload_kwargs = pub_service.tradera.upload_images.call_args.kwargs
-        assert upload_kwargs["item_id"] == 99001
+        assert upload_kwargs["request_id"] == 99001
 
         # Verify commit_listing called with request_id
         pub_service.tradera.commit_listing.assert_called_once_with(99001)
@@ -849,7 +849,7 @@ class TestPublishListing:
             "item_id": 555,
             "url": "https://www.tradera.com/item/555",
         }
-        tradera.upload_images.return_value = {"item_id": 99555, "images_uploaded": 1}
+        tradera.upload_images.return_value = {"request_id": 99555, "images_uploaded": 1}
         tradera.commit_listing.return_value = {"request_id": 99555, "committed": True}
         service = ListingService(engine=engine, tradera=tradera)
 

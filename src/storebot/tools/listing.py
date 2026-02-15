@@ -342,7 +342,7 @@ class ListingService:
 
         # Image upload is non-fatal -- we still commit the listing
         upload_result = self.tradera.upload_images(
-            item_id=request_id,
+            request_id=request_id,
             images=encoded_images,
         )
         if "error" in upload_result:

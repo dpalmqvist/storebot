@@ -419,9 +419,9 @@ class TestTraderaUploadImages:
         client._restricted_client.service.AddItemImage.return_value = None
 
         images = [("base64data1", "image/jpeg"), ("base64data2", "image/png")]
-        result = client.upload_images(item_id=12345, images=images)
+        result = client.upload_images(request_id=12345, images=images)
 
-        assert result["item_id"] == 12345
+        assert result["request_id"] == 12345
         assert result["images_uploaded"] == 2
         assert client._restricted_client.service.AddItemImage.call_count == 2
 
@@ -441,19 +441,19 @@ class TestTraderaUploadImages:
     def test_api_error(self, client):
         client._restricted_client.service.AddItemImage.side_effect = Exception("Upload failed")
 
-        result = client.upload_images(item_id=1, images=[("data", "image/jpeg")])
+        result = client.upload_images(request_id=1, images=[("data", "image/jpeg")])
 
         assert result["error"] == "Upload failed"
 
     def test_empty_list(self, client):
-        result = client.upload_images(item_id=1, images=[])
+        result = client.upload_images(request_id=1, images=[])
 
         assert result["images_uploaded"] == 0
 
     def test_unknown_media_type_defaults_to_jpeg(self, client):
         client._restricted_client.service.AddItemImage.return_value = None
 
-        result = client.upload_images(item_id=1, images=[("data", "image/webp")])
+        result = client.upload_images(request_id=1, images=[("data", "image/webp")])
 
         assert result["images_uploaded"] == 1
         call_kwargs = client._restricted_client.service.AddItemImage.call_args.kwargs
