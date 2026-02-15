@@ -212,7 +212,9 @@ def _detect_categories(messages: list[dict], active_categories: set[str]) -> set
     """
     cats: set[str] = {"core"} | active_categories
 
-    # Scan last 5 messages for better context retention
+    # Scan last 5 messages (~2-3 conversation turns). Balances context
+    # retention (tools stay available across follow-up questions) with noise
+    # reduction (old topics don't bloat the tool set indefinitely).
     recent = messages[-5:] if len(messages) > 5 else messages
     for msg in recent:
         content = msg.get("content")
@@ -674,6 +676,12 @@ class Agent:
     }
 
     def execute_tool(self, name: str, tool_input: dict) -> dict:
+        """Execute a tool by name. Thread-safe: each service method creates its
+        own ``Session(self.engine)`` context, so parallel calls from
+        ``ThreadPoolExecutor`` use independent DB connections. Services that
+        only make HTTP calls (tradera, blocket, postnord) are also safe since
+        each request uses its own connection.
+        """
         if not isinstance(tool_input, dict):
             return {"error": f"Invalid tool input type for '{name}': expected dict"}
 
