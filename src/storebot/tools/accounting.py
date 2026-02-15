@@ -127,6 +127,11 @@ class AccountingService:
                 for v in vouchers
             ]
 
+    def list_vouchers(self, from_date: str | None = None, to_date: str | None = None) -> dict:
+        """List vouchers with optional date filtering."""
+        vouchers = self.get_vouchers(from_date=from_date, to_date=to_date)
+        return {"count": len(vouchers), "vouchers": vouchers}
+
     def _build_voucher_story(self, voucher: Voucher, styles) -> list:
         """Build reportlab story elements for a single voucher."""
         elements = []

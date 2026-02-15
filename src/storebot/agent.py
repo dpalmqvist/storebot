@@ -43,7 +43,13 @@ Du kan:
 - Bläddra i Tradera-kategorier för att hitta rätt kategori
 - Hantera ordrar: kolla efter nya ordrar, visa ordrar, skapa fraktetiketter via PostNord, skapa försäljningsverifikation, markera som skickad, lämna omdöme till köparen
 - Skapa bokföringsverifikationer och exportera som PDF
-- Söka i produktdatabasen
+- Söka i produktdatabasen och hämta fullständig produktinfo (get_product)
+- Hämta detaljer om enskilda Tradera-objekt (get_tradera_item)
+- Lista bokföringsverifikationer med datumfilter (list_vouchers)
+- Återlista produkter från avslutade/sålda annonser (relist_product)
+- Ta bort produktbilder (delete_product_image)
+- Avbryta aktiva annonser lokalt (cancel_listing — kräver manuell åtgärd på Tradera)
+- Hämta Tradera frakttyper/leveransvillkor (get_shipping_types)
 - Hantera sparade sökningar (scout): skapa, lista, uppdatera, ta bort
 - Köra sparade sökningar manuellt eller alla på en gång för att hitta nya fynd
 - Visa produktbilder direkt i chatten med get_product_images (använd för att granska bilder innan godkännande)
@@ -265,11 +271,13 @@ class Agent:
     # service_attr is None for tools that don't require a DB-backed service.
     _DISPATCH = {
         "search_tradera": ("tradera", "search"),
+        "get_tradera_item": ("tradera", "get_item"),
+        "get_categories": ("tradera", "get_categories"),
+        "get_shipping_options": ("tradera", "get_shipping_options"),
+        "get_shipping_types": ("tradera", "get_shipping_types"),
         "search_blocket": ("blocket", "search"),
         "get_blocket_ad": ("blocket", "get_ad"),
         "price_check": ("pricing", "price_check"),
-        "get_categories": ("tradera", "get_categories"),
-        "get_shipping_options": ("tradera", "get_shipping_options"),
         "create_draft_listing": ("listing", "create_draft"),
         "list_draft_listings": ("listing", "list_drafts"),
         "get_draft_listing": ("listing", "get_draft"),
@@ -277,11 +285,15 @@ class Agent:
         "reject_draft_listing": ("listing", "reject_draft"),
         "approve_draft_listing": ("listing", "approve_draft"),
         "publish_listing": ("listing", "publish_listing"),
+        "relist_product": ("listing", "relist_product"),
+        "cancel_listing": ("listing", "cancel_listing"),
         "search_products": ("listing", "search_products"),
         "create_product": ("listing", "create_product"),
         "update_product": ("listing", "update_product"),
+        "get_product": ("listing", "get_product"),
         "save_product_image": ("listing", "save_product_image"),
         "get_product_images": ("listing", "get_product_images"),
+        "delete_product_image": ("listing", "delete_product_image"),
         "archive_product": ("listing", "archive_product"),
         "unarchive_product": ("listing", "unarchive_product"),
         "check_new_orders": ("order", "check_new_orders"),
@@ -293,6 +305,7 @@ class Agent:
         "list_orders_pending_feedback": ("order", "list_orders_pending_feedback"),
         "leave_feedback": ("order", "leave_feedback"),
         "create_voucher": ("accounting", "create_voucher"),
+        "list_vouchers": ("accounting", "list_vouchers"),
         "export_vouchers": ("accounting", "export_vouchers_pdf"),
         "create_saved_search": ("scout", "create_search"),
         "list_saved_searches": ("scout", "list_searches"),

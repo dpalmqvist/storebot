@@ -1155,3 +1155,518 @@ class TestArchiveFiltering:
 
         assert "error" in result
         assert "archived" in result["error"]
+
+
+class TestGetProduct:
+    def test_all_fields_returned(self, service, engine):
+        with Session(engine) as session:
+            p = Product(
+                title="Ektaburett",
+                description="Renoverad",
+                category="möbler",
+                status="draft",
+                acquisition_cost=100.0,
+                source="loppis",
+                condition="bra skick",
+                dimensions="40x40x45 cm",
+                weight_grams=3500,
+                materials="ek",
+                era="1940-tal",
+            )
+            session.add(p)
+            session.commit()
+            pid = p.id
+
+        result = service.get_product(pid)
+
+        assert "error" not in result
+        assert result["product_id"] == pid
+        assert result["title"] == "Ektaburett"
+        assert result["description"] == "Renoverad"
+        assert result["category"] == "möbler"
+        assert result["status"] == "draft"
+        assert result["acquisition_cost"] == 100.0
+        assert result["source"] == "loppis"
+        assert result["condition"] == "bra skick"
+        assert result["dimensions"] == "40x40x45 cm"
+        assert result["weight_grams"] == 3500
+        assert result["materials"] == "ek"
+        assert result["era"] == "1940-tal"
+        assert result["created_at"] is not None
+
+    def test_image_and_listing_counts(self, service, engine, tmp_path):
+        with Session(engine) as session:
+            p = Product(title="Test", status="listed")
+            session.add(p)
+            session.flush()
+            session.add(ProductImage(product_id=p.id, file_path="/fake/1.jpg"))
+            session.add(ProductImage(product_id=p.id, file_path="/fake/2.jpg"))
+            session.add(
+                PlatformListing(
+                    product_id=p.id,
+                    platform="tradera",
+                    status="active",
+                    listing_type="auction",
+                    listing_title="T",
+                    listing_description="D",
+                )
+            )
+            session.add(
+                PlatformListing(
+                    product_id=p.id,
+                    platform="tradera",
+                    status="ended",
+                    listing_type="auction",
+                    listing_title="T2",
+                    listing_description="D2",
+                )
+            )
+            session.commit()
+            pid = p.id
+
+        result = service.get_product(pid)
+
+        assert result["image_count"] == 2
+        assert result["active_listing_count"] == 1
+
+    def test_not_found(self, service):
+        result = service.get_product(9999)
+        assert "error" in result
+        assert "9999" in result["error"]
+
+    def test_zero_counts_when_no_images_or_listings(self, service, product):
+        result = service.get_product(product)
+        assert result["image_count"] == 0
+        assert result["active_listing_count"] == 0
+
+
+class TestRelistProduct:
+    @pytest.fixture
+    def ended_listing(self, service, product, engine):
+        """Create an ended listing to relist from."""
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Original titel",
+            listing_description="Original beskrivning",
+            start_price=200.0,
+            duration_days=7,
+            tradera_category_id=344,
+            details={"shipping_cost": 59},
+        )
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            listing.status = "ended"
+            session.commit()
+        return draft["listing_id"]
+
+    def test_copies_fields_from_source(self, service, ended_listing, engine):
+        result = service.relist_product(ended_listing)
+
+        assert "error" not in result
+        assert result["status"] == "draft"
+        assert result["source_listing_id"] == ended_listing
+        assert result["listing_id"] != ended_listing
+
+        with Session(engine) as session:
+            new = session.get(PlatformListing, result["listing_id"])
+            assert new.listing_title == "Original titel"
+            assert new.listing_description == "Original beskrivning"
+            assert new.listing_type == "auction"
+            assert new.start_price == 200.0
+            assert new.duration_days == 7
+            assert new.tradera_category_id == 344
+            assert new.details == {"shipping_cost": 59}
+
+    def test_overrides_work(self, service, ended_listing, engine):
+        result = service.relist_product(
+            ended_listing,
+            listing_title="Ny titel",
+            start_price=350.0,
+            duration_days=10,
+        )
+
+        assert "error" not in result
+
+        with Session(engine) as session:
+            new = session.get(PlatformListing, result["listing_id"])
+            assert new.listing_title == "Ny titel"
+            assert new.start_price == 350.0
+            assert new.duration_days == 10
+            # Non-overridden fields kept
+            assert new.listing_description == "Original beskrivning"
+            assert new.tradera_category_id == 344
+
+    def test_rejects_draft(self, service, draft_listing):
+        result = service.relist_product(draft_listing["listing_id"])
+        assert "error" in result
+        assert "draft" in result["error"]
+
+    def test_rejects_active(self, service, product, engine):
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Active",
+            listing_description="Test",
+            start_price=100.0,
+        )
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            listing.status = "active"
+            session.commit()
+
+        result = service.relist_product(draft["listing_id"])
+        assert "error" in result
+        assert "active" in result["error"]
+
+    def test_accepts_sold(self, service, product, engine):
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="buy_it_now",
+            listing_title="Sold item",
+            listing_description="Test",
+            buy_it_now_price=500.0,
+        )
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            listing.status = "sold"
+            session.commit()
+
+        result = service.relist_product(draft["listing_id"])
+        assert "error" not in result
+        assert result["status"] == "draft"
+
+    def test_rejects_archived_product(self, service, product, engine):
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Test",
+            listing_description="Test",
+            start_price=100.0,
+        )
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            listing.status = "ended"
+            product_obj = session.get(Product, product)
+            product_obj.status = "archived"
+            session.commit()
+
+        result = service.relist_product(draft["listing_id"])
+        assert "error" in result
+        assert "archived" in result["error"]
+
+    def test_not_found(self, service):
+        result = service.relist_product(9999)
+        assert "error" in result
+        assert "9999" in result["error"]
+
+    def test_logs_agent_action(self, service, ended_listing, engine):
+        result = service.relist_product(ended_listing)
+
+        with Session(engine) as session:
+            action = session.query(AgentAction).filter_by(action_type="relist_product").one()
+            assert action.agent_name == "listing"
+            assert action.requires_approval is True
+            assert action.details["source_listing_id"] == ended_listing
+            assert action.details["new_listing_id"] == result["listing_id"]
+
+    def test_validation_error_on_override(self, service, ended_listing):
+        result = service.relist_product(ended_listing, duration_days=6)
+        assert "error" in result
+        assert "Validation failed" in result["error"]
+
+    def test_details_are_deep_copied(self, service, ended_listing, engine):
+        result = service.relist_product(ended_listing)
+
+        with Session(engine) as session:
+            source = session.get(PlatformListing, ended_listing)
+            new = session.get(PlatformListing, result["listing_id"])
+            assert source.details == new.details
+            assert source.details is not new.details
+
+    def test_resets_sold_product_to_draft(self, service, product, engine):
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="buy_it_now",
+            listing_title="Sold item",
+            listing_description="Test",
+            buy_it_now_price=500.0,
+        )
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            listing.status = "sold"
+            p = session.get(Product, product)
+            p.status = "sold"
+            session.commit()
+
+        result = service.relist_product(draft["listing_id"])
+
+        assert "error" not in result
+        with Session(engine) as session:
+            p = session.get(Product, product)
+            assert p.status == "draft"
+
+    def test_keeps_listed_when_other_active_exists(self, service, engine):
+        with Session(engine) as session:
+            p = Product(title="Multi-listed", status="listed")
+            session.add(p)
+            session.flush()
+            ended = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="ended",
+                listing_type="auction",
+                listing_title="Old",
+                listing_description="D",
+                start_price=100.0,
+                duration_days=7,
+            )
+            active = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Current",
+                listing_description="D",
+            )
+            session.add_all([ended, active])
+            session.commit()
+            ended_id, pid = ended.id, p.id
+
+        result = service.relist_product(ended_id)
+
+        assert "error" not in result
+        with Session(engine) as session:
+            p = session.get(Product, pid)
+            assert p.status == "listed"
+
+
+class TestDeleteProductImage:
+    def test_deletes_image(self, service, product, tmp_path, engine):
+        img_path = tmp_path / "photo.jpg"
+        img_path.write_bytes(b"fake-jpeg-data")
+
+        save_result = service.save_product_image(product, str(img_path))
+        result = service.delete_product_image(save_result["image_id"])
+
+        assert "error" not in result
+        assert result["image_id"] == save_result["image_id"]
+        assert result["product_id"] == product
+
+        with Session(engine) as session:
+            assert session.get(ProductImage, save_result["image_id"]) is None
+
+        assert not img_path.exists()
+
+    def test_promotes_primary(self, service, product, tmp_path, engine):
+        img1 = tmp_path / "primary.jpg"
+        img1.write_bytes(b"primary")
+        img2 = tmp_path / "second.jpg"
+        img2.write_bytes(b"second")
+
+        r1 = service.save_product_image(product, str(img1), is_primary=True)
+        r2 = service.save_product_image(product, str(img2))
+
+        service.delete_product_image(r1["image_id"])
+
+        with Session(engine) as session:
+            remaining = session.get(ProductImage, r2["image_id"])
+            assert remaining.is_primary is True
+
+    def test_handles_missing_file(self, service, product, engine):
+        with Session(engine) as session:
+            img = ProductImage(product_id=product, file_path="/nonexistent/gone.jpg")
+            session.add(img)
+            session.commit()
+            image_id = img.id
+
+        result = service.delete_product_image(image_id)
+
+        assert "error" not in result
+        assert result["image_id"] == image_id
+
+    def test_not_found(self, service):
+        result = service.delete_product_image(9999)
+        assert "error" in result
+        assert "9999" in result["error"]
+
+    def test_logs_agent_action(self, service, product, tmp_path, engine):
+        img_path = tmp_path / "photo.jpg"
+        img_path.write_bytes(b"fake")
+
+        save_result = service.save_product_image(product, str(img_path))
+        service.delete_product_image(save_result["image_id"])
+
+        with Session(engine) as session:
+            action = session.query(AgentAction).filter_by(action_type="delete_product_image").one()
+            assert action.agent_name == "listing"
+            assert action.product_id == product
+            assert action.details["image_id"] == save_result["image_id"]
+
+    def test_no_promotion_when_no_images_left(self, service, product, tmp_path, engine):
+        img = tmp_path / "only.jpg"
+        img.write_bytes(b"only")
+        r = service.save_product_image(product, str(img), is_primary=True)
+
+        result = service.delete_product_image(r["image_id"])
+        assert "error" not in result
+
+        with Session(engine) as session:
+            count = session.query(ProductImage).filter_by(product_id=product).count()
+            assert count == 0
+
+
+class TestCancelListing:
+    def test_cancels_active(self, service, product, engine):
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Test",
+            listing_description="Test",
+            start_price=100.0,
+        )
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            listing.status = "active"
+            product_obj = session.get(Product, product)
+            product_obj.status = "listed"
+            session.commit()
+
+        result = service.cancel_listing(draft["listing_id"])
+
+        assert "error" not in result
+        assert result["status"] == "cancelled"
+        assert result["product_status"] == "draft"
+        assert "warning" in result
+
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            assert listing.status == "cancelled"
+
+    def test_reverts_product_status(self, service, product, engine):
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Test",
+            listing_description="Test",
+            start_price=100.0,
+        )
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            listing.status = "active"
+            p = session.get(Product, product)
+            p.status = "listed"
+            session.commit()
+
+        service.cancel_listing(draft["listing_id"])
+
+        with Session(engine) as session:
+            p = session.get(Product, product)
+            assert p.status == "draft"
+
+    def test_keeps_listed_with_other_active(self, service, engine):
+        with Session(engine) as session:
+            p = Product(title="Multi-listed", status="listed")
+            session.add(p)
+            session.flush()
+            l1 = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="L1",
+                listing_description="D1",
+            )
+            l2 = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="L2",
+                listing_description="D2",
+            )
+            session.add_all([l1, l2])
+            session.commit()
+            lid1, pid = l1.id, p.id
+
+        result = service.cancel_listing(lid1)
+
+        assert result["product_status"] == "listed"
+
+        with Session(engine) as session:
+            p = session.get(Product, pid)
+            assert p.status == "listed"
+
+    def test_does_not_revert_sold_product(self, service, engine):
+        with Session(engine) as session:
+            p = Product(title="Sold item", status="sold")
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="T",
+                listing_description="D",
+            )
+            session.add(listing)
+            session.commit()
+            lid, pid = listing.id, p.id
+
+        result = service.cancel_listing(lid)
+
+        assert result["status"] == "cancelled"
+        assert result["product_status"] == "sold"
+
+        with Session(engine) as session:
+            p = session.get(Product, pid)
+            assert p.status == "sold"
+
+    def test_rejects_non_active(self, service, draft_listing):
+        result = service.cancel_listing(draft_listing["listing_id"])
+        assert "error" in result
+        assert "draft" in result["error"]
+
+    def test_rejects_ended(self, service, product, engine):
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Test",
+            listing_description="Test",
+            start_price=100.0,
+        )
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            listing.status = "ended"
+            session.commit()
+
+        result = service.cancel_listing(draft["listing_id"])
+        assert "error" in result
+        assert "ended" in result["error"]
+
+    def test_not_found(self, service):
+        result = service.cancel_listing(9999)
+        assert "error" in result
+        assert "9999" in result["error"]
+
+    def test_logs_agent_action(self, service, product, engine):
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Test",
+            listing_description="Test",
+            start_price=100.0,
+        )
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            listing.status = "active"
+            session.commit()
+
+        service.cancel_listing(draft["listing_id"])
+
+        with Session(engine) as session:
+            action = session.query(AgentAction).filter_by(action_type="cancel_listing").one()
+            assert action.agent_name == "listing"
+            assert action.product_id == product
+            assert "Local cancel only" in action.details["note"]

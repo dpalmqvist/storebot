@@ -182,6 +182,40 @@ class TestExportVouchersPdf:
             accounting.export_vouchers_pdf("2099-01-01", "2099-12-31")
 
 
+class TestListVouchers:
+    def test_empty(self, accounting):
+        result = accounting.list_vouchers()
+        assert result["count"] == 0
+        assert result["vouchers"] == []
+
+    def test_returns_wrapped_dict(self, accounting):
+        rows = [
+            {"account": 1930, "debit": 100, "credit": 0},
+            {"account": 3001, "debit": 0, "credit": 100},
+        ]
+        accounting.create_voucher(description="A", rows=rows, transaction_date="2026-01-01")
+        accounting.create_voucher(description="B", rows=rows, transaction_date="2026-02-01")
+
+        result = accounting.list_vouchers()
+        assert result["count"] == 2
+        assert len(result["vouchers"]) == 2
+        assert result["vouchers"][0]["description"] == "A"
+        assert result["vouchers"][1]["description"] == "B"
+
+    def test_date_filtering(self, accounting):
+        rows = [
+            {"account": 1930, "debit": 100, "credit": 0},
+            {"account": 3001, "debit": 0, "credit": 100},
+        ]
+        accounting.create_voucher(description="Jan", rows=rows, transaction_date="2026-01-15")
+        accounting.create_voucher(description="Feb", rows=rows, transaction_date="2026-02-15")
+        accounting.create_voucher(description="Mar", rows=rows, transaction_date="2026-03-15")
+
+        result = accounting.list_vouchers(from_date="2026-02-01", to_date="2026-02-28")
+        assert result["count"] == 1
+        assert result["vouchers"][0]["description"] == "Feb"
+
+
 class TestBasAccounts:
     def test_all_expected_accounts_present(self):
         expected = [1910, 1930, 2611, 2640, 3001, 4010, 6250, 6570]
