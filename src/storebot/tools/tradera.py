@@ -230,10 +230,21 @@ class TraderaClient:
             if shipping_condition is not None:
                 params["ShippingCondition"] = shipping_condition
 
-            response = self._create_listing_api_call(
-                params,
-                self._auth_headers(self.restricted_client, include_authorization=True),
+            logger.debug(
+                "AddItem params (pre-SOAP): %s",
+                {k: v for k, v in params.items() if k != "Description"},
             )
+
+            history = HistoryPlugin()
+            self.restricted_client.plugins.append(history)
+            try:
+                response = self._create_listing_api_call(
+                    params,
+                    self._auth_headers(self.restricted_client, include_authorization=True),
+                )
+            finally:
+                self.restricted_client.plugins.remove(history)
+                self._log_soap_exchange(history, "AddItem")
 
             request_id = getattr(response, "RequestId", None)
             item_id = getattr(response, "ItemId", None)
@@ -248,6 +259,26 @@ class TraderaClient:
         except Exception as e:
             logger.exception("Tradera create_listing failed")
             return {"error": str(e)}
+
+    @staticmethod
+    def _soap_body_xml(envelope) -> str | None:
+        """Extract the SOAP Body from an envelope, omitting auth headers."""
+        body = envelope.find("{http://schemas.xmlsoap.org/soap/envelope/}Body")
+        if body is None:
+            return None
+        return etree.tostring(body, pretty_print=True).decode()
+
+    def _log_soap_exchange(self, history: HistoryPlugin, operation: str) -> None:
+        """Log the SOAP Body (no auth headers) from a HistoryPlugin."""
+        for label, attr in (("request", "last_sent"), ("response", "last_received")):
+            try:
+                env = getattr(history, attr, {}).get("envelope")
+                if env is not None:
+                    body_xml = self._soap_body_xml(env)
+                    if body_xml:
+                        logger.debug("%s SOAP %s:\n%s", operation, label, body_xml)
+            except Exception:
+                logger.debug("%s: could not extract %s XML", operation, label)
 
     # Map MIME types to Tradera ImageFormat enum values
     _MEDIA_TYPE_TO_FORMAT = {
@@ -457,31 +488,9 @@ class TraderaClient:
         during the authorization URL step.
         """
         try:
-            history = HistoryPlugin()
-            self.public_client.plugins.append(history)
-
-            try:
-                response = self._fetch_token_api_call(
-                    secret_key, self._auth_headers(self.public_client)
-                )
-            finally:
-                self.public_client.plugins.remove(history)
-
-            sent_xml = None
-            received_xml = None
-            try:
-                sent_env = history.last_sent.get("envelope")
-                if sent_env is not None:
-                    sent_xml = etree.tostring(sent_env, pretty_print=True).decode()
-            except Exception:
-                pass
-            try:
-                recv_env = history.last_received.get("envelope")
-                if recv_env is not None:
-                    received_xml = etree.tostring(recv_env, pretty_print=True).decode()
-            except Exception:
-                pass
-            logger.debug("FetchToken SOAP exchange completed (XML redacted for security)")
+            response = self._fetch_token_api_call(
+                secret_key, self._auth_headers(self.public_client)
+            )
 
             token = getattr(response, "AuthToken", None)
             expires = getattr(response, "HardExpirationTime", None)
@@ -490,8 +499,7 @@ class TraderaClient:
 
             if token is None:
                 return {
-                    "error": f"FetchToken response missing AuthToken. Raw XML:\n{received_xml}",
-                    "sent_xml": sent_xml,
+                    "error": "FetchToken response missing AuthToken",
                     "response_repr": repr(response),
                 }
 
