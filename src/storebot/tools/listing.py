@@ -712,6 +712,218 @@ class ListingService:
                 "status": restored_status,
             }
 
+    def get_product(self, product_id: int) -> dict:
+        """Get full details for a single product including image and listing counts."""
+        with Session(self.engine) as session:
+            product = session.get(Product, product_id)
+            if product is None:
+                return {"error": f"Product {product_id} not found"}
+
+            image_count = session.query(ProductImage).filter_by(product_id=product_id).count()
+            active_listing_count = (
+                session.query(PlatformListing)
+                .filter_by(product_id=product_id, status="active")
+                .count()
+            )
+
+            return {
+                "product_id": product.id,
+                "title": product.title,
+                "description": product.description,
+                "category": product.category,
+                "status": product.status,
+                "acquisition_cost": product.acquisition_cost,
+                "listing_price": product.listing_price,
+                "sold_price": product.sold_price,
+                "source": product.source,
+                "condition": product.condition,
+                "dimensions": product.dimensions,
+                "weight_grams": product.weight_grams,
+                "materials": product.materials,
+                "era": product.era,
+                "image_count": image_count,
+                "active_listing_count": active_listing_count,
+                "created_at": product.created_at.isoformat() if product.created_at else None,
+                "updated_at": product.updated_at.isoformat() if product.updated_at else None,
+            }
+
+    def relist_product(
+        self,
+        listing_id: int,
+        listing_title: str | None = None,
+        listing_description: str | None = None,
+        listing_type: str | None = None,
+        start_price: float | None = None,
+        buy_it_now_price: float | None = None,
+        duration_days: int | None = None,
+        tradera_category_id: int | None = None,
+        details: dict | None = None,
+    ) -> dict:
+        """Create a new draft listing by copying from an ended or sold listing."""
+        with Session(self.engine) as session:
+            source = session.get(PlatformListing, listing_id)
+            if source is None:
+                return {"error": f"Listing {listing_id} not found"}
+
+            if source.status not in ("ended", "sold"):
+                return {
+                    "error": f"Cannot relist listing with status '{source.status}', "
+                    "must be 'ended' or 'sold'"
+                }
+
+            product = session.get(Product, source.product_id)
+            if product and product.status == "archived":
+                return {"error": f"Product {source.product_id} is archived — unarchive it first"}
+
+            new_type = listing_type or source.listing_type
+            new_start = start_price if start_price is not None else source.start_price
+            new_bin = buy_it_now_price if buy_it_now_price is not None else source.buy_it_now_price
+            new_duration = duration_days if duration_days is not None else source.duration_days
+
+            errors = _validate_draft(
+                listing_type=new_type,
+                start_price=new_start,
+                buy_it_now_price=new_bin,
+                duration_days=new_duration,
+            )
+            if errors:
+                return {"error": "Validation failed", "details": errors}
+
+            listing = PlatformListing(
+                product_id=source.product_id,
+                platform=source.platform,
+                status="draft",
+                listing_type=new_type,
+                listing_title=listing_title or source.listing_title,
+                listing_description=listing_description or source.listing_description,
+                start_price=new_start,
+                buy_it_now_price=new_bin,
+                duration_days=new_duration,
+                tradera_category_id=(
+                    tradera_category_id
+                    if tradera_category_id is not None
+                    else source.tradera_category_id
+                ),
+                details=details if details is not None else source.details,
+            )
+            session.add(listing)
+            session.flush()
+
+            log_action(
+                session,
+                "listing",
+                "relist_product",
+                {"new_listing_id": listing.id, "source_listing_id": listing_id},
+                product_id=source.product_id,
+                requires_approval=True,
+            )
+            session.commit()
+
+            preview = _format_draft_preview(listing, product)
+            return {
+                "listing_id": listing.id,
+                "source_listing_id": listing_id,
+                "status": "draft",
+                "preview": preview,
+            }
+
+    def delete_product_image(self, image_id: int) -> dict:
+        """Delete a product image record and its file."""
+        from pathlib import Path
+
+        with Session(self.engine) as session:
+            image = session.get(ProductImage, image_id)
+            if image is None:
+                return {"error": f"Image {image_id} not found"}
+
+            product_id = image.product_id
+            file_path = image.file_path
+            was_primary = image.is_primary
+
+            session.delete(image)
+            session.flush()
+
+            if was_primary:
+                next_image = (
+                    session.query(ProductImage)
+                    .filter_by(product_id=product_id)
+                    .order_by(ProductImage.id)
+                    .first()
+                )
+                if next_image:
+                    next_image.is_primary = True
+
+            log_action(
+                session,
+                "listing",
+                "delete_product_image",
+                {"image_id": image_id, "file_path": file_path, "was_primary": was_primary},
+                product_id=product_id,
+            )
+            session.commit()
+
+        if file_path:
+            try:
+                Path(file_path).unlink(missing_ok=True)
+            except OSError:
+                pass
+
+        return {
+            "image_id": image_id,
+            "product_id": product_id,
+            "deleted_file": file_path,
+        }
+
+    def cancel_listing(self, listing_id: int) -> dict:
+        """Cancel an active listing locally. Tradera has no cancel API."""
+        with Session(self.engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            if listing is None:
+                return {"error": f"Listing {listing_id} not found"}
+
+            if listing.status != "active":
+                return {
+                    "error": f"Cannot cancel listing with status '{listing.status}', "
+                    "must be 'active'"
+                }
+
+            listing.status = "cancelled"
+
+            other_active = (
+                session.query(PlatformListing)
+                .filter(
+                    PlatformListing.product_id == listing.product_id,
+                    PlatformListing.id != listing_id,
+                    PlatformListing.status == "active",
+                )
+                .count()
+            )
+
+            product = session.get(Product, listing.product_id)
+            if product and other_active == 0:
+                product.status = "draft"
+
+            log_action(
+                session,
+                "listing",
+                "cancel_listing",
+                {
+                    "listing_id": listing_id,
+                    "note": "Local cancel only — Tradera listing may still be active on platform",
+                },
+                product_id=listing.product_id,
+            )
+            session.commit()
+
+            return {
+                "listing_id": listing_id,
+                "status": "cancelled",
+                "product_status": product.status if product else None,
+                "warning": "Annulleringen gäller bara lokalt. "
+                "Tradera har inget API för att avbryta en pågående annons — "
+                "gör det manuellt på Tradera om det behövs.",
+            }
+
 
 def _validate_draft(
     listing_type: str,

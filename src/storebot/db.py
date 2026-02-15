@@ -63,7 +63,7 @@ class PlatformListing(Base):
     listing_url: Mapped[str | None] = mapped_column(String)
     status: Mapped[str] = mapped_column(
         String, default="draft"
-    )  # draft/approved/active/ended/sold
+    )  # draft/approved/active/ended/sold/cancelled
     listing_type: Mapped[str | None] = mapped_column(String)  # auction/buy_it_now
     listing_title: Mapped[str | None] = mapped_column(String)
     listing_description: Mapped[str | None] = mapped_column(Text)

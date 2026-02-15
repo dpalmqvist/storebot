@@ -5,6 +5,7 @@ uses to decide when and how to call the tool.
 """
 
 TOOLS = [
+    # --- Tradera ---
     {
         "name": "search_tradera",
         "description": "Search Tradera for items matching a query. Use for price research and finding comparable listings.",
@@ -18,6 +19,47 @@ TOOLS = [
             "required": ["query"],
         },
     },
+    {
+        "name": "get_tradera_item",
+        "description": "Hämta fullständig information om ett enskilt Tradera-objekt via dess ID. Använd för att se detaljer, slutpris, köpare etc.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "item_id": {"type": "integer", "description": "Tradera item ID"},
+            },
+            "required": ["item_id"],
+        },
+    },
+    {
+        "name": "get_categories",
+        "description": "Get all Tradera categories. Use to find the right category ID for a listing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "get_shipping_options",
+        "description": "Hämta tillgängliga fraktalternativ från Tradera. Returnerar fraktprodukter med leverantör, viktgräns och pris. Använd produktens vikt för att filtrera.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "weight_grams": {
+                    "type": "integer",
+                    "description": "Paketets vikt i gram — filtrerar till alternativ som klarar vikten",
+                },
+            },
+        },
+    },
+    {
+        "name": "get_shipping_types",
+        "description": "Hämta alla tillgängliga frakttyper (leveransvillkor) från Tradera. Returnerar en lista med ID och namn.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    # --- Blocket ---
     {
         "name": "search_blocket",
         "description": "Search Blocket for items. Read-only, useful for price research and sourcing opportunities.",
@@ -42,6 +84,30 @@ TOOLS = [
             "required": ["ad_id"],
         },
     },
+    # --- Pricing ---
+    {
+        "name": "price_check",
+        "description": "Search both Tradera and Blocket for comparable items and compute price statistics with a suggested price range. Use for pricing research before listing a product.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query describing the item to price",
+                },
+                "product_id": {
+                    "type": "integer",
+                    "description": "Local product ID to link analysis to (optional)",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Category filter — Tradera int or Blocket string (optional)",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    # --- Listings ---
     {
         "name": "create_draft_listing",
         "description": "Create a draft listing for a product. The draft must be approved before publishing. Use after price_check to set appropriate pricing.",
@@ -153,6 +219,18 @@ TOOLS = [
         },
     },
     {
+        "name": "reject_draft_listing",
+        "description": "Reject and delete a draft listing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "listing_id": {"type": "integer", "description": "Listing ID to reject"},
+                "reason": {"type": "string", "description": "Reason for rejection"},
+            },
+            "required": ["listing_id"],
+        },
+    },
+    {
         "name": "publish_listing",
         "description": "Publish an approved listing to Tradera. Uploads images and creates the listing. The listing must be in 'approved' status.",
         "input_schema": {
@@ -167,215 +245,62 @@ TOOLS = [
         },
     },
     {
-        "name": "get_categories",
-        "description": "Get all Tradera categories. Use to find the right category ID for a listing.",
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-    {
-        "name": "get_shipping_options",
-        "description": "Hämta tillgängliga fraktalternativ från Tradera. Returnerar fraktprodukter med leverantör, viktgräns och pris. Använd produktens vikt för att filtrera.",
+        "name": "relist_product",
+        "description": "Skapa ett nytt annonsutkast genom att kopiera från en avslutad eller såld annons. Kräver godkännande innan publicering.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "weight_grams": {
+                "listing_id": {
                     "type": "integer",
-                    "description": "Paketets vikt i gram — filtrerar till alternativ som klarar vikten",
+                    "description": "ID på den avslutade/sålda annonsen att kopiera från",
                 },
-            },
-        },
-    },
-    {
-        "name": "reject_draft_listing",
-        "description": "Reject and delete a draft listing.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "listing_id": {"type": "integer", "description": "Listing ID to reject"},
-                "reason": {"type": "string", "description": "Reason for rejection"},
+                "listing_title": {"type": "string", "description": "Ny titel (valfritt)"},
+                "listing_description": {
+                    "type": "string",
+                    "description": "Ny beskrivning (valfritt)",
+                },
+                "listing_type": {
+                    "type": "string",
+                    "enum": ["auction", "buy_it_now"],
+                    "description": "Ny annonstyp (valfritt)",
+                },
+                "start_price": {"type": "number", "description": "Nytt startpris (valfritt)"},
+                "buy_it_now_price": {
+                    "type": "number",
+                    "description": "Nytt köp nu-pris (valfritt)",
+                },
+                "duration_days": {
+                    "type": "integer",
+                    "enum": [3, 5, 7, 10, 14],
+                    "description": "Ny varaktighet i dagar (valfritt)",
+                },
+                "tradera_category_id": {
+                    "type": "integer",
+                    "description": "Ny Tradera-kategori (valfritt)",
+                },
+                "details": {
+                    "type": "object",
+                    "description": "Nya detaljer/frakt (valfritt)",
+                },
             },
             "required": ["listing_id"],
         },
     },
     {
-        "name": "check_new_orders",
-        "description": "Poll Tradera for new orders and import them locally. Creates order records and updates product/listing status.",
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-    {
-        "name": "list_orders",
-        "description": "List local orders, optionally filtered by status (pending/shipped/delivered/returned).",
+        "name": "cancel_listing",
+        "description": "Avbryt en aktiv annons lokalt. OBS: Tradera har inget API för att avbryta annonser — det måste göras manuellt på plattformen.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "status": {
-                    "type": "string",
-                    "enum": ["pending", "shipped", "delivered", "returned"],
-                    "description": "Filter by order status (optional)",
-                },
-            },
-        },
-    },
-    {
-        "name": "get_order",
-        "description": "Get full details of a specific order including product title.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "order_id": {"type": "integer", "description": "Order ID"},
-            },
-            "required": ["order_id"],
-        },
-    },
-    {
-        "name": "create_sale_voucher",
-        "description": "Create an accounting voucher for a completed sale. Calculates VAT, revenue, and platform fees automatically.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "order_id": {"type": "integer", "description": "Order ID to create voucher for"},
-            },
-            "required": ["order_id"],
-        },
-    },
-    {
-        "name": "mark_order_shipped",
-        "description": "Mark an order as shipped. Updates local status and notifies Tradera. NEVER use without explicit owner confirmation.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "order_id": {"type": "integer", "description": "Order ID to mark as shipped"},
-                "tracking_number": {
-                    "type": "string",
-                    "description": "Tracking number (optional)",
-                },
-            },
-            "required": ["order_id"],
-        },
-    },
-    {
-        "name": "create_shipping_label",
-        "description": "Skapa en fraktetikett via PostNord för en order. Kräver att produkten har weight_grams satt.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "order_id": {"type": "integer", "description": "Order ID"},
-                "service_code": {
-                    "type": "string",
-                    "enum": ["19", "17", "18"],
-                    "default": "19",
-                    "description": "PostNord service: 19=MyPack Collect, 17=MyPack Home, 18=Postpaket",
-                },
-            },
-            "required": ["order_id"],
-        },
-    },
-    {
-        "name": "list_orders_pending_feedback",
-        "description": "Lista Tradera-ordrar som är skickade men saknar omdöme till köparen.",
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-    {
-        "name": "leave_feedback",
-        "description": "Lämna omdöme till köparen på en Tradera-order. Lämna ALDRIG omdöme utan ägarens uttryckliga bekräftelse av texten.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "order_id": {"type": "integer", "description": "Order ID"},
-                "comment": {
-                    "type": "string",
-                    "maxLength": 80,
-                    "description": "Omdömestext (max 80 tecken)",
-                },
-                "feedback_type": {
-                    "type": "string",
-                    "enum": ["Positive", "Negative"],
-                    "default": "Positive",
-                    "description": "Typ av omdöme",
-                },
-            },
-            "required": ["order_id", "comment"],
-        },
-    },
-    {
-        "name": "create_voucher",
-        "description": "Skapa en bokföringsverifikation och spara lokalt. Debet och kredit måste balansera.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "description": {"type": "string", "description": "Voucher description"},
-                "rows": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "account": {"type": "integer", "description": "BAS account number"},
-                            "debit": {"type": "number"},
-                            "credit": {"type": "number"},
-                        },
-                    },
-                    "description": "Voucher rows (debit/credit per account)",
-                },
-                "order_id": {
+                "listing_id": {
                     "type": "integer",
-                    "description": "Link to order ID (optional)",
-                },
-                "transaction_date": {
-                    "type": "string",
-                    "description": "Transaction date ISO format (default today)",
+                    "description": "Listing ID att avbryta",
                 },
             },
-            "required": ["description", "rows"],
+            "required": ["listing_id"],
         },
     },
-    {
-        "name": "export_vouchers",
-        "description": "Exportera verifikationer som PDF. Ange datumintervall.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "from_date": {
-                    "type": "string",
-                    "description": "Start date (ISO format, e.g. 2026-01-01)",
-                },
-                "to_date": {
-                    "type": "string",
-                    "description": "End date (ISO format, e.g. 2026-12-31)",
-                },
-            },
-            "required": ["from_date", "to_date"],
-        },
-    },
-    {
-        "name": "price_check",
-        "description": "Search both Tradera and Blocket for comparable items and compute price statistics with a suggested price range. Use for pricing research before listing a product.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query describing the item to price",
-                },
-                "product_id": {
-                    "type": "integer",
-                    "description": "Local product ID to link analysis to (optional)",
-                },
-                "category": {
-                    "type": "string",
-                    "description": "Category filter — Tradera int or Blocket string (optional)",
-                },
-            },
-            "required": ["query"],
-        },
-    },
+    # --- Products ---
     {
         "name": "search_products",
         "description": "Search the local product database. Archived products are hidden by default.",
@@ -485,6 +410,34 @@ TOOLS = [
         },
     },
     {
+        "name": "get_product",
+        "description": "Hämta fullständig information om en produkt: alla fält, antal bilder och aktiva annonser. Använd för att se detaljer som saknas i search_products (beskrivning, material, mått, vikt, källa).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "product_id": {"type": "integer", "description": "Product ID"},
+            },
+            "required": ["product_id"],
+        },
+    },
+    # --- Product images ---
+    {
+        "name": "save_product_image",
+        "description": "Save an image to a product. Use after create_product to attach photos.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "product_id": {"type": "integer", "description": "Product ID to attach image to"},
+                "image_path": {"type": "string", "description": "File path to the image"},
+                "is_primary": {
+                    "type": "boolean",
+                    "description": "Set as primary product image (default false)",
+                },
+            },
+            "required": ["product_id", "image_path"],
+        },
+    },
+    {
         "name": "get_product_images",
         "description": "Hämta och visa produktbilder. Använd för att granska bilder innan godkännande/publicering av annons.",
         "input_schema": {
@@ -502,21 +455,17 @@ TOOLS = [
         },
     },
     {
-        "name": "save_product_image",
-        "description": "Save an image to a product. Use after create_product to attach photos.",
+        "name": "delete_product_image",
+        "description": "Ta bort en produktbild. Om bilden var primär blir nästa bild primär automatiskt.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "product_id": {"type": "integer", "description": "Product ID to attach image to"},
-                "image_path": {"type": "string", "description": "File path to the image"},
-                "is_primary": {
-                    "type": "boolean",
-                    "description": "Set as primary product image (default false)",
-                },
+                "image_id": {"type": "integer", "description": "Image ID att ta bort"},
             },
-            "required": ["product_id", "image_path"],
+            "required": ["image_id"],
         },
     },
+    # --- Archive ---
     {
         "name": "archive_product",
         "description": "Archive a product, hiding it from normal search and listing views. Cannot archive products with active marketplace listings.",
@@ -539,6 +488,181 @@ TOOLS = [
             "required": ["product_id"],
         },
     },
+    # --- Orders ---
+    {
+        "name": "check_new_orders",
+        "description": "Poll Tradera for new orders and import them locally. Creates order records and updates product/listing status.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "list_orders",
+        "description": "List local orders, optionally filtered by status (pending/shipped/delivered/returned).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": ["pending", "shipped", "delivered", "returned"],
+                    "description": "Filter by order status (optional)",
+                },
+            },
+        },
+    },
+    {
+        "name": "get_order",
+        "description": "Get full details of a specific order including product title.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "integer", "description": "Order ID"},
+            },
+            "required": ["order_id"],
+        },
+    },
+    {
+        "name": "create_sale_voucher",
+        "description": "Create an accounting voucher for a completed sale. Calculates VAT, revenue, and platform fees automatically.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "integer", "description": "Order ID to create voucher for"},
+            },
+            "required": ["order_id"],
+        },
+    },
+    {
+        "name": "mark_order_shipped",
+        "description": "Mark an order as shipped. Updates local status and notifies Tradera. NEVER use without explicit owner confirmation.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "integer", "description": "Order ID to mark as shipped"},
+                "tracking_number": {
+                    "type": "string",
+                    "description": "Tracking number (optional)",
+                },
+            },
+            "required": ["order_id"],
+        },
+    },
+    {
+        "name": "create_shipping_label",
+        "description": "Skapa en fraktetikett via PostNord för en order. Kräver att produkten har weight_grams satt.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "integer", "description": "Order ID"},
+                "service_code": {
+                    "type": "string",
+                    "enum": ["19", "17", "18"],
+                    "default": "19",
+                    "description": "PostNord service: 19=MyPack Collect, 17=MyPack Home, 18=Postpaket",
+                },
+            },
+            "required": ["order_id"],
+        },
+    },
+    {
+        "name": "list_orders_pending_feedback",
+        "description": "Lista Tradera-ordrar som är skickade men saknar omdöme till köparen.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "leave_feedback",
+        "description": "Lämna omdöme till köparen på en Tradera-order. Lämna ALDRIG omdöme utan ägarens uttryckliga bekräftelse av texten.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "integer", "description": "Order ID"},
+                "comment": {
+                    "type": "string",
+                    "maxLength": 80,
+                    "description": "Omdömestext (max 80 tecken)",
+                },
+                "feedback_type": {
+                    "type": "string",
+                    "enum": ["Positive", "Negative"],
+                    "default": "Positive",
+                    "description": "Typ av omdöme",
+                },
+            },
+            "required": ["order_id", "comment"],
+        },
+    },
+    # --- Accounting ---
+    {
+        "name": "create_voucher",
+        "description": "Skapa en bokföringsverifikation och spara lokalt. Debet och kredit måste balansera.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "description": {"type": "string", "description": "Voucher description"},
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "account": {"type": "integer", "description": "BAS account number"},
+                            "debit": {"type": "number"},
+                            "credit": {"type": "number"},
+                        },
+                    },
+                    "description": "Voucher rows (debit/credit per account)",
+                },
+                "order_id": {
+                    "type": "integer",
+                    "description": "Link to order ID (optional)",
+                },
+                "transaction_date": {
+                    "type": "string",
+                    "description": "Transaction date ISO format (default today)",
+                },
+            },
+            "required": ["description", "rows"],
+        },
+    },
+    {
+        "name": "list_vouchers",
+        "description": "Lista bokföringsverifikationer, valfritt filtrerade efter datumintervall.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "from_date": {
+                    "type": "string",
+                    "description": "Startdatum (ISO-format, t.ex. 2026-01-01)",
+                },
+                "to_date": {
+                    "type": "string",
+                    "description": "Slutdatum (ISO-format, t.ex. 2026-12-31)",
+                },
+            },
+        },
+    },
+    {
+        "name": "export_vouchers",
+        "description": "Exportera verifikationer som PDF. Ange datumintervall.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "from_date": {
+                    "type": "string",
+                    "description": "Start date (ISO format, e.g. 2026-01-01)",
+                },
+                "to_date": {
+                    "type": "string",
+                    "description": "End date (ISO format, e.g. 2026-12-31)",
+                },
+            },
+            "required": ["from_date", "to_date"],
+        },
+    },
+    # --- Scout ---
     {
         "name": "create_saved_search",
         "description": "Create a saved search for periodic sourcing. Searches run daily and new finds are reported.",
@@ -626,6 +750,7 @@ TOOLS = [
             "properties": {},
         },
     },
+    # --- Marketing ---
     {
         "name": "refresh_listing_stats",
         "description": "Hämta aktuell statistik (visningar, bevakare, bud) från Tradera för aktiva annonser och spara en snapshot.",
@@ -671,6 +796,7 @@ TOOLS = [
             },
         },
     },
+    # --- Analytics ---
     {
         "name": "business_summary",
         "description": "Affärssammanfattning för en period: intäkter, kostnader, bruttovinst, marginal, antal sålda, lagerstatus, snittid till försäljning.",
