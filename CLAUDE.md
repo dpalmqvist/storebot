@@ -24,10 +24,15 @@ Telegram Bot → Claude API (direct tool use, no framework)
 Agent Tool Modules (plain Python, MCP-wrappable later)
     ├── tools/tradera.py     (SOAP via zeep)
     ├── tools/blocket.py     (REST, read-only/research)
+    ├── tools/listing.py     (draft workflow, product mgmt, publish)
+    ├── tools/pricing.py     (cross-platform price analysis)
+    ├── tools/order.py       (order import, vouchers, shipping)
     ├── tools/accounting.py  (local vouchers + PDF export)
+    ├── tools/analytics.py   (business reports, profitability, ROI)
     ├── tools/scout.py       (saved searches, dedup, digest)
     ├── tools/marketing.py   (listing performance, recommendations)
     ├── tools/postnord.py    (shipping labels)
+    ├── tools/conversation.py(history persistence per chat)
     └── tools/image.py       (Pillow: resize, optimize)
     ↓
 SQLite + sqlite-vec (operational + financial: inventory, listings, orders, vouchers, agent state, embeddings)
@@ -82,7 +87,7 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **Product management** — `create_product` (with all optional fields: condition, materials, era, dimensions, source, acquisition_cost, weight_grams) and `save_product_image` (with is_primary logic).
 - **Image processing** — `resize_for_listing` (1200px), `resize_for_analysis` (800px), `optimize_for_upload` (JPEG compress), `encode_image_base64`. All handle EXIF rotation and RGBA conversion.
 - **Accounting** — `AccountingService` with local voucher storage (SQLite), double-entry bookkeeping with BAS-kontoplan, PDF export (single + batch), debit/credit balance validation.
-- **Agent loop** — `agent.py` with Claude API tool loop, 44 tool definitions, vision support (base64 image content blocks), Swedish system prompt with image workflow guidance.
+- **Agent loop** — `agent.py` with Claude API tool loop, 45 tool definitions, vision support (base64 image content blocks), Swedish system prompt with image workflow guidance.
 - **Telegram bot** — `handlers.py` with `/start`, `/help`, `/new`, `/orders`, `/scout`, `/marketing`, `/rapport`, text message handling, and photo handling (download, resize, forward to agent with vision).
 - **Config** — Pydantic Settings from `.env`, all service credentials.
 - **Deployment** — systemd service file, SQLite backup script with cron rotation.
@@ -95,7 +100,7 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **Tradera authorization CLI** — `storebot-authorize-tradera` command for obtaining user tokens via consent flow. `TraderaClient.fetch_token()` calls `PublicService.FetchToken`. Saves credentials to `.env`.
 - **PostNord shipping labels** — `PostNordClient` REST client: `create_shipment()`, `get_label()`, `save_label()`. `Address` dataclass for sender/recipient, `parse_buyer_address()` for parsing Swedish addresses. Sandbox/production URL switching. Integrated into `OrderService.create_shipping_label()` with validation (weight, address), PDF label storage, tracking number persistence, and `AgentAction` audit trail.
 - **Resilience & observability** — Retry decorator with exponential backoff on transient errors (Tradera SOAP, Blocket REST, PostNord REST), structured JSON logging (`LOG_JSON` toggle), startup credential validation, admin alerts on scheduled job failures. SQLite WAL mode + busy timeout. Systemd restart limits, backup integrity checks with gzip compression.
-- **Tests** — 404 tests covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, postnord, CLI, retry, logging, and handlers modules.
+- **Tests** — 563 tests across 18 modules covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, analytics, postnord, CLI, retry, logging, handlers, and log_viewer.
 
 ### Not started
 
@@ -138,6 +143,7 @@ When reviewing PRs, provide detailed and thorough reviews:
 
 - **Run bot:** `storebot` (or `python -m storebot.bot.handlers`)
 - **Authorize Tradera:** `storebot-authorize-tradera` (interactive token consent flow)
+- **Audit log viewer:** `storebot-logs` (Textual TUI for reviewing agent_actions)
 - **Run tests:** `pytest`
 - **Run single test:** `pytest tests/test_db.py::test_name`
 - **Lint:** `ruff check src/ tests/`
