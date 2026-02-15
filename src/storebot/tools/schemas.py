@@ -131,6 +131,15 @@ class UsageReportResult(ToolResult):
     total_turns: int
 
 
+# --- Tool filtering ---
+
+
+class RequestToolsResult(ToolResult):
+    status: str
+    activated_categories: list[str]
+    new_tools: list[str]
+
+
 # Registry: tool name → schema class
 TOOL_SCHEMAS: dict[str, type[ToolResult]] = {
     "search_tradera": SearchResult,
@@ -147,6 +156,7 @@ TOOL_SCHEMAS: dict[str, type[ToolResult]] = {
     "get_order": OrderDetailResult,
     "business_summary": BusinessSummaryResult,
     "usage_report": UsageReportResult,
+    "request_tools": RequestToolsResult,
 }
 
 

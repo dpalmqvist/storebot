@@ -1,5 +1,6 @@
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -9,7 +10,7 @@ from storebot.config import get_settings
 from storebot.tools.accounting import AccountingService
 from storebot.tools.analytics import AnalyticsService
 from storebot.tools.blocket import BlocketClient
-from storebot.tools.definitions import TOOLS
+from storebot.tools.definitions import TOOLS, TOOL_CATEGORIES
 from storebot.tools.schemas import validate_tool_result
 from storebot.tools.image import encode_image_base64
 from storebot.tools.listing import ListingService
@@ -137,6 +138,8 @@ VIKTIGT — Frakt vid annonsering:
 3. Alternativt: sätt details.shipping_cost för enkel fast fraktkostnad.
 4. Visa fraktalternativen i förhandsgranskningen så ägaren kan godkänna.
 
+Om du behöver verktyg som inte är tillgängliga, använd request_tools för att begära fler.
+
 Svara alltid på svenska om inte användaren skriver på engelska. Var kortfattad och tydlig.
 Alla annonser och produktbeskrivningar ska vara på svenska."""
 
@@ -156,12 +159,114 @@ def _strip_nulls(value):
     return value
 
 
-def _get_cached_tools() -> list[dict]:
-    """Return TOOLS with cache_control on the last tool definition for prompt caching."""
-    if not TOOLS:
-        return TOOLS
-    tools = [dict(t) for t in TOOLS]
-    tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
+_KEYWORD_CATEGORIES: dict[str, list[str]] = {
+    "research": ["sök", "söka", "tradera", "blocket", "jämför", "jämföra"],
+    "listing": [
+        "annons",
+        "utkast",
+        "draft",
+        "publicera",
+        "kategori",
+        "frakt",
+        "godkänn",
+        "avvisa",
+    ],
+    "order": [
+        "order",
+        "ordrar",
+        "beställning",
+        "skicka",
+        "leverans",
+        "fraktetikett",
+        "shipped",
+        "omdöme",
+        "feedback",
+    ],
+    "accounting": ["bokföring", "verifikation", "voucher", "moms", "export"],
+    "scout": ["scout", "bevakning", "sparad sökning"],
+    "marketing": ["marknadsföring", "marketing", "prestanda", "rekommendation"],
+    "analytics": [
+        "rapport",
+        "analys",
+        "lönsamhet",
+        "omsättning",
+        "lager",
+        "intäkt",
+        "kostnad",
+        "periodjämförelse",
+    ],
+}
+
+# Reverse lookup: tool name → category
+_TOOL_NAME_TO_CATEGORY: dict[str, str] = {}
+for _cat, _names in TOOL_CATEGORIES.items():
+    for _name in _names:
+        _TOOL_NAME_TO_CATEGORY[_name] = _cat
+
+
+def _detect_categories(messages: list[dict], active_categories: set[str]) -> set[str]:
+    """Detect relevant tool categories from recent messages.
+
+    Always includes ``core``. Preserves ``active_categories`` for stickiness
+    within a single ``handle_message`` call.
+    """
+    cats: set[str] = {"core"} | active_categories
+
+    # Scan last 5 messages (~2-3 conversation turns). Balances context
+    # retention (tools stay available across follow-up questions) with noise
+    # reduction (old topics don't bloat the tool set indefinitely).
+    recent = messages[-5:] if len(messages) > 5 else messages
+    for msg in recent:
+        content = msg.get("content")
+        if content is None:
+            continue
+
+        # Collect text fragments and tool names from the message
+        texts: list[str] = []
+        if isinstance(content, str):
+            texts.append(content)
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict):
+                    if block.get("type") == "text":
+                        texts.append(block.get("text", ""))
+                    elif block.get("type") == "tool_use":
+                        tool_name = block.get("name", "")
+                        if tool_name in _TOOL_NAME_TO_CATEGORY:
+                            cats.add(_TOOL_NAME_TO_CATEGORY[tool_name])
+                elif hasattr(block, "type"):
+                    # SDK content block objects
+                    if block.type == "tool_use":
+                        if hasattr(block, "name") and block.name in _TOOL_NAME_TO_CATEGORY:
+                            cats.add(_TOOL_NAME_TO_CATEGORY[block.name])
+                    elif block.type == "text" and hasattr(block, "text"):
+                        texts.append(block.text)
+
+        # Match keywords (case-insensitive)
+        combined = " ".join(texts).lower()
+        for category, keywords in _KEYWORD_CATEGORIES.items():
+            for kw in keywords:
+                if kw in combined:
+                    cats.add(category)
+                    break
+
+    return cats
+
+
+def _get_filtered_tools(categories: set[str]) -> list[dict]:
+    """Return tool definitions for the given categories.
+
+    Strips the internal ``category`` key and sets ``cache_control`` on the
+    last tool for prompt caching.
+    """
+    tools = []
+    for t in TOOLS:
+        if t.get("category", "core") in categories:
+            # Strip category from what we send to Claude
+            cleaned = {k: v for k, v in t.items() if k != "category"}
+            tools.append(cleaned)
+    if tools:
+        tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
     return tools
 
 
@@ -249,13 +354,13 @@ class Agent:
         )
         self.analytics = AnalyticsService(engine=self.engine) if self.engine else None
 
-    def _call_api(self, messages: list[dict]):
+    def _call_api(self, messages: list[dict], tools: list[dict] | None = None):
         """Send messages to Claude and return the response."""
         logger.debug(
             "API call: sending %d messages",
             len(messages),
         )
-        # Cache the system prompt and tool definitions (5-min TTL, ~90% cost reduction)
+        # Cache the system prompt (5-min TTL, ~90% cost reduction)
         system = [
             {
                 "type": "text",
@@ -263,14 +368,15 @@ class Agent:
                 "cache_control": {"type": "ephemeral"},
             }
         ]
-        cached_tools = _get_cached_tools()
+        if tools is None:
+            tools = _get_filtered_tools({"core"})
         try:
             response = self.client.messages.create(
                 model=self.settings.claude_model,
                 max_tokens=4096,
                 system=system,
                 messages=messages,
-                tools=cached_tools,
+                tools=tools,
             )
         except anthropic.APIError as e:
             status = getattr(e, "status_code", None)
@@ -338,7 +444,18 @@ class Agent:
         total_cache_read = 0
         tool_call_count = 0
 
-        response = self._call_api(messages)
+        # Dynamic tool filtering: detect relevant categories from messages
+        active_categories = _detect_categories(messages, set())
+        filtered_tools = _get_filtered_tools(active_categories)
+        logger.info(
+            "Tool filtering: %d tools from categories %s",
+            len(filtered_tools),
+            sorted(active_categories),
+        )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Filtered tools: %s", [t["name"] for t in filtered_tools])
+
+        response = self._call_api(messages, tools=filtered_tools)
         usage = getattr(response, "usage", None)
         total_input += getattr(usage, "input_tokens", 0) or 0
         total_output += getattr(usage, "output_tokens", 0) or 0
@@ -351,24 +468,86 @@ class Agent:
             tool_call_count += len(tool_blocks)
             messages.append({"role": "assistant", "content": response.content})
 
-            tool_results = []
-            for tool_block in tool_blocks:
-                result = self.execute_tool(tool_block.name, tool_block.input)
-                display_images = result.pop("_display_images", None)
-                if display_images:
-                    all_display_images.extend(display_images)
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_block.id,
-                        "content": json.dumps(result, ensure_ascii=False),
-                    }
+            # request_tools is handled separately because it modifies the tool set
+            # for the NEXT API call in this turn. Regular tools execute independently.
+            request_blocks = {b.id: b for b in tool_blocks if b.name == "request_tools"}
+            regular_blocks = [b for b in tool_blocks if b.name != "request_tools"]
+
+            # Results keyed by tool_use_id — emitted in original tool_blocks order below
+            result_by_id: dict[str, dict] = {}
+
+            # Process request_tools (expands tool set for next API call)
+            for rb in request_blocks.values():
+                cleaned = _strip_nulls(rb.input) or {}
+                requested = cleaned.get("categories", [])
+                # Validate: must be a list, filter to known categories
+                if not isinstance(requested, list):
+                    requested = []
+                known = set(TOOL_CATEGORIES.keys())
+                requested = [c for c in requested if isinstance(c, str) and c in known]
+                new_cats = set(requested) - active_categories
+                active_categories |= set(requested)
+                filtered_tools = _get_filtered_tools(active_categories)
+                new_tool_names = []
+                for cat in new_cats:
+                    new_tool_names.extend(TOOL_CATEGORIES.get(cat, []))
+                result = {
+                    "status": "ok",
+                    "activated_categories": sorted(active_categories),
+                    "new_tools": new_tool_names,
+                }
+                result = validate_tool_result("request_tools", result)
+                logger.info(
+                    "request_tools: activated %s, now %d tools",
+                    sorted(new_cats) if new_cats else "none new",
+                    len(filtered_tools),
                 )
+                result_by_id[rb.id] = result
+
+            # Process regular tool blocks (parallel if 2+)
+            if len(regular_blocks) >= 2:
+                with ThreadPoolExecutor(max_workers=min(len(regular_blocks), 4)) as pool:
+                    futures = {
+                        pool.submit(self.execute_tool, b.name, b.input): i
+                        for i, b in enumerate(regular_blocks)
+                    }
+                    results_by_index = {}
+                    for future in futures:
+                        idx = futures[future]
+                        try:
+                            results_by_index[idx] = future.result()
+                        except Exception as exc:
+                            logger.exception("Tool failed in parallel execution")
+                            results_by_index[idx] = {"error": str(exc)}
+                # Display images collected serially after all futures complete (no race)
+                for i, tool_block in enumerate(regular_blocks):
+                    result = results_by_index[i]
+                    display_images = result.pop("_display_images", None)
+                    if display_images:
+                        all_display_images.extend(display_images)
+                    result_by_id[tool_block.id] = result
+            else:
+                for tool_block in regular_blocks:
+                    result = self.execute_tool(tool_block.name, tool_block.input)
+                    display_images = result.pop("_display_images", None)
+                    if display_images:
+                        all_display_images.extend(display_images)
+                    result_by_id[tool_block.id] = result
+
+            # Emit results in original tool_blocks order
+            tool_results = [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": b.id,
+                    "content": json.dumps(result_by_id[b.id], ensure_ascii=False),
+                }
+                for b in tool_blocks
+            ]
 
             logger.info("Agent turn completed: %d tool calls", len(tool_blocks))
             messages.append({"role": "user", "content": tool_results})
 
-            response = self._call_api(messages)
+            response = self._call_api(messages, tools=filtered_tools)
             usage = getattr(response, "usage", None)
             total_input += getattr(usage, "input_tokens", 0) or 0
             total_output += getattr(usage, "output_tokens", 0) or 0
@@ -497,8 +676,18 @@ class Agent:
     }
 
     def execute_tool(self, name: str, tool_input: dict) -> dict:
+        """Execute a tool by name. Thread-safe: each service method creates its
+        own ``Session(self.engine)`` context, so parallel calls from
+        ``ThreadPoolExecutor`` use independent DB connections. Services that
+        only make HTTP calls (tradera, blocket, postnord) are also safe since
+        each request uses its own connection.
+        """
         if not isinstance(tool_input, dict):
             return {"error": f"Invalid tool input type for '{name}': expected dict"}
+
+        # request_tools is handled inline in handle_message, not via _DISPATCH
+        if name == "request_tools":
+            return {"error": "request_tools is handled inline in handle_message"}
 
         # Strict mode sends null for optional params — strip them so Python
         # methods use their default values instead.
