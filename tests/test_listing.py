@@ -1012,7 +1012,6 @@ class TestPublishListing:
         assert call_kwargs["shipping_cost"] == 49
         assert call_kwargs["shipping_options"] is None
 
-
     @patch("storebot.tools.listing.optimize_for_upload")
     @patch("storebot.tools.listing.encode_image_base64")
     def test_passes_reserve_price_from_details(
