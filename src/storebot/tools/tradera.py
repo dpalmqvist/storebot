@@ -194,6 +194,7 @@ class TraderaClient:
         listing_type: str = "auction",
         start_price: float | None = None,
         buy_it_now_price: float | None = None,
+        reserve_price: float | None = None,
         shipping_cost: float | None = None,
         shipping_options: list[dict] | None = None,
         shipping_condition: str | None = None,
@@ -214,6 +215,8 @@ class TraderaClient:
             }
             if start_price is not None:
                 params["StartPrice"] = int(start_price)
+            if reserve_price is not None:
+                params["ReservePrice"] = int(reserve_price)
             if buy_it_now_price is not None:
                 params["BuyItNowPrice"] = int(buy_it_now_price)
             if shipping_options:
