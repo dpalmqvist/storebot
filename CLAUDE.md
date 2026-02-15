@@ -138,6 +138,7 @@ When reviewing PRs, provide detailed and thorough reviews:
 
 - **Run bot:** `storebot` (or `python -m storebot.bot.handlers`)
 - **Authorize Tradera:** `storebot-authorize-tradera` (interactive token consent flow)
+- **Audit log viewer:** `storebot-logs` (Textual TUI for reviewing agent_actions)
 - **Run tests:** `pytest`
 - **Run single test:** `pytest tests/test_db.py::test_name`
 - **Lint:** `ruff check src/ tests/`
