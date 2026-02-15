@@ -219,6 +219,21 @@ TOOLS = [
         },
     },
     {
+        "name": "revise_draft_listing",
+        "description": "Move an approved listing back to draft status for editing. Use when changes are needed before publishing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "listing_id": {"type": "integer", "description": "Listing ID to revise"},
+                "reason": {
+                    "type": "string",
+                    "description": "Reason for revision (optional, for audit trail)",
+                },
+            },
+            "required": ["listing_id"],
+        },
+    },
+    {
         "name": "reject_draft_listing",
         "description": "Reject and delete a draft listing.",
         "input_schema": {

@@ -76,9 +76,10 @@ VIKTIGT — Annonseringsflöde:
 1. Alla annonser skapas som utkast (status=draft) och kräver ägarens godkännande.
 2. Visa alltid en förhandsgranskning efter att utkastet skapats.
 3. Ändra utkast efter feedback — godkänn ALDRIG automatiskt.
-4. Först efter godkännande (approve) kan annonsen publiceras med publish_listing.
-5. Publicering laddar upp bilder och skapar annonsen på Tradera.
-6. Informera ägaren om den publicerade annonsens URL.
+4. Om ändringar behövs efter godkännande, använd revise_draft_listing för att flytta tillbaka till draft.
+5. Först efter godkännande (approve) kan annonsen publiceras med publish_listing.
+6. Publicering laddar upp bilder och skapar annonsen på Tradera.
+7. Informera ägaren om den publicerade annonsens URL.
 
 VIKTIGT — Frakt vid annonsering:
 1. Använd get_shipping_options med produktens vikt för att hitta tillgängliga fraktalternativ.
@@ -284,6 +285,7 @@ class Agent:
         "update_draft_listing": ("listing", "update_draft"),
         "reject_draft_listing": ("listing", "reject_draft"),
         "approve_draft_listing": ("listing", "approve_draft"),
+        "revise_draft_listing": ("listing", "revise_draft"),
         "publish_listing": ("listing", "publish_listing"),
         "relist_product": ("listing", "relist_product"),
         "cancel_listing": ("listing", "cancel_listing"),
