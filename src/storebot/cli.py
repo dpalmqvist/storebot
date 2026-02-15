@@ -33,7 +33,7 @@ def _update_env_file(env_path: Path, key: str, value: str) -> None:
 
 
 def _parse_redirect_url(url: str) -> dict:
-    """Parse userId from Tradera's redirect URL after consent.
+    """Parse userId, token and expiration from Tradera's redirect URL.
 
     Expected format:
       http://localhost:8080/auth/accept?userId=123&token=abc-def&exp=2027-...
@@ -41,17 +41,21 @@ def _parse_redirect_url(url: str) -> dict:
     parsed = urlparse(url.strip())
     params = parse_qs(parsed.query)
 
-    user_id = params.get("userId", [None])[0]
-
-    return {"user_id": user_id}
+    result = {"user_id": params.get("userId", [None])[0]}
+    token = params.get("token", [None])[0]
+    if token:
+        result["token"] = token
+    expires = params.get("exp", [None])[0]
+    if expires:
+        result["expires"] = expires
+    return result
 
 
 def authorize_tradera() -> None:
     """Interactive CLI to obtain a Tradera user token via the consent flow.
 
-    Uses Option 2 from Tradera's authorization docs: after the user grants
-    consent and is redirected, we call FetchToken with the secret key to
-    retrieve the real authorization token.
+    Tries FetchToken (Option 2) first, falls back to the token from the
+    redirect URL (Option 3) if FetchToken fails.
     """
     settings = Settings()
 
@@ -89,10 +93,11 @@ def authorize_tradera() -> None:
         print("Error: No URL provided.")
         sys.exit(1)
 
-    # Parse userId from redirect URL
+    # Parse userId and token from redirect URL
     redirect_result = _parse_redirect_url(redirect_url)
+    user_id = redirect_result.get("user_id")
 
-    # Call FetchToken with the secret key to get the real auth token
+    # Try FetchToken (Option 2) first, fall back to redirect URL token (Option 3)
     print()
     print("Fetching authorization token from Tradera...")
     tradera = TraderaClient(
@@ -100,17 +105,21 @@ def authorize_tradera() -> None:
         app_key=settings.tradera_app_key,
         sandbox=settings.tradera_sandbox,
     )
-    result = tradera.fetch_token(skey)
+    fetch_result = tradera.fetch_token(skey)
 
-    if "error" in result:
-        print(f"\nError: {result['error']}")
-        if "response_repr" in result:
-            print(f"  Response: {result['response_repr']}")
+    if "error" not in fetch_result:
+        token = fetch_result["token"]
+        expires = fetch_result.get("expires")
+        print("  Token obtained via FetchToken.")
+    elif "token" in redirect_result:
+        token = redirect_result["token"]
+        expires = redirect_result.get("expires")
+        print("  FetchToken unavailable, using token from redirect URL.")
+    else:
+        print(f"\nError: {fetch_result['error']}")
+        if "response_repr" in fetch_result:
+            print(f"  Response: {fetch_result['response_repr']}")
         sys.exit(1)
-
-    token = result["token"]
-    expires = result.get("expires")
-    user_id = redirect_result.get("user_id")
 
     token_masked = token[:8] + "..." if len(token) > 8 else "***"
     print()

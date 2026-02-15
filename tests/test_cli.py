@@ -77,24 +77,29 @@ class TestParseRedirectUrl:
         result = _parse_redirect_url(url)
 
         assert result["user_id"] == "1943555"
+        assert result["token"] == "fe67c960-9a2a-4c4d-80de-afc42dfcf674"
+        assert "2027-08-13" in result["expires"]
 
     def test_no_user_id(self):
         url = "http://localhost:8080/auth/accept?token=abc-def"
         result = _parse_redirect_url(url)
 
         assert result["user_id"] is None
+        assert result["token"] == "abc-def"
 
     def test_user_id_only(self):
         url = "http://localhost:8080/auth/accept?userId=123"
         result = _parse_redirect_url(url)
 
         assert result["user_id"] == "123"
+        assert "token" not in result
 
     def test_handles_whitespace(self):
-        url = "  http://localhost:8080/auth/accept?userId=42  "
+        url = "  http://localhost:8080/auth/accept?userId=42&token=abc  "
         result = _parse_redirect_url(url)
 
         assert result["user_id"] == "42"
+        assert result["token"] == "abc"
 
 
 class TestAuthorizeTraderaCLI:
@@ -179,9 +184,37 @@ class TestAuthorizeTraderaCLI:
     @patch("storebot.cli.TraderaClient")
     @patch("storebot.cli.Settings")
     @patch("builtins.input")
-    def test_fetch_token_error_exits(
+    def test_fallback_to_redirect_token(
+        self, mock_input, mock_settings_cls, mock_tradera_cls, tmp_path, monkeypatch
+    ):
+        """When FetchToken fails but redirect URL has a token, use that."""
+        mock_settings_cls.return_value = _mock_settings()
+        mock_tradera = MagicMock()
+        mock_tradera.fetch_token.return_value = {
+            "error": "FetchToken response missing AuthToken",
+        }
+        mock_tradera_cls.return_value = mock_tradera
+
+        redirect = "http://localhost:8080/auth/accept?userId=999&token=url-token"
+        mock_input.side_effect = [redirect, "y"]
+
+        env_file = tmp_path / ".env"
+        env_file.write_text("TRADERA_USER_TOKEN=\n")
+        monkeypatch.chdir(tmp_path)
+
+        authorize_tradera()
+
+        content = env_file.read_text()
+        assert "TRADERA_USER_TOKEN=url-token" in content
+        assert "TRADERA_USER_ID=999" in content
+
+    @patch("storebot.cli.TraderaClient")
+    @patch("storebot.cli.Settings")
+    @patch("builtins.input")
+    def test_fetch_token_error_no_fallback_exits(
         self, mock_input, mock_settings_cls, mock_tradera_cls
     ):
+        """When FetchToken fails and redirect URL has no token, exit."""
         mock_settings_cls.return_value = _mock_settings()
         mock_tradera = MagicMock()
         mock_tradera.fetch_token.return_value = {"error": "Token not found"}
