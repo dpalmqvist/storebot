@@ -8,10 +8,13 @@ comparisons, and sourcing analysis.
 import logging
 import re
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from storebot.db import Order, PlatformListing, Product
+import sqlalchemy as sa
+
+from storebot.db import ApiUsage, Order, PlatformListing, Product
 from storebot.tools.helpers import log_action, naive_now
 
 logger = logging.getLogger(__name__)
@@ -557,3 +560,126 @@ class AnalyticsService:
         if len(text) > 3900:
             text = text[:3900] + "\n\n...avkortat"
         return text
+
+    def usage_report(self, period: str | None = None) -> dict:
+        """API token usage and cost for a period, with daily breakdown.
+
+        Aggregates in SQL to avoid loading all rows into memory.
+        """
+        start, end = _parse_period(period)
+
+        with Session(self.engine) as session:
+            # Totals via SQL aggregation
+            totals = (
+                session.query(
+                    sa.func.count().label("turns"),
+                    sa.func.coalesce(sa.func.sum(ApiUsage.input_tokens), 0).label("input_tokens"),
+                    sa.func.coalesce(sa.func.sum(ApiUsage.output_tokens), 0).label(
+                        "output_tokens"
+                    ),
+                    sa.func.coalesce(sa.func.sum(ApiUsage.cache_creation_input_tokens), 0).label(
+                        "cache_creation"
+                    ),
+                    sa.func.coalesce(sa.func.sum(ApiUsage.cache_read_input_tokens), 0).label(
+                        "cache_read"
+                    ),
+                    sa.func.coalesce(sa.func.sum(ApiUsage.tool_calls), 0).label("tool_calls"),
+                    sa.func.coalesce(sa.func.sum(ApiUsage.estimated_cost_sek), 0).label(
+                        "cost_sek"
+                    ),
+                )
+                .filter(ApiUsage.created_at >= start, ApiUsage.created_at < end)
+                .one()
+            )
+
+            total_turns = int(totals.turns)
+            total_input = int(totals.input_tokens)
+            total_output = int(totals.output_tokens)
+            total_cache_creation = int(totals.cache_creation)
+            total_cache_read = int(totals.cache_read)
+            total_tool_calls = int(totals.tool_calls)
+            total_cost = Decimal(str(totals.cost_sek)) if totals.cost_sek else Decimal("0")
+
+            # Daily breakdown via SQL GROUP BY
+            day_col = sa.func.strftime("%Y-%m-%d", ApiUsage.created_at).label("day")
+            daily_rows = (
+                session.query(
+                    day_col,
+                    sa.func.count().label("turns"),
+                    sa.func.sum(ApiUsage.input_tokens).label("input_tokens"),
+                    sa.func.sum(ApiUsage.output_tokens).label("output_tokens"),
+                    sa.func.sum(ApiUsage.estimated_cost_sek).label("cost_sek"),
+                )
+                .filter(ApiUsage.created_at >= start, ApiUsage.created_at < end)
+                .group_by("day")
+                .all()
+            )
+
+            daily: dict[str, dict] = {}
+            for row in daily_rows:
+                day_cost = Decimal(str(row.cost_sek)) if row.cost_sek else Decimal("0")
+                daily[row.day] = {
+                    "turns": int(row.turns),
+                    "input_tokens": int(row.input_tokens),
+                    "output_tokens": int(row.output_tokens),
+                    "cost_sek": float(day_cost.quantize(Decimal("0.01"))),
+                }
+
+            avg_input = round(total_input / total_turns) if total_turns else 0
+            avg_output = round(total_output / total_turns) if total_turns else 0
+            avg_cost = (
+                float((total_cost / total_turns).quantize(Decimal("0.0001")))
+                if total_turns
+                else 0.0
+            )
+
+            log_action(
+                session,
+                "analytics",
+                "usage_report",
+                {"period": period, "turns": total_turns},
+            )
+            session.commit()
+
+            return {
+                "period": period or "current_month",
+                "total_input_tokens": total_input,
+                "total_output_tokens": total_output,
+                "total_cache_creation_tokens": total_cache_creation,
+                "total_cache_read_tokens": total_cache_read,
+                "total_cost_sek": float(total_cost.quantize(Decimal("0.01"))),
+                "total_turns": total_turns,
+                "total_tool_calls": total_tool_calls,
+                "avg_input_per_turn": avg_input,
+                "avg_output_per_turn": avg_output,
+                "avg_cost_per_turn_sek": avg_cost,
+                "daily": daily,
+            }
+
+    @staticmethod
+    def _format_usage(data: dict) -> str:
+        lines = [
+            "API-användning\n",
+            f"Period: {data.get('period', '-')}",
+            f"Antal anrop: {data['total_turns']}",
+            f"Verktygsanrop: {data['total_tool_calls']}",
+            f"Input-tokens: {data['total_input_tokens']:,}",
+            f"Output-tokens: {data['total_output_tokens']:,}",
+            f"Cache-skapande: {data['total_cache_creation_tokens']:,}",
+            f"Cache-läsning: {data['total_cache_read_tokens']:,}",
+            f"Total kostnad: {data['total_cost_sek']:.2f} kr",
+            f"Snitt per anrop: {data['avg_cost_per_turn_sek']:.4f} kr",
+        ]
+
+        daily = data.get("daily", {})
+        if daily:
+            lines.append("\nPer dag:")
+            for day_key in sorted(daily):
+                d = daily[day_key]
+                lines.append(
+                    f"  {day_key}: {d['turns']} anrop, "
+                    f"{d['input_tokens']:,}+{d['output_tokens']:,} tokens, "
+                    f"{d['cost_sek']:.2f} kr"
+                )
+
+        return "\n".join(lines)

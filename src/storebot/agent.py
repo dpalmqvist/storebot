@@ -1,6 +1,7 @@
 import json
 import logging
 from dataclasses import dataclass, field
+from decimal import Decimal, ROUND_HALF_UP
 
 import anthropic
 
@@ -9,6 +10,7 @@ from storebot.tools.accounting import AccountingService
 from storebot.tools.analytics import AnalyticsService
 from storebot.tools.blocket import BlocketClient
 from storebot.tools.definitions import TOOLS
+from storebot.tools.schemas import validate_tool_result
 from storebot.tools.image import encode_image_base64
 from storebot.tools.listing import ListingService
 from storebot.tools.marketing import MarketingService
@@ -18,7 +20,54 @@ from storebot.tools.pricing import PricingService
 from storebot.tools.scout import ScoutService
 from storebot.tools.tradera import TraderaClient
 
+from sqlalchemy.orm import Session
+
+from storebot.db import ApiUsage
+
 logger = logging.getLogger(__name__)
+
+# Pricing per 1M tokens (USD) — Decimal for precision
+_MODEL_PRICING = {
+    "claude-sonnet-4-5-20250929": {
+        "input": Decimal("3.0"),
+        "output": Decimal("15.0"),
+        "cache_write": Decimal("3.75"),
+        "cache_read": Decimal("0.30"),
+    },
+    "claude-sonnet-4-20250514": {
+        "input": Decimal("3.0"),
+        "output": Decimal("15.0"),
+        "cache_write": Decimal("3.75"),
+        "cache_read": Decimal("0.30"),
+    },
+    "claude-haiku-3-5-20241022": {
+        "input": Decimal("0.80"),
+        "output": Decimal("4.0"),
+        "cache_write": Decimal("1.0"),
+        "cache_read": Decimal("0.08"),
+    },
+}
+_USD_TO_SEK = Decimal("10.5")
+_ONE_MILLION = Decimal("1000000")
+_COST_QUANTIZE = Decimal("0.0001")
+
+
+def _estimate_cost_sek(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cache_creation: int,
+    cache_read: int,
+) -> Decimal:
+    """Estimate cost in SEK based on model pricing. Falls back to Sonnet pricing."""
+    pricing = _MODEL_PRICING.get(model, _MODEL_PRICING["claude-sonnet-4-5-20250929"])
+    cost_usd = (
+        Decimal(input_tokens) * pricing["input"]
+        + Decimal(output_tokens) * pricing["output"]
+        + Decimal(cache_creation) * pricing["cache_write"]
+        + Decimal(cache_read) * pricing["cache_read"]
+    ) / _ONE_MILLION
+    return (cost_usd * _USD_TO_SEK).quantize(_COST_QUANTIZE, rounding=ROUND_HALF_UP)
 
 
 @dataclass
@@ -55,6 +104,7 @@ Du kan:
 - Visa produktbilder direkt i chatten med get_product_images (använd för att granska bilder innan godkännande)
 - Marknadsföring: uppdatera annonsstatistik, analysera prestanda, skapa rapporter, ge förbättringsförslag
 - Analys: affärssammanfattning, lönsamhet per produkt/kategori/källa, lagerrapport, periodjämförelse, inköpskanalanalys
+- API-användning: visa tokenförbrukning och kostnad per dag/månad (usage_report)
 
 VIKTIGT — Orderhantering:
 1. Markera ALDRIG en order som skickad utan ägarens uttryckliga bekräftelse.
@@ -249,6 +299,7 @@ class Agent:
         user_message: str,
         image_paths: list[str] | None = None,
         conversation_history: list[dict] | None = None,
+        chat_id: str | None = None,
     ) -> AgentResponse:
         if conversation_history is None:
             conversation_history = []
@@ -280,11 +331,24 @@ class Agent:
         else:
             messages = conversation_history + [{"role": "user", "content": user_message}]
 
+        # Token accumulation across all API calls in this turn
+        total_input = 0
+        total_output = 0
+        total_cache_creation = 0
+        total_cache_read = 0
+        tool_call_count = 0
+
         response = self._call_api(messages)
+        usage = getattr(response, "usage", None)
+        total_input += getattr(usage, "input_tokens", 0) or 0
+        total_output += getattr(usage, "output_tokens", 0) or 0
+        total_cache_creation += getattr(usage, "cache_creation_input_tokens", 0) or 0
+        total_cache_read += getattr(usage, "cache_read_input_tokens", 0) or 0
         all_display_images = []
 
         while response.stop_reason == "tool_use":
             tool_blocks = [b for b in response.content if b.type == "tool_use"]
+            tool_call_count += len(tool_blocks)
             messages.append({"role": "assistant", "content": response.content})
 
             tool_results = []
@@ -305,12 +369,63 @@ class Agent:
             messages.append({"role": "user", "content": tool_results})
 
             response = self._call_api(messages)
+            usage = getattr(response, "usage", None)
+            total_input += getattr(usage, "input_tokens", 0) or 0
+            total_output += getattr(usage, "output_tokens", 0) or 0
+            total_cache_creation += getattr(usage, "cache_creation_input_tokens", 0) or 0
+            total_cache_read += getattr(usage, "cache_read_input_tokens", 0) or 0
 
         messages.append({"role": "assistant", "content": response.content})
+
+        self._store_usage(
+            chat_id=chat_id,
+            model=getattr(response, "model", self.settings.claude_model),
+            input_tokens=total_input,
+            output_tokens=total_output,
+            cache_creation=total_cache_creation,
+            cache_read=total_cache_read,
+            tool_calls=tool_call_count,
+        )
 
         text_blocks = [b for b in response.content if b.type == "text"]
         text = text_blocks[0].text if text_blocks else ""
         return AgentResponse(text=text, messages=messages, display_images=all_display_images)
+
+    def _store_usage(
+        self,
+        chat_id: str | None,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        cache_creation: int,
+        cache_read: int,
+        tool_calls: int,
+    ) -> None:
+        """Persist one ApiUsage row per handle_message call. Never raises."""
+        if not self.engine:
+            return
+        cost = _estimate_cost_sek(model, input_tokens, output_tokens, cache_creation, cache_read)
+        try:
+            with Session(self.engine) as session:
+                session.add(
+                    ApiUsage(
+                        chat_id=chat_id,
+                        model=model,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cache_creation_input_tokens=cache_creation,
+                        cache_read_input_tokens=cache_read,
+                        tool_calls=tool_calls,
+                        estimated_cost_sek=cost,
+                    )
+                )
+                try:
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                    raise
+        except Exception:
+            logger.warning("Failed to store API usage", exc_info=True)
 
     # Maps tool name → (service_attr, method_name).
     # service_attr is None for tools that don't require a DB-backed service.
@@ -368,6 +483,7 @@ class Agent:
         "inventory_report": ("analytics", "inventory_report"),
         "period_comparison": ("analytics", "period_comparison"),
         "sourcing_analysis": ("analytics", "sourcing_analysis"),
+        "usage_report": ("analytics", "usage_report"),
     }
 
     # Services that require a database engine (service_attr → display name)
@@ -409,7 +525,8 @@ class Agent:
             return {"error": f"Service '{service_attr}' not available"}
 
         try:
-            return getattr(service, method_name)(**cleaned)
+            result = getattr(service, method_name)(**cleaned)
+            return validate_tool_result(name, result)
         except TypeError as e:
             logger.warning(
                 "Tool input validation failed: %s — %s", name, e, extra={"tool_name": name}

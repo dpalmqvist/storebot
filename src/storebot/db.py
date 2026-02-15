@@ -1,9 +1,21 @@
 import os
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import sqlalchemy as sa
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, event
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    event,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from storebot.config import get_settings
@@ -215,6 +227,23 @@ class VoucherRow(Base):
     credit: Mapped[float] = mapped_column(Float, default=0.0)
 
     voucher: Mapped["Voucher"] = relationship(back_populates="rows")
+
+
+class ApiUsage(Base):
+    __tablename__ = "api_usage"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[str | None] = mapped_column(String, index=True)
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_creation_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_read_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    tool_calls: Mapped[int] = mapped_column(Integer, default=0)
+    estimated_cost_sek: Mapped[Decimal] = mapped_column(Numeric(10, 4), default=Decimal("0"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), index=True
+    )
 
 
 def _configure_sqlite(dbapi_connection, connection_record):
