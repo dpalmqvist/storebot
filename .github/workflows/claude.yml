@@ -43,6 +43,6 @@ jobs:
           # Optional: Give a custom prompt to Claude. If this is not specified, Claude will perform the instructions specified in the comment that tagged it.
           # prompt: 'Update the pull request description to include a summary of changes.'
 
-          # Use Opus 4.6 for code reviews
-          claude_args: '--model claude-opus-4-6'
+          # Example: Use Opus 4.6 for code reviews
+          #claude_args: '--model claude-opus-4-6'
 
