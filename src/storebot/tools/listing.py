@@ -1,6 +1,7 @@
 import logging
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -15,6 +16,20 @@ VALID_LISTING_TYPES = {"auction", "buy_it_now"}
 VALID_DURATION_DAYS = {3, 5, 7, 10, 14}
 
 
+def _validate_image_path(image_path: str, base_dir: str | None) -> str | None:
+    """Validate that image_path is within base_dir. Returns error message or None."""
+    if base_dir is None:
+        return None
+    try:
+        resolved = Path(image_path).resolve()
+        base = Path(base_dir).resolve()
+        if not resolved.is_relative_to(base):
+            return f"Path '{image_path}' is outside allowed image directory"
+    except (ValueError, OSError):
+        return f"Invalid path: '{image_path}'"
+    return None
+
+
 class ListingService:
     """Compound tool for managing draft listings with human-in-the-loop approval.
 
@@ -22,9 +37,10 @@ class ListingService:
     they can be published to a marketplace.
     """
 
-    def __init__(self, engine, tradera=None):
+    def __init__(self, engine, tradera=None, image_dir: str | None = None):
         self.engine = engine
         self.tradera = tradera
+        self.image_dir = image_dir
 
     def create_draft(
         self,
@@ -578,7 +594,9 @@ class ListingService:
         is_primary: bool = False,
     ) -> dict:
         """Save an image record for a product."""
-        from pathlib import Path
+        path_error = _validate_image_path(image_path, self.image_dir)
+        if path_error:
+            return {"error": path_error}
 
         if not Path(image_path).exists():
             return {"error": f"File not found: {image_path}"}
@@ -626,8 +644,6 @@ class ListingService:
         listing_id: int | None = None,
     ) -> dict:
         """Get product images for review. Accepts product_id or listing_id (resolves to product)."""
-        from pathlib import Path
-
         if product_id is None and listing_id is None:
             return {"error": "Either product_id or listing_id is required"}
 
@@ -879,8 +895,6 @@ class ListingService:
 
     def delete_product_image(self, image_id: int) -> dict:
         """Delete a product image record and its file."""
-        from pathlib import Path
-
         with Session(self.engine) as session:
             image = session.get(ProductImage, image_id)
             if image is None:
@@ -913,10 +927,14 @@ class ListingService:
             session.commit()
 
         if file_path:
-            try:
-                Path(file_path).unlink(missing_ok=True)
-            except OSError as exc:
-                logger.warning("Failed to delete image file %s: %s", file_path, exc)
+            path_error = _validate_image_path(file_path, self.image_dir)
+            if path_error:
+                logger.warning("Refusing to delete file outside image dir: %s", file_path)
+            else:
+                try:
+                    Path(file_path).unlink(missing_ok=True)
+                except OSError as exc:
+                    logger.warning("Failed to delete image file %s: %s", file_path, exc)
 
         return {
             "image_id": image_id,

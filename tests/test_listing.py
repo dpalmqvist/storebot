@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from storebot.db import AgentAction, PlatformListing, Product, ProductImage
-from storebot.tools.listing import ListingService, _validate_draft
+from storebot.tools.listing import ListingService, _validate_draft, _validate_image_path
 
 
 @pytest.fixture
@@ -1888,3 +1888,68 @@ class TestCancelListing:
             assert action.agent_name == "listing"
             assert action.product_id == product
             assert "Local cancel only" in action.details["note"]
+
+
+class TestImagePathValidation:
+    def test_allows_path_within_base_dir(self, tmp_path):
+        img = tmp_path / "photo.jpg"
+        img.write_bytes(b"data")
+        assert _validate_image_path(str(img), str(tmp_path)) is None
+
+    def test_rejects_path_outside_base_dir(self, tmp_path):
+        error = _validate_image_path("/etc/passwd", str(tmp_path))
+        assert error is not None
+        assert "outside" in error
+
+    def test_rejects_traversal_attack(self, tmp_path):
+        attack_path = str(tmp_path / ".." / ".." / "etc" / "passwd")
+        error = _validate_image_path(attack_path, str(tmp_path))
+        assert error is not None
+        assert "outside" in error
+
+    def test_allows_none_base_dir(self):
+        assert _validate_image_path("/any/path.jpg", None) is None
+
+    def test_save_rejects_traversal(self, engine, product, tmp_path):
+        image_dir = tmp_path / "images"
+        image_dir.mkdir()
+        service = ListingService(engine=engine, image_dir=str(image_dir))
+
+        outside = tmp_path / "outside.jpg"
+        outside.write_bytes(b"data")
+
+        result = service.save_product_image(product, str(outside))
+        assert "error" in result
+        assert "outside" in result["error"]
+
+    def test_save_allows_valid_path(self, engine, product, tmp_path):
+        image_dir = tmp_path / "images"
+        image_dir.mkdir()
+        service = ListingService(engine=engine, image_dir=str(image_dir))
+
+        img = image_dir / "photo.jpg"
+        img.write_bytes(b"data")
+
+        result = service.save_product_image(product, str(img))
+        assert "error" not in result
+
+    def test_delete_refuses_file_outside_dir(self, engine, product, tmp_path):
+        image_dir = tmp_path / "images"
+        image_dir.mkdir()
+        service = ListingService(engine=engine, image_dir=str(image_dir))
+
+        outside_file = tmp_path / "secret.txt"
+        outside_file.write_text("sensitive")
+
+        from sqlalchemy.orm import Session
+        from storebot.db import ProductImage as PI
+
+        with Session(engine) as session:
+            img = PI(product_id=product, file_path=str(outside_file))
+            session.add(img)
+            session.commit()
+            image_id = img.id
+
+        service.delete_product_image(image_id)
+        # File outside image dir should NOT be deleted
+        assert outside_file.exists()

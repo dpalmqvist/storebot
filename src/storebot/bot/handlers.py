@@ -242,7 +242,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     photo = update.message.photo[-1]  # Highest resolution
     file = await photo.get_file()
 
-    photos_dir = Path("data/photos")
+    settings: Settings = context.bot_data["settings"]
+    photos_dir = Path(settings.product_image_dir)
     photos_dir.mkdir(parents=True, exist_ok=True)
 
     file_path = photos_dir / f"{file.file_unique_id}.jpg"
