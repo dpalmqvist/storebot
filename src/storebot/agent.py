@@ -27,6 +27,22 @@ from storebot.db import ApiUsage
 
 logger = logging.getLogger(__name__)
 
+# Tools that benefit from self-critique. A reflection instruction is appended
+# to their results, encouraging Claude to use its thinking budget to verify
+# accuracy before presenting to the user. Zero extra API calls.
+REFLECTION_TOOLS: set[str] = {
+    "create_draft_listing",
+    "price_check",
+    "create_sale_voucher",
+}
+
+# "Review: check accuracy, completeness, and reasonableness before
+# presenting the result to the owner."
+_REFLECTION_PROMPT = (
+    "\n\n[Granska: kontrollera noggrannhet, fullständighet och rimlighet "
+    "innan du presenterar resultatet för ägaren.]"
+)
+
 # Pricing per 1M tokens (USD) — Decimal for precision
 _MODEL_PRICING = {
     "claude-sonnet-4-5-20250929": {
@@ -142,6 +158,13 @@ Om du behöver verktyg som inte är tillgängliga, använd request_tools för at
 
 Svara alltid på svenska om inte användaren skriver på engelska. Var kortfattad och tydlig.
 Alla annonser och produktbeskrivningar ska vara på svenska."""
+
+
+_COMPACT_SYSTEM_PROMPT = (
+    "Du sammanfattar konversationshistorik för en AI-assistent som hanterar en svensk lanthandel. "
+    "Bevara ALLA: produkt-ID, order-nummer, annons-ID, väntande beslut, priser, datum och nyckelkontext. "
+    "Skriv på svenska. Var kortfattad men missa inget viktigt."
+)
 
 
 def _strip_nulls(value):
@@ -370,14 +393,19 @@ class Agent:
         ]
         if tools is None:
             tools = _get_filtered_tools({"core"})
+        kwargs: dict = {
+            "model": self.settings.claude_model,
+            "max_tokens": self.settings.claude_max_tokens,
+            "system": system,
+            "messages": messages,
+            "tools": tools,
+        }
+        thinking_budget = self.settings.claude_thinking_budget
+        if thinking_budget >= 1024:
+            kwargs["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
+
         try:
-            response = self.client.messages.create(
-                model=self.settings.claude_model,
-                max_tokens=4096,
-                system=system,
-                messages=messages,
-                tools=tools,
-            )
+            response = self.client.messages.create(**kwargs)
         except anthropic.APIError as e:
             status = getattr(e, "status_code", None)
             logger.error(
@@ -463,6 +491,14 @@ class Agent:
         total_cache_read += getattr(usage, "cache_read_input_tokens", 0) or 0
         all_display_images = []
 
+        for block in response.content:
+            if getattr(block, "type", None) == "thinking":
+                logger.debug(
+                    "Thinking (%d chars): %.200s...",
+                    len(getattr(block, "thinking", "")),
+                    getattr(block, "thinking", ""),
+                )
+
         while response.stop_reason == "tool_use":
             tool_blocks = [b for b in response.content if b.type == "tool_use"]
             tool_call_count += len(tool_blocks)
@@ -534,16 +570,26 @@ class Agent:
                         all_display_images.extend(display_images)
                     result_by_id[tool_block.id] = result
 
-            # Emit results in original tool_blocks order
-            tool_results = [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": b.id,
-                    "content": json.dumps(result_by_id[b.id], ensure_ascii=False),
-                }
-                for b in tool_blocks
-            ]
+            # Emit results in original tool_blocks order, with reflection prompt for high-stakes tools
+            tool_results = []
+            for b in tool_blocks:
+                result_json = json.dumps(result_by_id[b.id], ensure_ascii=False)
+                result = result_by_id[b.id]
+                if (
+                    b.name in REFLECTION_TOOLS
+                    and isinstance(result, dict)
+                    and not result.get("error")
+                ):
+                    result_json += _REFLECTION_PROMPT
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": b.id,
+                        "content": result_json,
+                    }
+                )
 
+            reflection_used = {b.name for b in tool_blocks if b.name in REFLECTION_TOOLS}
             logger.info("Agent turn completed: %d tool calls", len(tool_blocks))
             messages.append({"role": "user", "content": tool_results})
 
@@ -553,6 +599,20 @@ class Agent:
             total_output += getattr(usage, "output_tokens", 0) or 0
             total_cache_creation += getattr(usage, "cache_creation_input_tokens", 0) or 0
             total_cache_read += getattr(usage, "cache_read_input_tokens", 0) or 0
+
+            for block in response.content:
+                if getattr(block, "type", None) == "thinking":
+                    if reflection_used:
+                        logger.info(
+                            "Reflection thinking after %s (%d chars)",
+                            sorted(reflection_used),
+                            len(getattr(block, "thinking", "")),
+                        )
+                    logger.debug(
+                        "Thinking (%d chars): %.200s...",
+                        len(getattr(block, "thinking", "")),
+                        getattr(block, "thinking", ""),
+                    )
 
         messages.append({"role": "assistant", "content": response.content})
 
@@ -605,6 +665,83 @@ class Agent:
                     raise
         except Exception:
             logger.warning("Failed to store API usage", exc_info=True)
+
+    def compact_history(self, messages: list[dict]) -> list[dict]:
+        """Summarize old messages, keep recent ones verbatim.
+
+        Returns compacted list [summary_message, ...recent]. On failure, returns
+        the original messages unchanged (same object identity for caller detection).
+        """
+        keep = max(1, self.settings.compact_keep_recent)
+        if len(messages) <= self.settings.compact_threshold or keep >= len(messages):
+            return messages
+
+        old = messages[:-keep]
+        if not old:
+            return messages
+        recent = messages[-keep:]
+
+        # Build text representation for summarization
+        lines = []
+        for msg in old:
+            role = msg.get("role", "?")
+            content = msg.get("content")
+            if isinstance(content, str):
+                lines.append(f"{role}: {content}")
+            elif isinstance(content, list):
+                parts = []
+                for block in content:
+                    if isinstance(block, dict):
+                        if block.get("type") == "text":
+                            parts.append(block.get("text", ""))
+                        elif block.get("type") == "tool_use":
+                            parts.append(f"[verktyg: {block.get('name', '?')}]")
+                        elif block.get("type") == "tool_result":
+                            t = str(block.get("content", ""))
+                            parts.append(f"[resultat: {t[:200]}{'...' if len(t) > 200 else ''}]")
+                if parts:
+                    lines.append(f"{role}: {' '.join(parts)}")
+
+        try:
+            response = self.client.messages.create(
+                model=self.settings.claude_model_compact,
+                max_tokens=1024,
+                system=[{"type": "text", "text": _COMPACT_SYSTEM_PROMPT}],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            "Sammanfatta denna konversationshistorik:\n\n" + "\n".join(lines)
+                        ),
+                    }
+                ],
+            )
+            summary = ""
+            for block in response.content:
+                if getattr(block, "type", None) == "text":
+                    summary = getattr(block, "text", "")
+                    break
+            if not summary:
+                logger.warning("Compaction returned empty summary")
+                return messages
+
+            logger.info(
+                "Compacted %d messages → summary (%d chars) + %d recent",
+                len(old),
+                len(summary),
+                len(recent),
+            )
+            summary_msg = {
+                "role": "user",
+                "content": f"[Sammanfattning av tidigare konversation]\n\n{summary}",
+            }
+
+            from storebot.tools.conversation import _trim_orphaned_tool_messages
+
+            return [summary_msg] + _trim_orphaned_tool_messages(recent)
+        except Exception:
+            logger.warning("Context compaction failed, keeping original", exc_info=True)
+            return messages
 
     # Maps tool name → (service_attr, method_name).
     # service_attr is None for tools that don't require a DB-backed service.

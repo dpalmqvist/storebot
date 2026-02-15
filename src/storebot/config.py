@@ -46,6 +46,15 @@ class Settings(BaseSettings):
     max_history_messages: int = 20
     conversation_timeout_minutes: int = 60
 
+    # Extended thinking
+    claude_thinking_budget: int = 0  # 0 = disabled, >= 1024 to enable
+    claude_max_tokens: int = 16000  # max output tokens per API call
+
+    # Context compaction
+    claude_model_compact: str = "claude-haiku-3-5-20241022"
+    compact_threshold: int = 20  # trigger compaction above this many messages
+    compact_keep_recent: int = 6  # keep this many recent messages verbatim
+
     # Scout
     scout_digest_hour: int = 8  # Hour (0-23) for daily scout digest
 
