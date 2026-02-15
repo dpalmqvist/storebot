@@ -289,6 +289,93 @@ class TestApproveDraft:
             assert action.approved_at is not None
 
 
+class TestReviseDraft:
+    def test_revise_approved_listing(self, service, draft_listing, engine):
+        listing_id = draft_listing["listing_id"]
+        service.approve_draft(listing_id)
+
+        result = service.revise_draft(listing_id, reason="Behöver bättre titel")
+
+        assert "error" not in result
+        assert result["status"] == "draft"
+        assert result["reason"] == "Behöver bättre titel"
+
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            assert listing.status == "draft"
+
+    def test_revise_without_reason(self, service, draft_listing):
+        listing_id = draft_listing["listing_id"]
+        service.approve_draft(listing_id)
+
+        result = service.revise_draft(listing_id)
+
+        assert "error" not in result
+        assert result["status"] == "draft"
+        assert result["reason"] == ""
+
+    def test_cannot_revise_draft(self, service, draft_listing):
+        result = service.revise_draft(draft_listing["listing_id"])
+
+        assert "error" in result
+        assert "draft" in result["error"]
+
+    def test_cannot_revise_active(self, service, product, engine):
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Test",
+            listing_description="Test",
+            start_price=100.0,
+        )
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            listing.status = "active"
+            session.commit()
+
+        result = service.revise_draft(draft["listing_id"])
+
+        assert "error" in result
+        assert "active" in result["error"]
+
+    def test_not_found(self, service):
+        result = service.revise_draft(9999)
+
+        assert "error" in result
+        assert "9999" in result["error"]
+
+    def test_logs_agent_action(self, service, draft_listing, engine):
+        listing_id = draft_listing["listing_id"]
+        service.approve_draft(listing_id)
+        service.revise_draft(listing_id, reason="Ändra pris")
+
+        with Session(engine) as session:
+            action = session.query(AgentAction).filter_by(action_type="revise_draft").one()
+            assert action.agent_name == "listing"
+            assert action.details["listing_id"] == listing_id
+            assert action.details["reason"] == "Ändra pris"
+
+    def test_can_edit_after_revision(self, service, draft_listing):
+        listing_id = draft_listing["listing_id"]
+        service.approve_draft(listing_id)
+        service.revise_draft(listing_id)
+
+        result = service.update_draft(listing_id, listing_title="Uppdaterad titel")
+
+        assert "error" not in result
+        assert result["status"] == "draft"
+
+    def test_can_reapprove_after_revision(self, service, draft_listing):
+        listing_id = draft_listing["listing_id"]
+        service.approve_draft(listing_id)
+        service.revise_draft(listing_id)
+
+        result = service.approve_draft(listing_id)
+
+        assert "error" not in result
+        assert result["status"] == "approved"
+
+
 class TestRejectDraft:
     def test_reject_deletes_listing(self, service, draft_listing, engine):
         listing_id = draft_listing["listing_id"]

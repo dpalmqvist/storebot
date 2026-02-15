@@ -217,6 +217,28 @@ class ListingService:
 
             return {"listing_id": listing.id, "status": "approved"}
 
+    def revise_draft(self, listing_id: int, reason: str = "") -> dict:
+        """Move an approved listing back to draft status for editing."""
+        with Session(self.engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            if listing is None:
+                return {"error": f"Listing {listing_id} not found"}
+            if listing.status != "approved":
+                return {
+                    "error": f"Cannot revise listing with status '{listing.status}', "
+                    "must be 'approved'"
+                }
+            listing.status = "draft"
+            log_action(
+                session,
+                "listing",
+                "revise_draft",
+                {"listing_id": listing.id, "reason": reason},
+                product_id=listing.product_id,
+            )
+            session.commit()
+            return {"listing_id": listing.id, "status": "draft", "reason": reason}
+
     def publish_listing(self, listing_id: int) -> dict:
         """Publish an approved listing to Tradera. Uploads images and creates the listing."""
         if not self.tradera:
