@@ -810,6 +810,9 @@ class ListingService:
             session.add(listing)
             session.flush()
 
+            if product and product.status in ("sold", "listed"):
+                product.status = "draft"
+
             log_action(
                 session,
                 "listing",
@@ -866,8 +869,8 @@ class ListingService:
         if file_path:
             try:
                 Path(file_path).unlink(missing_ok=True)
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.warning("Failed to delete image file %s: %s", file_path, exc)
 
         return {
             "image_id": image_id,

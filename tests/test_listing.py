@@ -1384,6 +1384,28 @@ class TestRelistProduct:
             assert source.details == new.details
             assert source.details is not new.details
 
+    def test_resets_sold_product_to_draft(self, service, product, engine):
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="buy_it_now",
+            listing_title="Sold item",
+            listing_description="Test",
+            buy_it_now_price=500.0,
+        )
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            listing.status = "sold"
+            p = session.get(Product, product)
+            p.status = "sold"
+            session.commit()
+
+        result = service.relist_product(draft["listing_id"])
+
+        assert "error" not in result
+        with Session(engine) as session:
+            p = session.get(Product, product)
+            assert p.status == "draft"
+
 
 class TestDeleteProductImage:
     def test_deletes_image(self, service, product, tmp_path, engine):
