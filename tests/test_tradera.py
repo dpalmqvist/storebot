@@ -381,9 +381,7 @@ class TestTraderaCreateListing:
         response.RequestId = 99004
         client._restricted_client.service.AddItem.return_value = response
 
-        client.create_listing(
-            title="Test", description="Test", category_id=100, auto_commit=False
-        )
+        client.create_listing(title="Test", description="Test", category_id=100, auto_commit=False)
 
         call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
         item_req = call_kwargs["itemRequest"]

@@ -283,9 +283,7 @@ class TraderaClient:
 
     @retry_on_transient()
     def _commit_listing_api_call(self, request_id, headers):
-        return self.restricted_client.service.AddItemCommit(
-            requestId=int(request_id), **headers
-        )
+        return self.restricted_client.service.AddItemCommit(requestId=int(request_id), **headers)
 
     def commit_listing(self, request_id: int) -> dict:
         """Commit a listing after uploading images (required when AutoCommit=False)."""
