@@ -91,6 +91,15 @@ Svara alltid på svenska om inte användaren skriver på engelska. Var kortfatta
 Alla annonser och produktbeskrivningar ska vara på svenska."""
 
 
+def _strip_nulls(value):
+    """Recursively remove None values from dicts/lists (strict mode sends null for omitted params)."""
+    if isinstance(value, dict):
+        return {k: _strip_nulls(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [_strip_nulls(v) for v in value]
+    return value
+
+
 def _get_cached_tools() -> list[dict]:
     """Return TOOLS with cache_control on the last tool definition for prompt caching."""
     if not TOOLS:
@@ -371,7 +380,7 @@ class Agent:
 
         # Strict mode sends null for optional params — strip them so Python
         # methods use their default values instead.
-        cleaned = {k: v for k, v in tool_input.items() if v is not None}
+        cleaned = _strip_nulls(tool_input)
 
         logger.debug(
             "Executing tool: %s with keys: %s",
