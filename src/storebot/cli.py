@@ -98,6 +98,7 @@ def authorize_tradera() -> None:
     tradera = TraderaClient(
         app_id=settings.tradera_app_id,
         app_key=settings.tradera_app_key,
+        sandbox=settings.tradera_sandbox,
     )
     result = tradera.fetch_token(skey)
 
