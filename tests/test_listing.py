@@ -1375,6 +1375,15 @@ class TestRelistProduct:
         assert "error" in result
         assert "Validation failed" in result["error"]
 
+    def test_details_are_deep_copied(self, service, ended_listing, engine):
+        result = service.relist_product(ended_listing)
+
+        with Session(engine) as session:
+            source = session.get(PlatformListing, ended_listing)
+            new = session.get(PlatformListing, result["listing_id"])
+            assert source.details == new.details
+            assert source.details is not new.details
+
 
 class TestDeleteProductImage:
     def test_deletes_image(self, service, product, tmp_path, engine):
@@ -1531,6 +1540,32 @@ class TestCancelListing:
         with Session(engine) as session:
             p = session.get(Product, pid)
             assert p.status == "listed"
+
+    def test_does_not_revert_sold_product(self, service, engine):
+        with Session(engine) as session:
+            p = Product(title="Sold item", status="sold")
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="T",
+                listing_description="D",
+            )
+            session.add(listing)
+            session.commit()
+            lid, pid = listing.id, p.id
+
+        result = service.cancel_listing(lid)
+
+        assert result["status"] == "cancelled"
+        assert result["product_status"] == "sold"
+
+        with Session(engine) as session:
+            p = session.get(Product, pid)
+            assert p.status == "sold"
 
     def test_rejects_non_active(self, service, draft_listing):
         result = service.cancel_listing(draft_listing["listing_id"])

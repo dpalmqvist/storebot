@@ -1,4 +1,5 @@
 import logging
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import or_
@@ -804,7 +805,7 @@ class ListingService:
                     if tradera_category_id is not None
                     else source.tradera_category_id
                 ),
-                details=details if details is not None else source.details,
+                details=details if details is not None else deepcopy(source.details),
             )
             session.add(listing)
             session.flush()
@@ -900,7 +901,7 @@ class ListingService:
             )
 
             product = session.get(Product, listing.product_id)
-            if product and other_active == 0:
+            if product and other_active == 0 and product.status == "listed":
                 product.status = "draft"
 
             log_action(
