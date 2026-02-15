@@ -203,7 +203,8 @@ class TraderaClient:
     ) -> dict:
         """Create a listing on Tradera via RestrictedService AddItem."""
         try:
-            item_type = "PureBuyItNow" if listing_type == "buy_it_now" else "Auction"
+            # GetItemTypes returns: 1=Auktion, 3=Endast Köp Nu, 4=Shop artikel
+            item_type_id = 3 if listing_type == "buy_it_now" else 1
 
             params = {
                 "Title": title,
@@ -211,7 +212,7 @@ class TraderaClient:
                 "CategoryId": int(category_id),
                 "Duration": int(duration_days),
                 "Restarts": 0,
-                "ItemType": item_type,
+                "ItemType": item_type_id,
                 "AutoCommit": auto_commit,
                 "AcceptedBidderId": SkipValue,
             }
