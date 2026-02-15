@@ -353,7 +353,7 @@ class TestTraderaCreateListing:
         assert item_req["ItemType"] == 2  # BuyItNow
         assert item_req["BuyItNowPrice"] == 800
 
-    def test_with_shipping_and_returns(self, client):
+    def test_with_shipping_cost(self, client):
         response = MagicMock()
         response.ItemId = 1
         client._restricted_client.service.AddItem.return_value = response
@@ -363,13 +363,11 @@ class TestTraderaCreateListing:
             description="Test",
             category_id=100,
             shipping_cost=99,
-            accepting_returns=True,
         )
 
         call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
         item_req = call_kwargs["itemRequest"]
         assert item_req["ShippingCost"] == 99
-        assert item_req["AcceptingReturns"] is True
 
     def test_uses_authorization_headers(self, client):
         response = MagicMock()

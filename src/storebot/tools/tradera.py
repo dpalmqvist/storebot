@@ -197,7 +197,6 @@ class TraderaClient:
         shipping_cost: float | None = None,
         shipping_options: list[dict] | None = None,
         shipping_condition: str | None = None,
-        accepting_returns: bool = False,
     ) -> dict:
         """Create a listing on Tradera via RestrictedService AddItem."""
         try:
@@ -209,7 +208,6 @@ class TraderaClient:
                 "CategoryId": int(category_id),
                 "Duration": int(duration_days),
                 "ItemType": item_type,
-                "AcceptingReturns": accepting_returns,
             }
             if start_price is not None:
                 params["StartPrice"] = int(start_price)
