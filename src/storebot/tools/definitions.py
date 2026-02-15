@@ -8,6 +8,9 @@ schema-valid calls.  Rules:
 - Every ``input_schema`` has ``additionalProperties: false``
 - ALL properties are listed in ``required``
 - Optional parameters use ``anyOf`` with null (model sends null to omit)
+
+Each tool also carries a ``category`` tag used by the dynamic tool filtering
+in ``agent.py`` to send only relevant tools per turn.
 """
 
 TOOLS = [
@@ -15,6 +18,7 @@ TOOLS = [
     {
         "name": "search_tradera",
         "description": "Search Tradera for items matching a query. Use for price research and finding comparable listings.",
+        "category": "research",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -36,6 +40,7 @@ TOOLS = [
     {
         "name": "get_tradera_item",
         "description": "Hämta fullständig information om ett enskilt Tradera-objekt via dess ID. Använd för att se detaljer, slutpris, köpare etc.",
+        "category": "research",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -49,6 +54,7 @@ TOOLS = [
     {
         "name": "get_categories",
         "description": "Get all Tradera categories. Use to find the right category ID for a listing.",
+        "category": "listing",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -60,6 +66,7 @@ TOOLS = [
     {
         "name": "get_shipping_options",
         "description": "Hämta tillgängliga fraktalternativ från Tradera. Returnerar fraktprodukter med leverantör, viktgräns och pris. Använd produktens vikt för att filtrera.",
+        "category": "listing",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -76,6 +83,7 @@ TOOLS = [
     {
         "name": "get_shipping_types",
         "description": "Hämta alla tillgängliga frakttyper (leveransvillkor) från Tradera. Returnerar en lista med ID och namn.",
+        "category": "listing",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -88,6 +96,7 @@ TOOLS = [
     {
         "name": "search_blocket",
         "description": "Search Blocket for items. Read-only, useful for price research and sourcing opportunities.",
+        "category": "research",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -109,6 +118,7 @@ TOOLS = [
     {
         "name": "get_blocket_ad",
         "description": "Get full details of a single Blocket ad including description, all images, seller info, and item parameters. Useful for deeper research on a specific item found via search.",
+        "category": "research",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -123,6 +133,7 @@ TOOLS = [
     {
         "name": "price_check",
         "description": "Search both Tradera and Blocket for comparable items and compute price statistics with a suggested price range. Use for pricing research before listing a product.",
+        "category": "core",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -148,6 +159,7 @@ TOOLS = [
     {
         "name": "create_draft_listing",
         "description": "Create a draft listing for a product. The draft must be approved before publishing. Use after price_check to set appropriate pricing.",
+        "category": "listing",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -254,6 +266,7 @@ TOOLS = [
     {
         "name": "list_draft_listings",
         "description": "List listings filtered by status. Defaults to showing drafts awaiting approval.",
+        "category": "listing",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -270,6 +283,7 @@ TOOLS = [
     {
         "name": "get_draft_listing",
         "description": "Get full details of a single listing including preview.",
+        "category": "listing",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -283,6 +297,7 @@ TOOLS = [
     {
         "name": "update_draft_listing",
         "description": "Update fields on a draft listing. Only drafts can be edited.",
+        "category": "listing",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -388,6 +403,7 @@ TOOLS = [
     {
         "name": "approve_draft_listing",
         "description": "Approve a draft listing, moving it to 'approved' status ready for publishing.",
+        "category": "listing",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -401,6 +417,7 @@ TOOLS = [
     {
         "name": "revise_draft_listing",
         "description": "Move an approved listing back to draft status for editing. Use when changes are needed before publishing.",
+        "category": "listing",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -418,6 +435,7 @@ TOOLS = [
     {
         "name": "reject_draft_listing",
         "description": "Reject and delete a draft listing.",
+        "category": "listing",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -435,6 +453,7 @@ TOOLS = [
     {
         "name": "publish_listing",
         "description": "Publish an approved listing to Tradera. Uploads images and creates the listing. The listing must be in 'approved' status.",
+        "category": "listing",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -451,6 +470,7 @@ TOOLS = [
     {
         "name": "relist_product",
         "description": "Skapa ett nytt annonsutkast genom att kopiera från en avslutad eller såld annons. Kräver godkännande innan publicering.",
+        "category": "listing",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -559,6 +579,7 @@ TOOLS = [
     {
         "name": "cancel_listing",
         "description": "Avbryt en aktiv annons lokalt. OBS: Tradera har inget API för att avbryta annonser — det måste göras manuellt på plattformen.",
+        "category": "listing",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -576,6 +597,7 @@ TOOLS = [
     {
         "name": "search_products",
         "description": "Search the local product database. Archived products are hidden by default.",
+        "category": "core",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -600,6 +622,7 @@ TOOLS = [
     {
         "name": "create_product",
         "description": "Create a new product in the database. Use when the user wants to register a new item.",
+        "category": "core",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -660,6 +683,7 @@ TOOLS = [
     {
         "name": "update_product",
         "description": "Uppdatera fält på en befintlig produkt. Skicka bara värden för de fält som ska ändras, null för övriga.",
+        "category": "core",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -725,6 +749,7 @@ TOOLS = [
     {
         "name": "get_product",
         "description": "Hämta fullständig information om en produkt: alla fält, antal bilder och aktiva annonser. Använd för att se detaljer som saknas i search_products (beskrivning, material, mått, vikt, källa).",
+        "category": "core",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -739,6 +764,7 @@ TOOLS = [
     {
         "name": "save_product_image",
         "description": "Save an image to a product. Use after create_product to attach photos.",
+        "category": "core",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -757,6 +783,7 @@ TOOLS = [
     {
         "name": "get_product_images",
         "description": "Hämta och visa produktbilder. Använd för att granska bilder innan godkännande/publicering av annons.",
+        "category": "core",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -777,6 +804,7 @@ TOOLS = [
     {
         "name": "delete_product_image",
         "description": "Ta bort en produktbild. Om bilden var primär blir nästa bild primär automatiskt.",
+        "category": "core",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -791,6 +819,7 @@ TOOLS = [
     {
         "name": "archive_product",
         "description": "Archive a product, hiding it from normal search and listing views. Cannot archive products with active marketplace listings.",
+        "category": "core",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -804,6 +833,7 @@ TOOLS = [
     {
         "name": "unarchive_product",
         "description": "Restore an archived product to its previous status (draft, listed, etc.).",
+        "category": "core",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -818,6 +848,7 @@ TOOLS = [
     {
         "name": "check_new_orders",
         "description": "Poll Tradera for new orders and import them locally. Creates order records and updates product/listing status.",
+        "category": "order",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -829,6 +860,7 @@ TOOLS = [
     {
         "name": "list_orders",
         "description": "List local orders, optionally filtered by status (pending/shipped/delivered/returned).",
+        "category": "order",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -851,6 +883,7 @@ TOOLS = [
     {
         "name": "get_order",
         "description": "Get full details of a specific order including product title.",
+        "category": "order",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -864,6 +897,7 @@ TOOLS = [
     {
         "name": "create_sale_voucher",
         "description": "Create an accounting voucher for a completed sale. Calculates VAT, revenue, and platform fees automatically.",
+        "category": "order",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -877,6 +911,7 @@ TOOLS = [
     {
         "name": "mark_order_shipped",
         "description": "Mark an order as shipped. Updates local status and notifies Tradera. NEVER use without explicit owner confirmation.",
+        "category": "order",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -894,6 +929,7 @@ TOOLS = [
     {
         "name": "create_shipping_label",
         "description": "Skapa en fraktetikett via PostNord för en order. Kräver att produkten har weight_grams satt.",
+        "category": "order",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -914,6 +950,7 @@ TOOLS = [
     {
         "name": "list_orders_pending_feedback",
         "description": "Lista Tradera-ordrar som är skickade men saknar omdöme till köparen.",
+        "category": "order",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -925,6 +962,7 @@ TOOLS = [
     {
         "name": "leave_feedback",
         "description": "Lämna omdöme till köparen på en Tradera-order. Lämna ALDRIG omdöme utan ägarens uttryckliga bekräftelse av texten.",
+        "category": "order",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -950,6 +988,7 @@ TOOLS = [
     {
         "name": "create_voucher",
         "description": "Skapa en bokföringsverifikation och spara lokalt. Debet och kredit måste balansera.",
+        "category": "accounting",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -985,6 +1024,7 @@ TOOLS = [
     {
         "name": "list_vouchers",
         "description": "Lista bokföringsverifikationer, valfritt filtrerade efter datumintervall.",
+        "category": "accounting",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1005,6 +1045,7 @@ TOOLS = [
     {
         "name": "export_vouchers",
         "description": "Exportera verifikationer som PDF. Ange datumintervall.",
+        "category": "accounting",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1026,6 +1067,7 @@ TOOLS = [
     {
         "name": "create_saved_search",
         "description": "Create a saved search for periodic sourcing. Searches run daily and new finds are reported.",
+        "category": "scout",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1058,6 +1100,7 @@ TOOLS = [
     {
         "name": "list_saved_searches",
         "description": "List all saved searches. By default shows only active ones.",
+        "category": "scout",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1074,6 +1117,7 @@ TOOLS = [
     {
         "name": "update_saved_search",
         "description": "Update a saved search's query, platform, category, max_price, or region.",
+        "category": "scout",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1110,6 +1154,7 @@ TOOLS = [
     {
         "name": "delete_saved_search",
         "description": "Deactivate a saved search (soft delete).",
+        "category": "scout",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1123,6 +1168,7 @@ TOOLS = [
     {
         "name": "run_saved_search",
         "description": "Run a single saved search now and return new items found since last run.",
+        "category": "scout",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1136,6 +1182,7 @@ TOOLS = [
     {
         "name": "run_all_saved_searches",
         "description": "Run all active saved searches and produce a digest of new finds.",
+        "category": "scout",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1148,6 +1195,7 @@ TOOLS = [
     {
         "name": "refresh_listing_stats",
         "description": "Hämta aktuell statistik (visningar, bevakare, bud) från Tradera för aktiva annonser och spara en snapshot.",
+        "category": "marketing",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1164,6 +1212,7 @@ TOOLS = [
     {
         "name": "analyze_listing",
         "description": "Analysera en annons prestanda: konverteringsgrad, trend, dagar aktiv, potentiell vinst.",
+        "category": "marketing",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1177,6 +1226,7 @@ TOOLS = [
     {
         "name": "get_performance_report",
         "description": "Sammanställ en övergripande marknadsföringsrapport: aktiva annonser, visningar, försäljning, kategorier, konverteringstratt.",
+        "category": "marketing",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1188,6 +1238,7 @@ TOOLS = [
     {
         "name": "get_recommendations",
         "description": "Generera åtgärdsförslag för annonser: omlistning, prisjustering, förbättra innehåll, förläng, kategoritips.",
+        "category": "marketing",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1205,6 +1256,7 @@ TOOLS = [
     {
         "name": "business_summary",
         "description": "Affärssammanfattning för en period: intäkter, kostnader, bruttovinst, marginal, antal sålda, lagerstatus, snittid till försäljning.",
+        "category": "analytics",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1221,6 +1273,7 @@ TOOLS = [
     {
         "name": "profitability_report",
         "description": "Lönsamhetsrapport: nettovinst per produkt, aggregerat per kategori och inköpskälla. Topp/botten 5.",
+        "category": "analytics",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1237,6 +1290,7 @@ TOOLS = [
     {
         "name": "inventory_report",
         "description": "Lagerrapport: lagervärde, statusfördelning, åldersanalys (0-7d, 8-14d, 15-30d, 30+d), lista på gamla artiklar.",
+        "category": "analytics",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1248,6 +1302,7 @@ TOOLS = [
     {
         "name": "period_comparison",
         "description": "Periodjämförelse: två perioder sida vid sida med skillnader i intäkter, vinst, antal och marginal. Standard: denna månad vs förra.",
+        "category": "analytics",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1268,6 +1323,7 @@ TOOLS = [
     {
         "name": "sourcing_analysis",
         "description": "Inköpskanalanalys: ROI per källa (loppis, dödsbo, tradera etc.), antal inköpta/sålda, marginal, snittid till försäljning.",
+        "category": "analytics",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1284,6 +1340,7 @@ TOOLS = [
     {
         "name": "usage_report",
         "description": "Visa API-tokenförbrukning och kostnad per dag/månad. Visar input/output-tokens, cache-effektivitet och kostnad i SEK.",
+        "category": "analytics",
         "strict": True,
         "input_schema": {
             "type": "object",
@@ -1297,4 +1354,54 @@ TOOLS = [
             "additionalProperties": False,
         },
     },
+    # --- Meta ---
+    {
+        "name": "request_tools",
+        "description": (
+            "Begär fler verktyg genom att ange kategorier. "
+            "Tillgängliga kategorier: core (produkter, bilder, priskoll), "
+            "research (Tradera/Blocket-sök), listing (annonser, frakt, kategorier), "
+            "order (ordrar, leverans, omdöme), accounting (bokföring, verifikationer), "
+            "scout (sparade sökningar), marketing (annonsstatistik, rekommendationer), "
+            "analytics (rapporter, lönsamhet, lager)."
+        ),
+        "category": "core",
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "categories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "core",
+                            "research",
+                            "listing",
+                            "order",
+                            "accounting",
+                            "scout",
+                            "marketing",
+                            "analytics",
+                        ],
+                    },
+                    "description": "List of tool categories to activate",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Why these tools are needed",
+                },
+            },
+            "required": ["categories", "reason"],
+            "additionalProperties": False,
+        },
+    },
 ]
+
+# Lookup: category → list of tool names
+TOOL_CATEGORIES: dict[str, list[str]] = {}
+for _tool in TOOLS:
+    TOOL_CATEGORIES.setdefault(_tool.get("category", "core"), []).append(_tool["name"])
+
+# Lookup: tool name → full tool dict
+TOOLS_BY_NAME: dict[str, dict] = {t["name"]: t for t in TOOLS}
