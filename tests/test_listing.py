@@ -780,6 +780,51 @@ class TestPublishListing:
 
     @patch("storebot.tools.listing.optimize_for_upload")
     @patch("storebot.tools.listing.encode_image_base64")
+    def test_commit_failure_returns_error(
+        self, mock_encode, mock_optimize, pub_service, approved_listing, engine
+    ):
+        listing_id, _ = approved_listing
+        mock_optimize.return_value = "/tmp/optimized.jpg"
+        mock_encode.return_value = ("base64data", "image/jpeg")
+        pub_service.tradera.commit_listing.return_value = {"error": "Commit timeout"}
+
+        result = pub_service.publish_listing(listing_id)
+
+        assert "error" in result
+        assert "commit failed" in result["error"]
+        assert "12345" in result["error"]
+
+        # Listing should remain approved, not active
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            assert listing.status == "approved"
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
+    def test_missing_request_id_returns_error(
+        self, mock_encode, mock_optimize, pub_service, approved_listing, engine
+    ):
+        listing_id, _ = approved_listing
+        mock_optimize.return_value = "/tmp/optimized.jpg"
+        mock_encode.return_value = ("base64data", "image/jpeg")
+        pub_service.tradera.create_listing.return_value = {
+            "request_id": None,
+            "item_id": 12345,
+            "url": "https://www.tradera.com/item/12345",
+        }
+
+        result = pub_service.publish_listing(listing_id)
+
+        assert "error" in result
+        assert "RequestId" in result["error"]
+
+        # Listing should remain approved
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            assert listing.status == "approved"
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
     def test_logs_agent_action(
         self, mock_encode, mock_optimize, pub_service, approved_listing, engine
     ):

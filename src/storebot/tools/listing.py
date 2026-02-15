@@ -337,29 +337,28 @@ class ListingService:
             return create_result
 
         request_id = create_result.get("request_id")
+        if request_id is None:
+            return {"error": "Tradera API response missing RequestId, cannot commit listing"}
 
         # Image upload is non-fatal -- we still commit the listing
-        if request_id is not None:
-            upload_result = self.tradera.upload_images(
-                item_id=request_id,
-                images=encoded_images,
+        upload_result = self.tradera.upload_images(
+            item_id=request_id,
+            images=encoded_images,
+        )
+        if "error" in upload_result:
+            logger.warning(
+                "Image upload failed for listing %s: %s",
+                listing.id,
+                upload_result["error"],
             )
-            if "error" in upload_result:
-                logger.warning(
-                    "Image upload failed for listing %s: %s",
-                    listing.id,
-                    upload_result["error"],
-                )
 
-            # Commit the listing (required when AutoCommit=False)
-            commit_result = self.tradera.commit_listing(request_id)
-            if "error" in commit_result:
-                logger.warning(
-                    "Commit failed for listing %s (request_id=%s): %s",
-                    listing.id,
-                    request_id,
-                    commit_result["error"],
-                )
+        # Commit the listing (required when AutoCommit=False)
+        commit_result = self.tradera.commit_listing(request_id)
+        if "error" in commit_result:
+            return {
+                "error": f"Listing created (item_id={create_result['item_id']}) "
+                f"but commit failed: {commit_result['error']}"
+            }
 
         return create_result
 
