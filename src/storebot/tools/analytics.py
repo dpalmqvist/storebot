@@ -11,7 +11,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from storebot.db import Order, PlatformListing, Product
+from storebot.db import ApiUsage, Order, PlatformListing, Product
 from storebot.tools.helpers import log_action, naive_now
 
 logger = logging.getLogger(__name__)
@@ -557,3 +557,99 @@ class AnalyticsService:
         if len(text) > 3900:
             text = text[:3900] + "\n\n...avkortat"
         return text
+
+    def usage_report(self, period: str | None = None) -> dict:
+        """API token usage and cost for a period, with daily breakdown."""
+        start, end = _parse_period(period)
+
+        with Session(self.engine) as session:
+            rows = (
+                session.query(ApiUsage)
+                .filter(ApiUsage.created_at >= start, ApiUsage.created_at < end)
+                .all()
+            )
+
+            total_input = 0
+            total_output = 0
+            total_cache_creation = 0
+            total_cache_read = 0
+            total_cost = 0.0
+            total_tool_calls = 0
+            daily: dict[str, dict] = {}
+
+            for row in rows:
+                total_input += row.input_tokens
+                total_output += row.output_tokens
+                total_cache_creation += row.cache_creation_input_tokens
+                total_cache_read += row.cache_read_input_tokens
+                total_cost += row.estimated_cost_sek
+                total_tool_calls += row.tool_calls
+
+                day_key = row.created_at.strftime("%Y-%m-%d")
+                day = daily.setdefault(
+                    day_key,
+                    {"turns": 0, "input_tokens": 0, "output_tokens": 0, "cost_sek": 0.0},
+                )
+                day["turns"] += 1
+                day["input_tokens"] += row.input_tokens
+                day["output_tokens"] += row.output_tokens
+                day["cost_sek"] += row.estimated_cost_sek
+
+            for day in daily.values():
+                day["cost_sek"] = round(day["cost_sek"], 2)
+
+            total_turns = len(rows)
+            avg_input = round(total_input / total_turns) if total_turns else 0
+            avg_output = round(total_output / total_turns) if total_turns else 0
+            avg_cost = round(total_cost / total_turns, 4) if total_turns else 0.0
+
+            log_action(
+                session,
+                "analytics",
+                "usage_report",
+                {"period": period, "turns": total_turns},
+            )
+            session.commit()
+
+            return {
+                "period": period or "current_month",
+                "total_input_tokens": total_input,
+                "total_output_tokens": total_output,
+                "total_cache_creation_tokens": total_cache_creation,
+                "total_cache_read_tokens": total_cache_read,
+                "total_cost_sek": round(total_cost, 2),
+                "total_turns": total_turns,
+                "total_tool_calls": total_tool_calls,
+                "avg_input_per_turn": avg_input,
+                "avg_output_per_turn": avg_output,
+                "avg_cost_per_turn_sek": avg_cost,
+                "daily": daily,
+            }
+
+    @staticmethod
+    def _format_usage(data: dict) -> str:
+        lines = [
+            "API-användning\n",
+            f"Period: {data.get('period', '-')}",
+            f"Antal anrop: {data['total_turns']}",
+            f"Verktygsanrop: {data['total_tool_calls']}",
+            f"Input-tokens: {data['total_input_tokens']:,}",
+            f"Output-tokens: {data['total_output_tokens']:,}",
+            f"Cache-skapande: {data['total_cache_creation_tokens']:,}",
+            f"Cache-läsning: {data['total_cache_read_tokens']:,}",
+            f"Total kostnad: {data['total_cost_sek']:.2f} kr",
+            f"Snitt per anrop: {data['avg_cost_per_turn_sek']:.4f} kr",
+        ]
+
+        daily = data.get("daily", {})
+        if daily:
+            lines.append("\nPer dag:")
+            for day_key in sorted(daily):
+                d = daily[day_key]
+                lines.append(
+                    f"  {day_key}: {d['turns']} anrop, "
+                    f"{d['input_tokens']:,}+{d['output_tokens']:,} tokens, "
+                    f"{d['cost_sek']:.2f} kr"
+                )
+
+        return "\n".join(lines)

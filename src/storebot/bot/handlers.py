@@ -120,6 +120,7 @@ async def _handle_with_conversation(
             user_message,
             image_paths=image_paths,
             conversation_history=history,
+            chat_id=chat_id,
         )
         new_messages = result.messages[len(history) :]
         conversation.save_messages(chat_id, new_messages)
@@ -226,9 +227,11 @@ async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not await _check_access(update, context):
         return
     agent: Agent = context.bot_data["agent"]
+    chat_id = str(update.effective_chat.id)
     try:
         result = agent.handle_message(
-            "Kolla efter nya ordrar och visa en sammanfattning av alla väntande ordrar."
+            "Kolla efter nya ordrar och visa en sammanfattning av alla väntande ordrar.",
+            chat_id=chat_id,
         )
         await update.message.reply_text(result.text)
     except Exception:

@@ -1281,4 +1281,20 @@ TOOLS = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "usage_report",
+        "description": "Visa API-tokenförbrukning och kostnad per dag/månad. Visar input/output-tokens, cache-effektivitet och kostnad i SEK.",
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "period": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "description": "Period: YYYY-MM, YYYY-QN eller YYYY. Null för innevarande månad.",
+                },
+            },
+            "required": ["period"],
+            "additionalProperties": False,
+        },
+    },
 ]
