@@ -92,9 +92,15 @@ Alla annonser och produktbeskrivningar ska vara på svenska."""
 
 
 def _strip_nulls(value):
-    """Recursively remove None values from dicts/lists (strict mode sends null for omitted params)."""
+    """Recursively remove None values from dicts/lists (strict mode sends null for omitted params).
+
+    Empty dicts/lists that result from stripping are collapsed to None so
+    that downstream ``is not None`` guards work correctly (e.g. details in
+    relist_product).
+    """
     if isinstance(value, dict):
-        return {k: _strip_nulls(v) for k, v in value.items() if v is not None}
+        cleaned = {k: _strip_nulls(v) for k, v in value.items() if v is not None}
+        return cleaned or None
     if isinstance(value, list):
         return [_strip_nulls(v) for v in value]
     return value
@@ -380,7 +386,7 @@ class Agent:
 
         # Strict mode sends null for optional params — strip them so Python
         # methods use their default values instead.
-        cleaned = _strip_nulls(tool_input)
+        cleaned = _strip_nulls(tool_input) or {}
 
         logger.debug(
             "Executing tool: %s with keys: %s",
