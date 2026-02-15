@@ -665,11 +665,13 @@ class Agent:
         Returns compacted list [summary_message, ...recent]. On failure, returns
         the original messages unchanged (same object identity for caller detection).
         """
-        keep = self.settings.compact_keep_recent
-        if len(messages) <= self.settings.compact_threshold:
+        keep = max(1, self.settings.compact_keep_recent)
+        if len(messages) <= self.settings.compact_threshold or keep >= len(messages):
             return messages
 
         old = messages[:-keep]
+        if not old:
+            return messages
         recent = messages[-keep:]
 
         # Build text representation for summarization
@@ -688,10 +690,8 @@ class Agent:
                         elif block.get("type") == "tool_use":
                             parts.append(f"[verktyg: {block.get('name', '?')}]")
                         elif block.get("type") == "tool_result":
-                            t = block.get("content", "")
-                            parts.append(
-                                f"[resultat: {t[:200]}{'...' if len(str(t)) > 200 else ''}]"
-                            )
+                            t = str(block.get("content", ""))
+                            parts.append(f"[resultat: {t[:200]}{'...' if len(t) > 200 else ''}]")
                 if parts:
                     lines.append(f"{role}: {' '.join(parts)}")
 
