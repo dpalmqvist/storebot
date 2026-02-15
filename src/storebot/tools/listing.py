@@ -312,7 +312,7 @@ class ListingService:
         return [encode_image_base64(optimize_for_upload(img.file_path)) for img in images]
 
     def _create_tradera_listing(self, listing: PlatformListing, encoded_images: list) -> dict:
-        """Create listing on Tradera and upload images."""
+        """Create listing on Tradera, upload images, and commit."""
         duration = listing.duration_days or 7
         details = listing.details or {}
         shipping_options = details.get("shipping_options")
@@ -330,22 +330,36 @@ class ListingService:
             shipping_cost=shipping_cost,
             shipping_options=shipping_options,
             shipping_condition=shipping_condition,
+            auto_commit=False,
         )
 
         if "error" in create_result:
             return create_result
 
-        # Image upload is non-fatal -- listing is already created on Tradera
-        upload_result = self.tradera.upload_images(
-            item_id=int(create_result["item_id"]),
-            images=encoded_images,
-        )
-        if "error" in upload_result:
-            logger.warning(
-                "Image upload failed for listing %s: %s",
-                listing.id,
-                upload_result["error"],
+        request_id = create_result.get("request_id")
+
+        # Image upload is non-fatal -- we still commit the listing
+        if request_id is not None:
+            upload_result = self.tradera.upload_images(
+                item_id=request_id,
+                images=encoded_images,
             )
+            if "error" in upload_result:
+                logger.warning(
+                    "Image upload failed for listing %s: %s",
+                    listing.id,
+                    upload_result["error"],
+                )
+
+            # Commit the listing (required when AutoCommit=False)
+            commit_result = self.tradera.commit_listing(request_id)
+            if "error" in commit_result:
+                logger.warning(
+                    "Commit failed for listing %s (request_id=%s): %s",
+                    listing.id,
+                    request_id,
+                    commit_result["error"],
+                )
 
         return create_result
 

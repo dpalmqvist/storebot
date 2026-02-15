@@ -572,10 +572,12 @@ class TestPublishListing:
     def mock_tradera(self):
         tradera = MagicMock()
         tradera.create_listing.return_value = {
+            "request_id": 99001,
             "item_id": 12345,
             "url": "https://www.tradera.com/item/12345",
         }
-        tradera.upload_images.return_value = {"item_id": 12345, "images_uploaded": 1}
+        tradera.upload_images.return_value = {"item_id": 99001, "images_uploaded": 1}
+        tradera.commit_listing.return_value = {"request_id": 99001, "committed": True}
         return tradera
 
     @pytest.fixture
@@ -624,6 +626,18 @@ class TestPublishListing:
         assert result["url"] == "https://www.tradera.com/item/12345"
         assert result["listed_at"] is not None
         assert result["ends_at"] is not None
+
+        # Verify create_listing called with auto_commit=False
+        call_kwargs = pub_service.tradera.create_listing.call_args.kwargs
+        assert call_kwargs["auto_commit"] is False
+
+        # Verify upload_images called with request_id (not item_id)
+        pub_service.tradera.upload_images.assert_called_once()
+        upload_kwargs = pub_service.tradera.upload_images.call_args.kwargs
+        assert upload_kwargs["item_id"] == 99001
+
+        # Verify commit_listing called with request_id
+        pub_service.tradera.commit_listing.assert_called_once_with(99001)
 
         # Verify DB state
         with Session(engine) as session:
@@ -761,6 +775,9 @@ class TestPublishListing:
         assert "error" not in result
         assert result["status"] == "active"
 
+        # Commit must still be called even when image upload fails
+        pub_service.tradera.commit_listing.assert_called_once_with(99001)
+
     @patch("storebot.tools.listing.optimize_for_upload")
     @patch("storebot.tools.listing.encode_image_base64")
     def test_logs_agent_action(
@@ -783,10 +800,12 @@ class TestPublishListing:
     def test_buy_it_now_sets_listing_price(self, mock_encode, mock_optimize, engine, tmp_path):
         tradera = MagicMock()
         tradera.create_listing.return_value = {
+            "request_id": 99555,
             "item_id": 555,
             "url": "https://www.tradera.com/item/555",
         }
-        tradera.upload_images.return_value = {"item_id": 555, "images_uploaded": 1}
+        tradera.upload_images.return_value = {"item_id": 99555, "images_uploaded": 1}
+        tradera.commit_listing.return_value = {"request_id": 99555, "committed": True}
         service = ListingService(engine=engine, tradera=tradera)
 
         prod = service.create_product(title="Lampa")
