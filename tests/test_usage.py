@@ -91,7 +91,7 @@ class TestEstimateCostSek:
             cache_read=0,
         )
         # 1M * 3.0/1M + 100K * 15.0/1M = 3.0 + 1.5 = 4.5 USD * 10.5 = 47.25 SEK
-        assert cost == 47.25
+        assert cost == Decimal("47.2500")
 
     def test_cache_pricing(self):
         cost = _estimate_cost_sek(
@@ -102,7 +102,7 @@ class TestEstimateCostSek:
             cache_read=1_000_000,
         )
         # 1M * 3.75/1M + 1M * 0.30/1M = 3.75 + 0.30 = 4.05 USD * 10.5 = 42.525
-        assert cost == 42.525
+        assert cost == Decimal("42.5250")
 
     def test_unknown_model_falls_back_to_sonnet(self):
         cost = _estimate_cost_sek(
@@ -113,11 +113,15 @@ class TestEstimateCostSek:
             cache_read=0,
         )
         # Falls back to Sonnet: 1M * 3.0/1M = 3.0 USD * 10.5 = 31.5 SEK
-        assert cost == 31.5
+        assert cost == Decimal("31.5000")
 
     def test_zero_tokens(self):
         cost = _estimate_cost_sek("claude-sonnet-4-5-20250929", 0, 0, 0, 0)
-        assert cost == 0.0
+        assert cost == Decimal("0.0000")
+
+    def test_returns_decimal(self):
+        cost = _estimate_cost_sek("claude-sonnet-4-5-20250929", 1000, 500, 0, 0)
+        assert isinstance(cost, Decimal)
 
     def test_haiku_model(self):
         cost = _estimate_cost_sek(
@@ -128,7 +132,7 @@ class TestEstimateCostSek:
             cache_read=0,
         )
         # 1M * 0.80/1M + 1M * 4.0/1M = 0.80 + 4.0 = 4.80 USD * 10.5 = 50.4 SEK
-        assert cost == 50.4
+        assert cost == Decimal("50.4000")
 
 
 # --- _store_usage integration ---

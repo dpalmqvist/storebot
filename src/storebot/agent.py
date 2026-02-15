@@ -1,6 +1,7 @@
 import json
 import logging
 from dataclasses import dataclass, field
+from decimal import Decimal, ROUND_HALF_UP
 
 import anthropic
 
@@ -25,28 +26,30 @@ from storebot.db import ApiUsage
 
 logger = logging.getLogger(__name__)
 
-# Pricing per 1M tokens (USD)
+# Pricing per 1M tokens (USD) — Decimal for precision
 _MODEL_PRICING = {
     "claude-sonnet-4-5-20250929": {
-        "input": 3.0,
-        "output": 15.0,
-        "cache_write": 3.75,
-        "cache_read": 0.30,
+        "input": Decimal("3.0"),
+        "output": Decimal("15.0"),
+        "cache_write": Decimal("3.75"),
+        "cache_read": Decimal("0.30"),
     },
     "claude-sonnet-4-20250514": {
-        "input": 3.0,
-        "output": 15.0,
-        "cache_write": 3.75,
-        "cache_read": 0.30,
+        "input": Decimal("3.0"),
+        "output": Decimal("15.0"),
+        "cache_write": Decimal("3.75"),
+        "cache_read": Decimal("0.30"),
     },
     "claude-haiku-3-5-20241022": {
-        "input": 0.80,
-        "output": 4.0,
-        "cache_write": 1.0,
-        "cache_read": 0.08,
+        "input": Decimal("0.80"),
+        "output": Decimal("4.0"),
+        "cache_write": Decimal("1.0"),
+        "cache_read": Decimal("0.08"),
     },
 }
-_USD_TO_SEK = 10.5
+_USD_TO_SEK = Decimal("10.5")
+_ONE_MILLION = Decimal("1000000")
+_COST_QUANTIZE = Decimal("0.0001")
 
 
 def _estimate_cost_sek(
@@ -55,16 +58,16 @@ def _estimate_cost_sek(
     output_tokens: int,
     cache_creation: int,
     cache_read: int,
-) -> float:
+) -> Decimal:
     """Estimate cost in SEK based on model pricing. Falls back to Sonnet pricing."""
     pricing = _MODEL_PRICING.get(model, _MODEL_PRICING["claude-sonnet-4-5-20250929"])
     cost_usd = (
-        input_tokens * pricing["input"]
-        + output_tokens * pricing["output"]
-        + cache_creation * pricing["cache_write"]
-        + cache_read * pricing["cache_read"]
-    ) / 1_000_000
-    return round(cost_usd * _USD_TO_SEK, 4)
+        Decimal(input_tokens) * pricing["input"]
+        + Decimal(output_tokens) * pricing["output"]
+        + Decimal(cache_creation) * pricing["cache_write"]
+        + Decimal(cache_read) * pricing["cache_read"]
+    ) / _ONE_MILLION
+    return (cost_usd * _USD_TO_SEK).quantize(_COST_QUANTIZE, rounding=ROUND_HALF_UP)
 
 
 @dataclass
