@@ -183,7 +183,7 @@ class TraderaClient:
 
     @retry_on_transient()
     def _create_listing_api_call(self, params, headers):
-        return self.restricted_client.service.AddItem(**params, **headers)
+        return self.restricted_client.service.AddItem(itemRequest=params, **headers)
 
     def create_listing(
         self,
@@ -242,10 +242,21 @@ class TraderaClient:
             logger.exception("Tradera create_listing failed")
             return {"error": str(e)}
 
+    # Map MIME types to Tradera ImageFormat enum values
+    _MEDIA_TYPE_TO_FORMAT = {
+        "image/jpeg": "Jpeg",
+        "image/png": "Png",
+        "image/gif": "Gif",
+    }
+
     @retry_on_transient()
-    def _upload_images_api_call(self, item_id, image_objects, headers):
-        return self.restricted_client.service.AddItemImages(
-            ItemId=int(item_id), Images=image_objects, **headers
+    def _upload_image_api_call(self, item_id, image_data, image_format, headers):
+        return self.restricted_client.service.AddItemImage(
+            requestId=int(item_id),
+            imageData=image_data,
+            imageFormat=image_format,
+            hasMega=True,
+            **headers,
         )
 
     def upload_images(self, item_id: int, images: list[tuple[str, str]]) -> dict:
@@ -256,16 +267,10 @@ class TraderaClient:
             images: List of (base64_data, media_type) tuples.
         """
         try:
-            image_objects = [
-                {"Data": base64_data, "MediaType": media_type}
-                for base64_data, media_type in images
-            ]
-
-            self._upload_images_api_call(
-                item_id,
-                image_objects,
-                self._auth_headers(self.restricted_client, include_authorization=True),
-            )
+            headers = self._auth_headers(self.restricted_client, include_authorization=True)
+            for base64_data, media_type in images:
+                image_format = self._MEDIA_TYPE_TO_FORMAT.get(media_type, "Jpeg")
+                self._upload_image_api_call(item_id, base64_data, image_format, headers)
 
             return {"item_id": item_id, "images_uploaded": len(images)}
 
@@ -274,15 +279,13 @@ class TraderaClient:
             return {"error": str(e)}
 
     @retry_on_transient()
-    def _get_categories_api_call(self, parent_id, headers):
-        return self.public_client.service.GetCategories(ParentCategoryId=int(parent_id), **headers)
+    def _get_categories_api_call(self, headers):
+        return self.public_client.service.GetCategories(**headers)
 
-    def get_categories(self, parent_id: int = 0) -> dict:
-        """Get Tradera categories, optionally under a parent category."""
+    def get_categories(self) -> dict:
+        """Get all Tradera categories."""
         try:
-            response = self._get_categories_api_call(
-                parent_id, self._auth_headers(self.public_client)
-            )
+            response = self._get_categories_api_call(self._auth_headers(self.public_client))
 
             categories_obj = getattr(response, "Categories", None)
             if categories_obj and hasattr(categories_obj, "Category"):
@@ -479,7 +482,12 @@ class TraderaClient:
     @retry_on_transient()
     def _get_orders_api_call(self, from_dt, to_dt, headers):
         return self.order_client.service.GetSellerOrders(
-            request={"DateFrom": from_dt, "DateTo": to_dt}, **headers
+            request={
+                "FromDate": from_dt,
+                "ToDate": to_dt,
+                "QueryDateMode": "CreatedDate",
+            },
+            **headers,
         )
 
     def get_orders(self, from_date: str | None = None, to_date: str | None = None) -> dict:
@@ -551,7 +559,7 @@ class TraderaClient:
 
     @retry_on_transient()
     def _get_item_api_call(self, item_id, headers):
-        return self.public_client.service.GetItem(ItemId=int(item_id), **headers)
+        return self.public_client.service.GetItem(itemId=int(item_id), **headers)
 
     def get_item(self, item_id: int) -> dict:
         try:

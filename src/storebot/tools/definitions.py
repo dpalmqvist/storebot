@@ -168,16 +168,10 @@ TOOLS = [
     },
     {
         "name": "get_categories",
-        "description": "Browse Tradera categories. Use to find the right category ID for a listing.",
+        "description": "Get all Tradera categories. Use to find the right category ID for a listing.",
         "input_schema": {
             "type": "object",
-            "properties": {
-                "parent_id": {
-                    "type": "integer",
-                    "description": "Parent category ID (0 for top-level categories)",
-                    "default": 0,
-                },
-            },
+            "properties": {},
         },
     },
     {
