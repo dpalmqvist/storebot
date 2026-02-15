@@ -333,7 +333,7 @@ class TestTraderaCreateListing:
         assert item_req["Title"] == "Antik byrå"
         assert item_req["CategoryId"] == 344
         assert item_req["Duration"] == 7
-        assert item_req["ItemType"] == "Auction"
+        assert item_req["ItemType"] == 1
         assert item_req["StartPrice"] == 500
         assert item_req["AutoCommit"] is True
 
@@ -354,7 +354,7 @@ class TestTraderaCreateListing:
         assert result["item_id"] == 99999
         call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
         item_req = call_kwargs["itemRequest"]
-        assert item_req["ItemType"] == "PureBuyItNow"
+        assert item_req["ItemType"] == 3
         assert item_req["BuyItNowPrice"] == 800
 
     def test_with_shipping_cost_converts_to_shipping_options(self, client):

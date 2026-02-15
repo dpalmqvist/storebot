@@ -6,6 +6,7 @@ import zeep
 from lxml import etree
 from zeep.plugins import HistoryPlugin
 from zeep.transports import Transport
+from zeep.xsd import SkipValue
 
 from storebot.retry import retry_on_transient
 
@@ -202,7 +203,8 @@ class TraderaClient:
     ) -> dict:
         """Create a listing on Tradera via RestrictedService AddItem."""
         try:
-            item_type = "PureBuyItNow" if listing_type == "buy_it_now" else "Auction"
+            # GetItemTypes returns: 1=Auktion, 3=Endast Köp Nu, 4=Shop artikel
+            item_type_id = 3 if listing_type == "buy_it_now" else 1
 
             params = {
                 "Title": title,
@@ -210,9 +212,9 @@ class TraderaClient:
                 "CategoryId": int(category_id),
                 "Duration": int(duration_days),
                 "Restarts": 0,
-                "ItemType": item_type,
+                "ItemType": item_type_id,
                 "AutoCommit": auto_commit,
-                "AcceptedBidderId": [],
+                "AcceptedBidderId": SkipValue,
             }
             if start_price is not None:
                 params["StartPrice"] = int(start_price)

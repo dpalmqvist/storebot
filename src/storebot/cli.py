@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from storebot.config import Settings
+from storebot.tools.tradera import TraderaClient
 
 
 def _update_env_file(env_path: Path, key: str, value: str) -> None:
@@ -32,7 +33,7 @@ def _update_env_file(env_path: Path, key: str, value: str) -> None:
 
 
 def _parse_redirect_url(url: str) -> dict:
-    """Parse token, userId and expiration from Tradera's redirect URL.
+    """Parse userId, token and expiration from Tradera's redirect URL.
 
     Expected format:
       http://localhost:8080/auth/accept?userId=123&token=abc-def&exp=2027-...
@@ -40,23 +41,22 @@ def _parse_redirect_url(url: str) -> dict:
     parsed = urlparse(url.strip())
     params = parse_qs(parsed.query)
 
+    result = {"user_id": params.get("userId", [None])[0]}
     token = params.get("token", [None])[0]
-    user_id = params.get("userId", [None])[0]
+    if token:
+        result["token"] = token
     expires = params.get("exp", [None])[0]
-
-    if not token:
-        return {"error": "No 'token' parameter found in the redirect URL."}
-
-    result = {"token": token}
-    if user_id:
-        result["user_id"] = user_id
     if expires:
         result["expires"] = expires
     return result
 
 
 def authorize_tradera() -> None:
-    """Interactive CLI to obtain a Tradera user token via the consent flow."""
+    """Interactive CLI to obtain a Tradera user token via the consent flow.
+
+    Tries FetchToken (Option 2) first, falls back to the token from the
+    redirect URL (Option 3) if FetchToken fails.
+    """
     settings = Settings()
 
     if not settings.tradera_app_id:
@@ -93,32 +93,53 @@ def authorize_tradera() -> None:
         print("Error: No URL provided.")
         sys.exit(1)
 
-    result = _parse_redirect_url(redirect_url)
+    # Parse userId and token from redirect URL
+    redirect_result = _parse_redirect_url(redirect_url)
+    user_id = redirect_result.get("user_id")
 
-    if "error" in result:
-        print(f"\nError: {result['error']}")
+    # Try FetchToken (Option 2) first, fall back to redirect URL token (Option 3)
+    print()
+    print("Fetching authorization token from Tradera...")
+    tradera = TraderaClient(
+        app_id=settings.tradera_app_id,
+        app_key=settings.tradera_app_key,
+        sandbox=settings.tradera_sandbox,
+    )
+    fetch_result = tradera.fetch_token(skey)
+
+    if "error" not in fetch_result:
+        token = fetch_result["token"]
+        expires = fetch_result.get("expires")
+        print("  Token obtained via FetchToken.")
+    elif "token" in redirect_result:
+        token = redirect_result["token"]
+        expires = redirect_result.get("expires")
+        print("  FetchToken unavailable, using token from redirect URL.")
+    else:
+        print(f"\nError: {fetch_result['error']}")
+        if "response_repr" in fetch_result:
+            print(f"  Response: {fetch_result['response_repr']}")
         sys.exit(1)
 
-    token_masked = result["token"][:8] + "..." if len(result["token"]) > 8 else "***"
+    token_masked = token[:8] + "..." if len(token) > 8 else "***"
     print()
     print("Authorization successful!")
-    print(f"  User ID: {result.get('user_id', 'N/A')}")
+    print(f"  User ID: {user_id or 'N/A'}")
     print(f"  Token:   {token_masked}")
-    print(f"  Expires: {result.get('expires', 'N/A')}")
+    print(f"  Expires: {expires or 'N/A'}")
     print()
 
     answer = input("Save credentials to .env? [Y/n] ").strip().lower()
     if answer in ("", "y", "yes"):
         env_path = Path(".env")
-        _update_env_file(env_path, "TRADERA_USER_TOKEN", result["token"])
-        if result.get("user_id"):
-            _update_env_file(env_path, "TRADERA_USER_ID", result["user_id"])
+        _update_env_file(env_path, "TRADERA_USER_TOKEN", token)
+        if user_id:
+            _update_env_file(env_path, "TRADERA_USER_ID", user_id)
             print(f"Saved TRADERA_USER_TOKEN and TRADERA_USER_ID to {env_path}")
         else:
             print(f"Saved TRADERA_USER_TOKEN to {env_path}")
     else:
-        print("Not saved. Copy the token from the redirect URL in your browser")
-        print("and add these to your .env manually:")
-        print("  TRADERA_USER_TOKEN=<token from redirect URL>")
-        if result.get("user_id"):
-            print(f"  TRADERA_USER_ID={result['user_id']}")
+        print("Not saved. Add these to your .env manually:")
+        print(f"  TRADERA_USER_TOKEN={token}")
+        if user_id:
+            print(f"  TRADERA_USER_ID={user_id}")
