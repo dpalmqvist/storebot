@@ -244,7 +244,7 @@ Tradera allows 100 API calls per 24 hours by default. If you hit the limit:
 
 1. Check logs for rate limit errors
 2. Increase `ORDER_POLL_INTERVAL_MINUTES` to poll less frequently
-3. Request a rate limit increase from Tradera
+3. Request a rate limit increase by emailing [apiadmin@tradera.com](mailto:apiadmin@tradera.com)
 
 ### SQLite Lock Contention
 

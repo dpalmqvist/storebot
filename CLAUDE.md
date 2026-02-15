@@ -63,7 +63,7 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 
 ## External API Notes
 
-- **Tradera:** SOAP/XML API, rate limit 100 calls/24h (extendable). Sandbox via `sandbox=1`. Register at Tradera Developer Program. **No messaging/Q&A support** — the SOAP API has no methods for reading or answering buyer questions. Customer communication will require email integration.
+- **Tradera:** SOAP/XML API, rate limit 100 calls/24h (extendable via apiadmin@tradera.com). Sandbox via `sandbox=1`. Register at Tradera Developer Program. Request restricted API access (RestrictedService, OrderService) by emailing apiadmin@tradera.com. **No messaging/Q&A support** — the SOAP API has no methods for reading or answering buyer questions. Customer communication will require email integration.
 - **Blocket:** Unofficial, read-only. Bearer token extracted from browser session (expires, needs manual renewal).
 - **PostNord:** REST API for shipping labels. Sandbox: `atapi2.postnord.com`, production: `api2.postnord.com`. API key as query parameter. Service codes: `19` (MyPack Collect), `17` (MyPack Home), `18` (Postpaket).
 

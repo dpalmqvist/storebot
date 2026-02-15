@@ -120,10 +120,11 @@ Tradera uses a SOAP/XML API for searching and listing items.
 
 1. Register at the [Tradera Developer Program](https://developer.tradera.com/)
 2. Create an application to get your `AppId` and `AppKey`
-3. Set `TRADERA_APP_ID` and `TRADERA_APP_KEY` in `.env`
-4. Keep `TRADERA_SANDBOX=true` during development
+3. **Request access to restricted APIs** by emailing [apiadmin@tradera.com](mailto:apiadmin@tradera.com) — this is required for creating listings, managing orders, and uploading images (RestrictedService and OrderService)
+4. Set `TRADERA_APP_ID` and `TRADERA_APP_KEY` in `.env`
+5. Keep `TRADERA_SANDBOX=true` during development
 
-**Rate limits:** 100 API calls per 24 hours (can request an increase from Tradera).
+**Rate limits:** 100 API calls per 24 hours (can request an increase from Tradera via [apiadmin@tradera.com](mailto:apiadmin@tradera.com)).
 
 **Customer messaging:** The Tradera SOAP API does not expose any methods for reading or answering buyer questions/messages. Customer communication handling will require email integration (parsing Tradera notification emails via IMAP).
 
