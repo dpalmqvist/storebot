@@ -374,7 +374,7 @@ class Agent:
 
         self._store_usage(
             chat_id=chat_id,
-            model=self.settings.claude_model,
+            model=getattr(response, "model", self.settings.claude_model),
             input_tokens=total_input,
             output_tokens=total_output,
             cache_creation=total_cache_creation,

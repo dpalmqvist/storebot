@@ -11,6 +11,8 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+import sqlalchemy as sa
+
 from storebot.db import ApiUsage, Order, PlatformListing, Product
 from storebot.tools.helpers import log_action, naive_now
 
@@ -559,46 +561,68 @@ class AnalyticsService:
         return text
 
     def usage_report(self, period: str | None = None) -> dict:
-        """API token usage and cost for a period, with daily breakdown."""
+        """API token usage and cost for a period, with daily breakdown.
+
+        Aggregates in SQL to avoid loading all rows into memory.
+        """
         start, end = _parse_period(period)
 
         with Session(self.engine) as session:
-            rows = (
-                session.query(ApiUsage)
+            # Totals via SQL aggregation
+            totals = (
+                session.query(
+                    sa.func.count().label("turns"),
+                    sa.func.coalesce(sa.func.sum(ApiUsage.input_tokens), 0).label("input_tokens"),
+                    sa.func.coalesce(sa.func.sum(ApiUsage.output_tokens), 0).label(
+                        "output_tokens"
+                    ),
+                    sa.func.coalesce(sa.func.sum(ApiUsage.cache_creation_input_tokens), 0).label(
+                        "cache_creation"
+                    ),
+                    sa.func.coalesce(sa.func.sum(ApiUsage.cache_read_input_tokens), 0).label(
+                        "cache_read"
+                    ),
+                    sa.func.coalesce(sa.func.sum(ApiUsage.tool_calls), 0).label("tool_calls"),
+                    sa.func.coalesce(sa.func.sum(ApiUsage.estimated_cost_sek), 0).label(
+                        "cost_sek"
+                    ),
+                )
                 .filter(ApiUsage.created_at >= start, ApiUsage.created_at < end)
+                .one()
+            )
+
+            total_turns = int(totals.turns)
+            total_input = int(totals.input_tokens)
+            total_output = int(totals.output_tokens)
+            total_cache_creation = int(totals.cache_creation)
+            total_cache_read = int(totals.cache_read)
+            total_tool_calls = int(totals.tool_calls)
+            total_cost = float(totals.cost_sek)
+
+            # Daily breakdown via SQL GROUP BY
+            day_col = sa.func.strftime("%Y-%m-%d", ApiUsage.created_at).label("day")
+            daily_rows = (
+                session.query(
+                    day_col,
+                    sa.func.count().label("turns"),
+                    sa.func.sum(ApiUsage.input_tokens).label("input_tokens"),
+                    sa.func.sum(ApiUsage.output_tokens).label("output_tokens"),
+                    sa.func.sum(ApiUsage.estimated_cost_sek).label("cost_sek"),
+                )
+                .filter(ApiUsage.created_at >= start, ApiUsage.created_at < end)
+                .group_by("day")
                 .all()
             )
 
-            total_input = 0
-            total_output = 0
-            total_cache_creation = 0
-            total_cache_read = 0
-            total_cost = 0.0
-            total_tool_calls = 0
             daily: dict[str, dict] = {}
+            for row in daily_rows:
+                daily[row.day] = {
+                    "turns": int(row.turns),
+                    "input_tokens": int(row.input_tokens),
+                    "output_tokens": int(row.output_tokens),
+                    "cost_sek": round(float(row.cost_sek), 2),
+                }
 
-            for row in rows:
-                total_input += row.input_tokens
-                total_output += row.output_tokens
-                total_cache_creation += row.cache_creation_input_tokens
-                total_cache_read += row.cache_read_input_tokens
-                total_cost += row.estimated_cost_sek
-                total_tool_calls += row.tool_calls
-
-                day_key = row.created_at.strftime("%Y-%m-%d")
-                day = daily.setdefault(
-                    day_key,
-                    {"turns": 0, "input_tokens": 0, "output_tokens": 0, "cost_sek": 0.0},
-                )
-                day["turns"] += 1
-                day["input_tokens"] += row.input_tokens
-                day["output_tokens"] += row.output_tokens
-                day["cost_sek"] += row.estimated_cost_sek
-
-            for day in daily.values():
-                day["cost_sek"] = round(day["cost_sek"], 2)
-
-            total_turns = len(rows)
             avg_input = round(total_input / total_turns) if total_turns else 0
             avg_output = round(total_output / total_turns) if total_turns else 0
             avg_cost = round(total_cost / total_turns, 4) if total_turns else 0.0

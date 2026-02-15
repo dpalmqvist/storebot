@@ -3,7 +3,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import sqlalchemy as sa
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, event
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    event,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from storebot.config import get_settings
@@ -228,7 +239,7 @@ class ApiUsage(Base):
     cache_creation_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cache_read_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     tool_calls: Mapped[int] = mapped_column(Integer, default=0)
-    estimated_cost_sek: Mapped[float] = mapped_column(Float, default=0.0)
+    estimated_cost_sek: Mapped[float] = mapped_column(Numeric(10, 4), default=0.0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), index=True
     )

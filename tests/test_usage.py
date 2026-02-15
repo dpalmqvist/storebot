@@ -1,5 +1,6 @@
 """Tests for API token/cost tracking (#56)."""
 
+from decimal import Decimal
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
@@ -49,7 +50,7 @@ class TestApiUsageModel:
             assert row.cache_creation_input_tokens == 200
             assert row.cache_read_input_tokens == 800
             assert row.tool_calls == 3
-            assert row.estimated_cost_sek == 0.15
+            assert row.estimated_cost_sek == Decimal("0.1500")
 
     def test_null_chat_id(self, engine):
         with Session(engine) as session:
@@ -238,6 +239,7 @@ class TestHandleMessageAccumulation:
         response1.stop_reason = "tool_use"
         response1.content = [tool_block]
         response1.usage = usage1
+        response1.model = "claude-sonnet-4-5-20250929"
 
         usage2 = MagicMock()
         usage2.input_tokens = 1500
@@ -253,6 +255,7 @@ class TestHandleMessageAccumulation:
         response2.stop_reason = "end_turn"
         response2.content = [text_block]
         response2.usage = usage2
+        response2.model = "claude-sonnet-4-5-20250929"
 
         agent._call_api = MagicMock(side_effect=[response1, response2])
         agent.execute_tool = MagicMock(return_value={"results": [{"id": 1}], "total_count": 1})
@@ -269,6 +272,46 @@ class TestHandleMessageAccumulation:
             assert row.cache_creation_input_tokens == 50
             assert row.cache_read_input_tokens == 1850  # 900 + 950
             assert row.tool_calls == 1
+            assert row.model == "claude-sonnet-4-5-20250929"
+
+    def test_stores_response_model_not_settings(self, engine):
+        """Verify that the actual response model is stored, not the settings alias."""
+        settings = MagicMock()
+        settings.claude_api_key = "test"
+        settings.claude_model = "claude-sonnet-latest"  # alias in settings
+        settings.tradera_app_id = "1"
+        settings.tradera_app_key = "k"
+        settings.tradera_sandbox = True
+        settings.tradera_user_id = None
+        settings.tradera_user_token = None
+        settings.blocket_bearer_token = None
+        settings.postnord_api_key = None
+
+        agent = Agent(settings=settings, engine=engine)
+
+        usage = MagicMock()
+        usage.input_tokens = 100
+        usage.output_tokens = 50
+        usage.cache_creation_input_tokens = 0
+        usage.cache_read_input_tokens = 0
+
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Hej!"
+
+        response = MagicMock()
+        response.stop_reason = "end_turn"
+        response.content = [text_block]
+        response.usage = usage
+        response.model = "claude-sonnet-4-5-20250929"  # concrete model from API
+
+        agent._call_api = MagicMock(return_value=response)
+
+        agent.handle_message("hej", chat_id="test")
+
+        with Session(engine) as session:
+            row = session.query(ApiUsage).first()
+            assert row.model == "claude-sonnet-4-5-20250929"  # not "claude-sonnet-latest"
 
 
 # --- usage_report ---

@@ -29,8 +29,8 @@ def upgrade() -> None:
     sa.Column('cache_creation_input_tokens', sa.Integer(), nullable=False),
     sa.Column('cache_read_input_tokens', sa.Integer(), nullable=False),
     sa.Column('tool_calls', sa.Integer(), nullable=False),
-    sa.Column('estimated_cost_sek', sa.Float(), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('estimated_cost_sek', sa.Numeric(10, 4), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')),
     sa.PrimaryKeyConstraint('id')
     )
     with op.batch_alter_table('api_usage', schema=None) as batch_op:
