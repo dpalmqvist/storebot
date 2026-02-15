@@ -1,5 +1,6 @@
 import os
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import sqlalchemy as sa
@@ -239,7 +240,7 @@ class ApiUsage(Base):
     cache_creation_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cache_read_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     tool_calls: Mapped[int] = mapped_column(Integer, default=0)
-    estimated_cost_sek: Mapped[float] = mapped_column(Numeric(10, 4), default=0.0)
+    estimated_cost_sek: Mapped[Decimal] = mapped_column(Numeric(10, 4), default=Decimal("0"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), index=True
     )

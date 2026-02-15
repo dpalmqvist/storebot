@@ -402,10 +402,8 @@ class Agent:
         """Persist one ApiUsage row per handle_message call. Never raises."""
         if not self.engine:
             return
+        cost = _estimate_cost_sek(model, input_tokens, output_tokens, cache_creation, cache_read)
         try:
-            cost = _estimate_cost_sek(
-                model, input_tokens, output_tokens, cache_creation, cache_read
-            )
             with Session(self.engine) as session:
                 session.add(
                     ApiUsage(
@@ -419,7 +417,11 @@ class Agent:
                         estimated_cost_sek=cost,
                     )
                 )
-                session.commit()
+                try:
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                    raise
         except Exception:
             logger.warning("Failed to store API usage", exc_info=True)
 
