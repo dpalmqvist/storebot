@@ -264,9 +264,9 @@ class TraderaClient:
     def _soap_body_xml(envelope) -> str | None:
         """Extract the SOAP Body from an envelope, omitting auth headers."""
         body = envelope.find("{http://schemas.xmlsoap.org/soap/envelope/}Body")
-        if body is not None:
-            return etree.tostring(body, pretty_print=True).decode()
-        return etree.tostring(envelope, pretty_print=True).decode()
+        if body is None:
+            return None
+        return etree.tostring(body, pretty_print=True).decode()
 
     def _log_soap_exchange(self, history: HistoryPlugin, operation: str) -> None:
         """Log the SOAP Body (no auth headers) from a HistoryPlugin."""
@@ -274,7 +274,9 @@ class TraderaClient:
             try:
                 env = getattr(history, attr, {}).get("envelope")
                 if env is not None:
-                    logger.debug("%s SOAP %s:\n%s", operation, label, self._soap_body_xml(env))
+                    body_xml = self._soap_body_xml(env)
+                    if body_xml:
+                        logger.debug("%s SOAP %s:\n%s", operation, label, body_xml)
             except Exception:
                 logger.debug("%s: could not extract %s XML", operation, label)
 
@@ -486,16 +488,9 @@ class TraderaClient:
         during the authorization URL step.
         """
         try:
-            history = HistoryPlugin()
-            self.public_client.plugins.append(history)
-
-            try:
-                response = self._fetch_token_api_call(
-                    secret_key, self._auth_headers(self.public_client)
-                )
-            finally:
-                self.public_client.plugins.remove(history)
-                self._log_soap_exchange(history, "FetchToken")
+            response = self._fetch_token_api_call(
+                secret_key, self._auth_headers(self.public_client)
+            )
 
             token = getattr(response, "AuthToken", None)
             expires = getattr(response, "HardExpirationTime", None)
