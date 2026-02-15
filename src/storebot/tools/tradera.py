@@ -6,6 +6,7 @@ import zeep
 from lxml import etree
 from zeep.plugins import HistoryPlugin
 from zeep.transports import Transport
+from zeep.xsd import SkipValue
 
 from storebot.retry import retry_on_transient
 
@@ -212,6 +213,7 @@ class TraderaClient:
                 "Restarts": 0,
                 "ItemType": item_type,
                 "AutoCommit": auto_commit,
+                "AcceptedBidderId": SkipValue,
             }
             if start_price is not None:
                 params["StartPrice"] = int(start_price)
