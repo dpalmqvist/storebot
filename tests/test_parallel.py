@@ -21,6 +21,8 @@ def _make_agent(engine):
     settings = MagicMock()
     settings.claude_api_key = "test"
     settings.claude_model = "claude-sonnet-4-5-20250929"
+    settings.claude_model_simple = ""
+    settings.claude_thinking_budget = 0
     settings.tradera_app_id = "1"
     settings.tradera_app_key = "k"
     settings.tradera_sandbox = True
