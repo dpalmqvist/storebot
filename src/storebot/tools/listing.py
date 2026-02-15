@@ -312,7 +312,7 @@ class ListingService:
         return [encode_image_base64(optimize_for_upload(img.file_path)) for img in images]
 
     def _create_tradera_listing(self, listing: PlatformListing, encoded_images: list) -> dict:
-        """Create listing on Tradera and upload images."""
+        """Create listing on Tradera, upload images, and commit."""
         duration = listing.duration_days or 7
         details = listing.details or {}
         shipping_options = details.get("shipping_options")
@@ -330,14 +330,19 @@ class ListingService:
             shipping_cost=shipping_cost,
             shipping_options=shipping_options,
             shipping_condition=shipping_condition,
+            auto_commit=False,
         )
 
         if "error" in create_result:
             return create_result
 
-        # Image upload is non-fatal -- listing is already created on Tradera
+        request_id = create_result.get("request_id")
+        if request_id is None:
+            return {"error": "Tradera API response missing RequestId, cannot commit listing"}
+
+        # Image upload is non-fatal -- we still commit the listing
         upload_result = self.tradera.upload_images(
-            item_id=int(create_result["item_id"]),
+            request_id=request_id,
             images=encoded_images,
         )
         if "error" in upload_result:
@@ -346,6 +351,14 @@ class ListingService:
                 listing.id,
                 upload_result["error"],
             )
+
+        # Commit the listing (required when AutoCommit=False)
+        commit_result = self.tradera.commit_listing(request_id)
+        if "error" in commit_result:
+            return {
+                "error": f"Listing created (item_id={create_result['item_id']}) "
+                f"but commit failed: {commit_result['error']}"
+            }
 
         return create_result
 

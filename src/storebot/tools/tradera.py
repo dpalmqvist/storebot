@@ -197,17 +197,20 @@ class TraderaClient:
         shipping_cost: float | None = None,
         shipping_options: list[dict] | None = None,
         shipping_condition: str | None = None,
+        auto_commit: bool = True,
     ) -> dict:
         """Create a listing on Tradera via RestrictedService AddItem."""
         try:
-            item_type = 2 if listing_type == "buy_it_now" else 1  # 1=Auction, 2=BuyItNow
+            item_type = "PureBuyItNow" if listing_type == "buy_it_now" else "Auction"
 
             params = {
                 "Title": title,
                 "Description": description,
                 "CategoryId": int(category_id),
                 "Duration": int(duration_days),
+                "Restarts": 0,
                 "ItemType": item_type,
+                "AutoCommit": auto_commit,
             }
             if start_price is not None:
                 params["StartPrice"] = int(start_price)
@@ -218,7 +221,7 @@ class TraderaClient:
                     self._build_shipping_option(opt) for opt in shipping_options
                 ]
             elif shipping_cost is not None:
-                params["ShippingCost"] = int(shipping_cost)
+                params["ShippingOptions"] = [{"Cost": int(shipping_cost)}]
 
             if shipping_condition is not None:
                 params["ShippingCondition"] = shipping_condition
@@ -228,10 +231,12 @@ class TraderaClient:
                 self._auth_headers(self.restricted_client, include_authorization=True),
             )
 
+            request_id = getattr(response, "RequestId", None)
             item_id = getattr(response, "ItemId", None)
             if item_id is None:
                 return {"error": "Tradera API response missing ItemId"}
             return {
+                "request_id": request_id,
                 "item_id": item_id,
                 "url": f"https://www.tradera.com/item/{item_id}",
             }
@@ -248,32 +253,50 @@ class TraderaClient:
     }
 
     @retry_on_transient()
-    def _upload_image_api_call(self, item_id, image_data, image_format, headers):
+    def _upload_image_api_call(self, request_id, image_data, image_format, headers):
         return self.restricted_client.service.AddItemImage(
-            requestId=int(item_id),
+            requestId=int(request_id),
             imageData=image_data,
             imageFormat=image_format,
             hasMega=True,
             **headers,
         )
 
-    def upload_images(self, item_id: int, images: list[tuple[str, str]]) -> dict:
+    def upload_images(self, request_id: int, images: list[tuple[str, str]]) -> dict:
         """Upload images for a listing on Tradera.
 
         Args:
-            item_id: Tradera item ID.
+            request_id: RequestId from AddItem response.
             images: List of (base64_data, media_type) tuples.
         """
         try:
             headers = self._auth_headers(self.restricted_client, include_authorization=True)
             for base64_data, media_type in images:
                 image_format = self._MEDIA_TYPE_TO_FORMAT.get(media_type, "Jpeg")
-                self._upload_image_api_call(item_id, base64_data, image_format, headers)
+                self._upload_image_api_call(request_id, base64_data, image_format, headers)
 
-            return {"item_id": item_id, "images_uploaded": len(images)}
+            return {"request_id": request_id, "images_uploaded": len(images)}
 
         except Exception as e:
             logger.exception("Tradera upload_images failed")
+            return {"error": str(e)}
+
+    @retry_on_transient()
+    def _commit_listing_api_call(self, request_id, headers):
+        return self.restricted_client.service.AddItemCommit(requestId=int(request_id), **headers)
+
+    def commit_listing(self, request_id: int) -> dict:
+        """Commit a listing after uploading images (required when AutoCommit=False)."""
+        if request_id is None:
+            return {"error": "request_id is required"}
+        try:
+            self._commit_listing_api_call(
+                request_id,
+                self._auth_headers(self.restricted_client, include_authorization=True),
+            )
+            return {"request_id": request_id, "committed": True}
+        except Exception as e:
+            logger.exception("Tradera commit_listing failed")
             return {"error": str(e)}
 
     @retry_on_transient()

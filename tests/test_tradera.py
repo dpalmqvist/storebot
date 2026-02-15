@@ -312,6 +312,7 @@ class TestTraderaCreateListing:
     def test_auction_listing(self, client):
         response = MagicMock()
         response.ItemId = 12345
+        response.RequestId = 99001
         client._restricted_client.service.AddItem.return_value = response
 
         result = client.create_listing(
@@ -324,6 +325,7 @@ class TestTraderaCreateListing:
         )
 
         assert result["item_id"] == 12345
+        assert result["request_id"] == 99001
         assert result["url"] == "https://www.tradera.com/item/12345"
 
         call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
@@ -331,12 +333,14 @@ class TestTraderaCreateListing:
         assert item_req["Title"] == "Antik byrå"
         assert item_req["CategoryId"] == 344
         assert item_req["Duration"] == 7
-        assert item_req["ItemType"] == 1  # Auction
+        assert item_req["ItemType"] == "Auction"
         assert item_req["StartPrice"] == 500
+        assert item_req["AutoCommit"] is True
 
     def test_buy_it_now_listing(self, client):
         response = MagicMock()
         response.ItemId = 99999
+        response.RequestId = 99002
         client._restricted_client.service.AddItem.return_value = response
 
         result = client.create_listing(
@@ -350,12 +354,13 @@ class TestTraderaCreateListing:
         assert result["item_id"] == 99999
         call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
         item_req = call_kwargs["itemRequest"]
-        assert item_req["ItemType"] == 2  # BuyItNow
+        assert item_req["ItemType"] == "PureBuyItNow"
         assert item_req["BuyItNowPrice"] == 800
 
-    def test_with_shipping_cost(self, client):
+    def test_with_shipping_cost_converts_to_shipping_options(self, client):
         response = MagicMock()
         response.ItemId = 1
+        response.RequestId = 99003
         client._restricted_client.service.AddItem.return_value = response
 
         client.create_listing(
@@ -367,11 +372,25 @@ class TestTraderaCreateListing:
 
         call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
         item_req = call_kwargs["itemRequest"]
-        assert item_req["ShippingCost"] == 99
+        assert "ShippingCost" not in item_req
+        assert item_req["ShippingOptions"] == [{"Cost": 99}]
+
+    def test_auto_commit_false(self, client):
+        response = MagicMock()
+        response.ItemId = 1
+        response.RequestId = 99004
+        client._restricted_client.service.AddItem.return_value = response
+
+        client.create_listing(title="Test", description="Test", category_id=100, auto_commit=False)
+
+        call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
+        item_req = call_kwargs["itemRequest"]
+        assert item_req["AutoCommit"] is False
 
     def test_uses_authorization_headers(self, client):
         response = MagicMock()
         response.ItemId = 1
+        response.RequestId = 99005
         client._restricted_client.service.AddItem.return_value = response
 
         client.create_listing(title="Test", description="Test", category_id=100)
@@ -400,9 +419,9 @@ class TestTraderaUploadImages:
         client._restricted_client.service.AddItemImage.return_value = None
 
         images = [("base64data1", "image/jpeg"), ("base64data2", "image/png")]
-        result = client.upload_images(item_id=12345, images=images)
+        result = client.upload_images(request_id=12345, images=images)
 
-        assert result["item_id"] == 12345
+        assert result["request_id"] == 12345
         assert result["images_uploaded"] == 2
         assert client._restricted_client.service.AddItemImage.call_count == 2
 
@@ -422,23 +441,43 @@ class TestTraderaUploadImages:
     def test_api_error(self, client):
         client._restricted_client.service.AddItemImage.side_effect = Exception("Upload failed")
 
-        result = client.upload_images(item_id=1, images=[("data", "image/jpeg")])
+        result = client.upload_images(request_id=1, images=[("data", "image/jpeg")])
 
         assert result["error"] == "Upload failed"
 
     def test_empty_list(self, client):
-        result = client.upload_images(item_id=1, images=[])
+        result = client.upload_images(request_id=1, images=[])
 
         assert result["images_uploaded"] == 0
 
     def test_unknown_media_type_defaults_to_jpeg(self, client):
         client._restricted_client.service.AddItemImage.return_value = None
 
-        result = client.upload_images(item_id=1, images=[("data", "image/webp")])
+        result = client.upload_images(request_id=1, images=[("data", "image/webp")])
 
         assert result["images_uploaded"] == 1
         call_kwargs = client._restricted_client.service.AddItemImage.call_args.kwargs
         assert call_kwargs["imageFormat"] == "Jpeg"
+
+
+class TestCommitListing:
+    def test_success(self, client):
+        client._restricted_client.service.AddItemCommit.return_value = None
+
+        result = client.commit_listing(request_id=99001)
+
+        assert result["request_id"] == 99001
+        assert result["committed"] is True
+
+        call_kwargs = client._restricted_client.service.AddItemCommit.call_args.kwargs
+        assert call_kwargs["requestId"] == 99001
+
+    def test_api_error(self, client):
+        client._restricted_client.service.AddItemCommit.side_effect = Exception("Commit failed")
+
+        result = client.commit_listing(request_id=99001)
+
+        assert result["error"] == "Commit failed"
 
 
 class TestTraderaGetCategories:
@@ -584,6 +623,7 @@ class TestCreateListingShipping:
     def test_structured_shipping_options(self, client):
         response = MagicMock()
         response.ItemId = 1
+        response.RequestId = 88001
         client._restricted_client.service.AddItem.return_value = response
 
         shipping_options = [
@@ -616,6 +656,7 @@ class TestCreateListingShipping:
     def test_structured_options_override_flat_cost(self, client):
         response = MagicMock()
         response.ItemId = 1
+        response.RequestId = 88002
         client._restricted_client.service.AddItem.return_value = response
 
         client.create_listing(
@@ -631,9 +672,10 @@ class TestCreateListingShipping:
         assert "ShippingOptions" in item_req
         assert "ShippingCost" not in item_req
 
-    def test_flat_shipping_cost_backward_compat(self, client):
+    def test_flat_shipping_cost_converts_to_shipping_options(self, client):
         response = MagicMock()
         response.ItemId = 1
+        response.RequestId = 88003
         client._restricted_client.service.AddItem.return_value = response
 
         client.create_listing(
@@ -645,8 +687,8 @@ class TestCreateListingShipping:
 
         call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
         item_req = call_kwargs["itemRequest"]
-        assert item_req["ShippingCost"] == 49
-        assert "ShippingOptions" not in item_req
+        assert "ShippingCost" not in item_req
+        assert item_req["ShippingOptions"] == [{"Cost": 49}]
 
 
 class TestTraderaLeaveFeedback:

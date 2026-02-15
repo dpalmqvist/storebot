@@ -139,6 +139,16 @@ When reviewing PRs, provide detailed and thorough reviews:
 - Verify audit trail coverage — agent actions should be logged to `agent_actions`
 - Ensure Swedish business rules (VAT, vouchers) are respected in financial code paths
 
+## Pre-Push Checklist
+
+Before pushing to GitHub, always run and verify:
+
+1. `ruff check src/ tests/` — all lint checks must pass
+2. `ruff format --check src/ tests/` — all files must be correctly formatted
+3. `pytest` — all unit tests must pass
+
+Do NOT push if any of these fail. Fix issues first.
+
 ## Commands
 
 - **Run bot:** `storebot` (or `python -m storebot.bot.handlers`)
