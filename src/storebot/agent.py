@@ -63,6 +63,12 @@ _MODEL_PRICING = {
         "cache_write": Decimal("1.0"),
         "cache_read": Decimal("0.08"),
     },
+    "claude-haiku-4-5-20251001": {
+        "input": Decimal("1.0"),
+        "output": Decimal("5.0"),
+        "cache_write": Decimal("1.25"),
+        "cache_read": Decimal("0.10"),
+    },
 }
 _USD_TO_SEK = Decimal("10.5")
 _ONE_MILLION = Decimal("1000000")
@@ -181,6 +187,16 @@ def _strip_nulls(value):
         return [_strip_nulls(v) for v in value]
     return value
 
+
+# Categories requiring the capable model for accuracy (financial, creative).
+_COMPLEX_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "listing",
+        "order",
+        "accounting",
+        "analytics",
+    }
+)
 
 _KEYWORD_CATEGORIES: dict[str, list[str]] = {
     "research": ["sök", "söka", "tradera", "blocket", "jämför", "jämföra"],
@@ -377,7 +393,30 @@ class Agent:
         )
         self.analytics = AnalyticsService(engine=self.engine) if self.engine else None
 
-    def _call_api(self, messages: list[dict], tools: list[dict] | None = None):
+    def _select_model(self, categories: set[str], has_images: bool) -> str:
+        """Select model based on task complexity.
+
+        Returns claude_model_simple when configured AND:
+        - Thinking is not enabled (budget < 1024)
+        - No images (vision quality matters)
+        - No complex categories detected
+
+        Otherwise returns claude_model (capable model).
+        """
+        simple = self.settings.claude_model_simple
+        if not simple:
+            return self.settings.claude_model
+        if self.settings.claude_thinking_budget >= 1024:
+            return self.settings.claude_model
+        if has_images:
+            return self.settings.claude_model
+        if categories & _COMPLEX_CATEGORIES:
+            return self.settings.claude_model
+        return simple
+
+    def _call_api(
+        self, messages: list[dict], tools: list[dict] | None = None, model: str | None = None
+    ):
         """Send messages to Claude and return the response."""
         logger.debug(
             "API call: sending %d messages",
@@ -393,15 +432,17 @@ class Agent:
         ]
         if tools is None:
             tools = _get_filtered_tools({"core"})
+        selected_model = model or self.settings.claude_model
         kwargs: dict = {
-            "model": self.settings.claude_model,
+            "model": selected_model,
             "max_tokens": self.settings.claude_max_tokens,
             "system": system,
             "messages": messages,
             "tools": tools,
         }
         thinking_budget = self.settings.claude_thinking_budget
-        if thinking_budget >= 1024:
+        # Only enable thinking for the primary model
+        if thinking_budget >= 1024 and selected_model == self.settings.claude_model:
             kwargs["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
 
         try:
@@ -474,16 +515,18 @@ class Agent:
 
         # Dynamic tool filtering: detect relevant categories from messages
         active_categories = _detect_categories(messages, set())
+        selected_model = self._select_model(active_categories, bool(image_paths))
         filtered_tools = _get_filtered_tools(active_categories)
         logger.info(
-            "Tool filtering: %d tools from categories %s",
+            "Tool filtering: %d tools from categories %s, model=%s",
             len(filtered_tools),
             sorted(active_categories),
+            selected_model,
         )
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("Filtered tools: %s", [t["name"] for t in filtered_tools])
 
-        response = self._call_api(messages, tools=filtered_tools)
+        response = self._call_api(messages, tools=filtered_tools, model=selected_model)
         usage = getattr(response, "usage", None)
         total_input += getattr(usage, "input_tokens", 0) or 0
         total_output += getattr(usage, "output_tokens", 0) or 0
@@ -593,7 +636,7 @@ class Agent:
             logger.info("Agent turn completed: %d tool calls", len(tool_blocks))
             messages.append({"role": "user", "content": tool_results})
 
-            response = self._call_api(messages, tools=filtered_tools)
+            response = self._call_api(messages, tools=filtered_tools, model=selected_model)
             usage = getattr(response, "usage", None)
             total_input += getattr(usage, "input_tokens", 0) or 0
             total_output += getattr(usage, "output_tokens", 0) or 0
