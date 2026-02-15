@@ -212,8 +212,8 @@ def _detect_categories(messages: list[dict], active_categories: set[str]) -> set
     """
     cats: set[str] = {"core"} | active_categories
 
-    # Scan last 3 messages
-    recent = messages[-3:] if len(messages) > 3 else messages
+    # Scan last 5 messages for better context retention
+    recent = messages[-5:] if len(messages) > 5 else messages
     for msg in recent:
         content = msg.get("content")
         if content is None:
@@ -468,15 +468,21 @@ class Agent:
 
             # request_tools is handled separately because it modifies the tool set
             # for the NEXT API call in this turn. Regular tools execute independently.
-            request_blocks = [b for b in tool_blocks if b.name == "request_tools"]
+            request_blocks = {b.id: b for b in tool_blocks if b.name == "request_tools"}
             regular_blocks = [b for b in tool_blocks if b.name != "request_tools"]
 
-            tool_results = []
+            # Results keyed by tool_use_id — emitted in original tool_blocks order below
+            result_by_id: dict[str, dict] = {}
 
-            # Process request_tools first (expands tool set for next API call)
-            for rb in request_blocks:
+            # Process request_tools (expands tool set for next API call)
+            for rb in request_blocks.values():
                 cleaned = _strip_nulls(rb.input) or {}
                 requested = cleaned.get("categories", [])
+                # Validate: must be a list, filter to known categories
+                if not isinstance(requested, list):
+                    requested = []
+                known = set(TOOL_CATEGORIES.keys())
+                requested = [c for c in requested if isinstance(c, str) and c in known]
                 new_cats = set(requested) - active_categories
                 active_categories |= set(requested)
                 filtered_tools = _get_filtered_tools(active_categories)
@@ -494,13 +500,7 @@ class Agent:
                     sorted(new_cats) if new_cats else "none new",
                     len(filtered_tools),
                 )
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": rb.id,
-                        "content": json.dumps(result, ensure_ascii=False),
-                    }
-                )
+                result_by_id[rb.id] = result
 
             # Process regular tool blocks (parallel if 2+)
             if len(regular_blocks) >= 2:
@@ -517,31 +517,30 @@ class Agent:
                         except Exception as exc:
                             logger.exception("Tool failed in parallel execution")
                             results_by_index[idx] = {"error": str(exc)}
+                # Display images collected serially after all futures complete (no race)
                 for i, tool_block in enumerate(regular_blocks):
                     result = results_by_index[i]
                     display_images = result.pop("_display_images", None)
                     if display_images:
                         all_display_images.extend(display_images)
-                    tool_results.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": tool_block.id,
-                            "content": json.dumps(result, ensure_ascii=False),
-                        }
-                    )
+                    result_by_id[tool_block.id] = result
             else:
                 for tool_block in regular_blocks:
                     result = self.execute_tool(tool_block.name, tool_block.input)
                     display_images = result.pop("_display_images", None)
                     if display_images:
                         all_display_images.extend(display_images)
-                    tool_results.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": tool_block.id,
-                            "content": json.dumps(result, ensure_ascii=False),
-                        }
-                    )
+                    result_by_id[tool_block.id] = result
+
+            # Emit results in original tool_blocks order
+            tool_results = [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": b.id,
+                    "content": json.dumps(result_by_id[b.id], ensure_ascii=False),
+                }
+                for b in tool_blocks
+            ]
 
             logger.info("Agent turn completed: %d tool calls", len(tool_blocks))
             messages.append({"role": "user", "content": tool_results})

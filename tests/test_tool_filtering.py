@@ -109,17 +109,19 @@ class TestDetectCategories:
         result = _detect_categories(messages, set())
         assert "scout" in result
 
-    def test_scans_last_three_messages_only(self):
-        """Only the last 3 messages are scanned."""
+    def test_scans_last_five_messages_only(self):
+        """Only the last 5 messages are scanned."""
         messages = [
-            {"role": "user", "content": "bokföring"},  # old, outside scan
+            {"role": "user", "content": "bokföring"},  # old, outside scan window
             {"role": "assistant", "content": "ok"},
             {"role": "user", "content": "hej"},
             {"role": "assistant", "content": "hej"},
+            {"role": "user", "content": "tjena"},
+            {"role": "assistant", "content": "tjena"},
             {"role": "user", "content": "visa produkter"},
         ]
         result = _detect_categories(messages, set())
-        # "bokföring" is in msg[0] which is outside the last 3
+        # "bokföring" is in msg[0] which is outside the last 5
         assert "accounting" not in result
 
 
@@ -394,3 +396,107 @@ class TestRequestTools:
         validated = validate_tool_result("request_tools", result)
         assert validated["status"] == "ok"
         assert "core" in validated["activated_categories"]
+
+    def test_request_tools_filters_unknown_categories(self, engine):
+        """Unknown categories in request_tools are silently ignored."""
+        agent = _make_agent(engine)
+
+        request_block = MagicMock()
+        request_block.type = "tool_use"
+        request_block.name = "request_tools"
+        request_block.input = {
+            "categories": ["listing", "nonexistent", 42],
+            "reason": "test",
+        }
+        request_block.id = "rt1"
+
+        usage = MagicMock()
+        usage.input_tokens = 100
+        usage.output_tokens = 50
+        usage.cache_creation_input_tokens = 0
+        usage.cache_read_input_tokens = 0
+
+        resp1 = MagicMock()
+        resp1.stop_reason = "tool_use"
+        resp1.content = [request_block]
+        resp1.usage = usage
+        resp1.model = "claude-sonnet-4-5-20250929"
+
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Ok."
+
+        resp2 = MagicMock()
+        resp2.stop_reason = "end_turn"
+        resp2.content = [text_block]
+        resp2.usage = usage
+        resp2.model = "claude-sonnet-4-5-20250929"
+
+        agent._call_api = MagicMock(side_effect=[resp1, resp2])
+
+        result = agent.handle_message("hej")
+
+        tool_result_msgs = [
+            m
+            for m in result.messages
+            if m.get("role") == "user" and isinstance(m.get("content"), list)
+        ]
+        rt_data = json.loads(tool_result_msgs[0]["content"][0]["content"])
+        assert rt_data["status"] == "ok"
+        # "listing" accepted, "nonexistent" and 42 filtered out
+        assert "listing" in rt_data["activated_categories"]
+        assert "nonexistent" not in rt_data["activated_categories"]
+
+    def test_tool_results_preserve_original_order(self, engine):
+        """Tool results should match original tool_blocks order, not request-first."""
+        agent = _make_agent(engine)
+
+        search_block = MagicMock()
+        search_block.type = "tool_use"
+        search_block.name = "search_products"
+        search_block.input = {"query": "stol"}
+        search_block.id = "sp1"
+
+        request_block = MagicMock()
+        request_block.type = "tool_use"
+        request_block.name = "request_tools"
+        request_block.input = {"categories": ["research"], "reason": "test"}
+        request_block.id = "rt1"
+
+        # Order: search_products THEN request_tools
+        usage = MagicMock()
+        usage.input_tokens = 100
+        usage.output_tokens = 50
+        usage.cache_creation_input_tokens = 0
+        usage.cache_read_input_tokens = 0
+
+        resp1 = MagicMock()
+        resp1.stop_reason = "tool_use"
+        resp1.content = [search_block, request_block]
+        resp1.usage = usage
+        resp1.model = "claude-sonnet-4-5-20250929"
+
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Klart."
+
+        resp2 = MagicMock()
+        resp2.stop_reason = "end_turn"
+        resp2.content = [text_block]
+        resp2.usage = usage
+        resp2.model = "claude-sonnet-4-5-20250929"
+
+        agent._call_api = MagicMock(side_effect=[resp1, resp2])
+        agent.execute_tool = MagicMock(return_value={"count": 0, "products": []})
+
+        result = agent.handle_message("hej")
+
+        tool_result_msgs = [
+            m
+            for m in result.messages
+            if m.get("role") == "user" and isinstance(m.get("content"), list)
+        ]
+        results = tool_result_msgs[0]["content"]
+        # Results should be in original order: sp1 first, rt1 second
+        assert results[0]["tool_use_id"] == "sp1"
+        assert results[1]["tool_use_id"] == "rt1"
