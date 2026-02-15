@@ -5,25 +5,23 @@ from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP
 
 import anthropic
+from sqlalchemy.orm import Session
 
 from storebot.config import get_settings
+from storebot.db import ApiUsage
 from storebot.tools.accounting import AccountingService
 from storebot.tools.analytics import AnalyticsService
 from storebot.tools.blocket import BlocketClient
 from storebot.tools.definitions import TOOLS, TOOL_CATEGORIES
-from storebot.tools.schemas import validate_tool_result
 from storebot.tools.image import encode_image_base64
 from storebot.tools.listing import ListingService
 from storebot.tools.marketing import MarketingService
 from storebot.tools.order import OrderService
 from storebot.tools.postnord import Address, PostNordClient
 from storebot.tools.pricing import PricingService
+from storebot.tools.schemas import validate_tool_result
 from storebot.tools.scout import ScoutService
 from storebot.tools.tradera import TraderaClient
-
-from sqlalchemy.orm import Session
-
-from storebot.db import ApiUsage
 
 logger = logging.getLogger(__name__)
 
@@ -236,11 +234,9 @@ _KEYWORD_CATEGORIES: dict[str, list[str]] = {
     ],
 }
 
-# Reverse lookup: tool name → category
-_TOOL_NAME_TO_CATEGORY: dict[str, str] = {}
-for _cat, _names in TOOL_CATEGORIES.items():
-    for _name in _names:
-        _TOOL_NAME_TO_CATEGORY[_name] = _cat
+_TOOL_NAME_TO_CATEGORY: dict[str, str] = {
+    name: cat for cat, names in TOOL_CATEGORIES.items() for name in names
+}
 
 
 def _detect_categories(messages: list[dict], active_categories: set[str]) -> set[str]:
@@ -254,13 +250,12 @@ def _detect_categories(messages: list[dict], active_categories: set[str]) -> set
     # Scan last 5 messages (~2-3 conversation turns). Balances context
     # retention (tools stay available across follow-up questions) with noise
     # reduction (old topics don't bloat the tool set indefinitely).
-    recent = messages[-5:] if len(messages) > 5 else messages
+    recent = messages[-5:]
     for msg in recent:
         content = msg.get("content")
         if content is None:
             continue
 
-        # Collect text fragments and tool names from the message
         texts: list[str] = []
         if isinstance(content, str):
             texts.append(content)
@@ -274,20 +269,16 @@ def _detect_categories(messages: list[dict], active_categories: set[str]) -> set
                         if tool_name in _TOOL_NAME_TO_CATEGORY:
                             cats.add(_TOOL_NAME_TO_CATEGORY[tool_name])
                 elif hasattr(block, "type"):
-                    # SDK content block objects
                     if block.type == "tool_use":
                         if hasattr(block, "name") and block.name in _TOOL_NAME_TO_CATEGORY:
                             cats.add(_TOOL_NAME_TO_CATEGORY[block.name])
                     elif block.type == "text" and hasattr(block, "text"):
                         texts.append(block.text)
 
-        # Match keywords (case-insensitive)
         combined = " ".join(texts).lower()
         for category, keywords in _KEYWORD_CATEGORIES.items():
-            for kw in keywords:
-                if kw in combined:
-                    cats.add(category)
-                    break
+            if any(kw in combined for kw in keywords):
+                cats.add(category)
 
     return cats
 
@@ -301,9 +292,7 @@ def _get_filtered_tools(categories: set[str]) -> list[dict]:
     tools = []
     for t in TOOLS:
         if t.get("category", "core") in categories:
-            # Strip category from what we send to Claude
-            cleaned = {k: v for k, v in t.items() if k != "category"}
-            tools.append(cleaned)
+            tools.append({k: v for k, v in t.items() if k != "category"})
     if tools:
         tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
     return tools
@@ -404,13 +393,12 @@ class Agent:
         Otherwise returns claude_model (capable model).
         """
         simple = self.settings.claude_model_simple
-        if not simple:
-            return self.settings.claude_model
-        if self.settings.claude_thinking_budget >= 1024:
-            return self.settings.claude_model
-        if has_images:
-            return self.settings.claude_model
-        if categories & _COMPLEX_CATEGORIES:
+        if (
+            not simple
+            or self.settings.claude_thinking_budget >= 1024
+            or has_images
+            or categories & _COMPLEX_CATEGORIES
+        ):
             return self.settings.claude_model
         return simple
 
@@ -526,21 +514,31 @@ class Agent:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("Filtered tools: %s", [t["name"] for t in filtered_tools])
 
-        response = self._call_api(messages, tools=filtered_tools, model=selected_model)
-        usage = getattr(response, "usage", None)
-        total_input += getattr(usage, "input_tokens", 0) or 0
-        total_output += getattr(usage, "output_tokens", 0) or 0
-        total_cache_creation += getattr(usage, "cache_creation_input_tokens", 0) or 0
-        total_cache_read += getattr(usage, "cache_read_input_tokens", 0) or 0
-        all_display_images = []
+        def _accumulate_usage(resp):
+            nonlocal total_input, total_output, total_cache_creation, total_cache_read
+            usage = getattr(resp, "usage", None)
+            total_input += getattr(usage, "input_tokens", 0) or 0
+            total_output += getattr(usage, "output_tokens", 0) or 0
+            total_cache_creation += getattr(usage, "cache_creation_input_tokens", 0) or 0
+            total_cache_read += getattr(usage, "cache_read_input_tokens", 0) or 0
 
-        for block in response.content:
-            if getattr(block, "type", None) == "thinking":
-                logger.debug(
-                    "Thinking (%d chars): %.200s...",
-                    len(getattr(block, "thinking", "")),
-                    getattr(block, "thinking", ""),
-                )
+        def _log_thinking(resp, reflection_tools=None):
+            for block in resp.content:
+                if getattr(block, "type", None) != "thinking":
+                    continue
+                thinking_text = getattr(block, "thinking", "")
+                if reflection_tools:
+                    logger.info(
+                        "Reflection thinking after %s (%d chars)",
+                        sorted(reflection_tools),
+                        len(thinking_text),
+                    )
+                logger.debug("Thinking (%d chars): %.200s...", len(thinking_text), thinking_text)
+
+        response = self._call_api(messages, tools=filtered_tools, model=selected_model)
+        _accumulate_usage(response)
+        _log_thinking(response)
+        all_display_images = []
 
         while response.stop_reason == "tool_use":
             tool_blocks = [b for b in response.content if b.type == "tool_use"]
@@ -552,30 +550,28 @@ class Agent:
             request_blocks = {b.id: b for b in tool_blocks if b.name == "request_tools"}
             regular_blocks = [b for b in tool_blocks if b.name != "request_tools"]
 
-            # Results keyed by tool_use_id — emitted in original tool_blocks order below
             result_by_id: dict[str, dict] = {}
 
-            # Process request_tools (expands tool set for next API call)
             for rb in request_blocks.values():
                 cleaned = _strip_nulls(rb.input) or {}
                 requested = cleaned.get("categories", [])
-                # Validate: must be a list, filter to known categories
                 if not isinstance(requested, list):
                     requested = []
-                known = set(TOOL_CATEGORIES.keys())
-                requested = [c for c in requested if isinstance(c, str) and c in known]
+                requested = [c for c in requested if isinstance(c, str) and c in TOOL_CATEGORIES]
                 new_cats = set(requested) - active_categories
                 active_categories |= set(requested)
                 filtered_tools = _get_filtered_tools(active_categories)
                 new_tool_names = []
                 for cat in new_cats:
                     new_tool_names.extend(TOOL_CATEGORIES.get(cat, []))
-                result = {
-                    "status": "ok",
-                    "activated_categories": sorted(active_categories),
-                    "new_tools": new_tool_names,
-                }
-                result = validate_tool_result("request_tools", result)
+                result = validate_tool_result(
+                    "request_tools",
+                    {
+                        "status": "ok",
+                        "activated_categories": sorted(active_categories),
+                        "new_tools": new_tool_names,
+                    },
+                )
                 logger.info(
                     "request_tools: activated %s, now %d tools",
                     sorted(new_cats) if new_cats else "none new",
@@ -598,7 +594,6 @@ class Agent:
                         except Exception as exc:
                             logger.exception("Tool failed in parallel execution")
                             results_by_index[idx] = {"error": str(exc)}
-                # Display images collected serially after all futures complete (no race)
                 for i, tool_block in enumerate(regular_blocks):
                     result = results_by_index[i]
                     display_images = result.pop("_display_images", None)
@@ -613,11 +608,10 @@ class Agent:
                         all_display_images.extend(display_images)
                     result_by_id[tool_block.id] = result
 
-            # Emit results in original tool_blocks order, with reflection prompt for high-stakes tools
             tool_results = []
             for b in tool_blocks:
-                result_json = json.dumps(result_by_id[b.id], ensure_ascii=False)
                 result = result_by_id[b.id]
+                result_json = json.dumps(result, ensure_ascii=False)
                 if (
                     b.name in REFLECTION_TOOLS
                     and isinstance(result, dict)
@@ -637,25 +631,8 @@ class Agent:
             messages.append({"role": "user", "content": tool_results})
 
             response = self._call_api(messages, tools=filtered_tools, model=selected_model)
-            usage = getattr(response, "usage", None)
-            total_input += getattr(usage, "input_tokens", 0) or 0
-            total_output += getattr(usage, "output_tokens", 0) or 0
-            total_cache_creation += getattr(usage, "cache_creation_input_tokens", 0) or 0
-            total_cache_read += getattr(usage, "cache_read_input_tokens", 0) or 0
-
-            for block in response.content:
-                if getattr(block, "type", None) == "thinking":
-                    if reflection_used:
-                        logger.info(
-                            "Reflection thinking after %s (%d chars)",
-                            sorted(reflection_used),
-                            len(getattr(block, "thinking", "")),
-                        )
-                    logger.debug(
-                        "Thinking (%d chars): %.200s...",
-                        len(getattr(block, "thinking", "")),
-                        getattr(block, "thinking", ""),
-                    )
+            _accumulate_usage(response)
+            _log_thinking(response, reflection_tools=reflection_used or None)
 
         messages.append({"role": "assistant", "content": response.content})
 
@@ -701,11 +678,7 @@ class Agent:
                         estimated_cost_sek=cost,
                     )
                 )
-                try:
-                    session.commit()
-                except Exception:
-                    session.rollback()
-                    raise
+                session.commit()
         except Exception:
             logger.warning("Failed to store API usage", exc_info=True)
 
@@ -787,7 +760,6 @@ class Agent:
             return messages
 
     # Maps tool name → (service_attr, method_name).
-    # service_attr is None for tools that don't require a DB-backed service.
     _DISPATCH = {
         "search_tradera": ("tradera", "search"),
         "get_tradera_item": ("tradera", "get_item"),
@@ -865,12 +837,9 @@ class Agent:
         if not isinstance(tool_input, dict):
             return {"error": f"Invalid tool input type for '{name}': expected dict"}
 
-        # request_tools is handled inline in handle_message, not via _DISPATCH
         if name == "request_tools":
             return {"error": "request_tools is handled inline in handle_message"}
 
-        # Strict mode sends null for optional params — strip them so Python
-        # methods use their default values instead.
         cleaned = _strip_nulls(tool_input) or {}
 
         logger.debug(

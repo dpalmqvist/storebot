@@ -165,9 +165,13 @@ class ScoutService:
 
             platform_searches = []
             if search.platform in ("tradera", "both"):
-                platform_searches.append(("tradera", self._search_tradera(search)))
+                platform_searches.append(
+                    ("tradera", self._run_platform_search(self.tradera, "tradera", search))
+                )
             if search.platform in ("blocket", "both"):
-                platform_searches.append(("blocket", self._search_blocket(search)))
+                platform_searches.append(
+                    ("blocket", self._run_platform_search(self.blocket, "blocket", search))
+                )
 
             for platform, items in platform_searches:
                 for item in items:
@@ -235,48 +239,33 @@ class ScoutService:
             "digest": digest,
         }
 
-    def _search_tradera(self, search: SavedSearch) -> list[dict]:
-        """Search Tradera, return normalized items."""
-        if not self.tradera:
+    def _run_platform_search(self, client, platform: str, search: SavedSearch) -> list[dict]:
+        """Run a search on a platform client, return normalized items."""
+        if not client:
             return []
 
         try:
             kwargs: dict = {"query": search.query}
-            if search.category is not None:
-                try:
-                    kwargs["category"] = int(search.category)
-                except (ValueError, TypeError):
-                    pass
-            if search.max_price is not None:
-                kwargs["max_price"] = search.max_price
+            if platform == "tradera":
+                if search.category is not None:
+                    try:
+                        kwargs["category"] = int(search.category)
+                    except (ValueError, TypeError):
+                        pass
+                if search.max_price is not None:
+                    kwargs["max_price"] = search.max_price
+            else:
+                if search.category is not None:
+                    kwargs["category"] = search.category
+                if search.region is not None:
+                    kwargs["region"] = search.region
 
-            result = self.tradera.search(**kwargs)
+            result = client.search(**kwargs)
             return result.get("items", [])
         except Exception:
             logger.exception(
-                "Scout: Tradera search failed for query '%s'",
-                search.query,
-                extra={"job_name": "scout_digest"},
-            )
-            return []
-
-    def _search_blocket(self, search: SavedSearch) -> list[dict]:
-        """Search Blocket, return normalized items."""
-        if not self.blocket:
-            return []
-
-        try:
-            kwargs: dict = {"query": search.query}
-            if search.category is not None:
-                kwargs["category"] = search.category
-            if search.region is not None:
-                kwargs["region"] = search.region
-
-            result = self.blocket.search(**kwargs)
-            return result.get("items", [])
-        except Exception:
-            logger.exception(
-                "Scout: Blocket search failed for query '%s'",
+                "Scout: %s search failed for query '%s'",
+                platform.capitalize(),
                 search.query,
                 extra={"job_name": "scout_digest"},
             )

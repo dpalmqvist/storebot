@@ -109,6 +109,13 @@ class TraderaClient:
             headers.append(authz)
         return {"_soapheaders": headers}
 
+    @staticmethod
+    def _soap_list(container, attr: str) -> list:
+        """Extract a list from a SOAP container object (e.g. Items.SearchItem)."""
+        if container and hasattr(container, attr):
+            return getattr(container, attr) or []
+        return []
+
     def _parse_item(self, item) -> dict:
         buy_now = getattr(item, "BuyItNowPrice", 0) or 0
         max_bid = getattr(item, "MaxBid", 0) or 0
@@ -165,11 +172,7 @@ class TraderaClient:
             if errors:
                 return {"error": str(list(errors)), "total": 0, "items": []}
 
-            items_obj = getattr(response, "Items", None)
-            if items_obj and hasattr(items_obj, "SearchItem"):
-                raw_items = items_obj.SearchItem or []
-            else:
-                raw_items = []
+            raw_items = self._soap_list(getattr(response, "Items", None), "SearchItem")
 
             return {
                 "total": getattr(response, "TotalNumberOfItems", 0) or 0,
@@ -282,7 +285,6 @@ class TraderaClient:
             except Exception:
                 logger.debug("%s: could not extract %s XML", operation, label)
 
-    # Map MIME types to Tradera ImageFormat enum values
     _MEDIA_TYPE_TO_FORMAT = {
         "image/jpeg": "Jpeg",
         "image/png": "Png",
@@ -345,11 +347,7 @@ class TraderaClient:
         try:
             response = self._get_categories_api_call(self._auth_headers(self.public_client))
 
-            categories_obj = getattr(response, "Categories", None)
-            if categories_obj and hasattr(categories_obj, "Category"):
-                raw_cats = categories_obj.Category or []
-            else:
-                raw_cats = []
+            raw_cats = self._soap_list(getattr(response, "Categories", None), "Category")
 
             return {
                 "categories": [
@@ -430,7 +428,6 @@ class TraderaClient:
             "traceable": getattr(prod, "Traceable", None),
         }
 
-    # Maps option dict keys to their SOAP field names (with int conversion)
     _SHIPPING_OPTION_FIELDS = {
         "shipping_option_id": "ShippingOptionId",
         "shipping_product_id": "ShippingProductId",
@@ -514,6 +511,28 @@ class TraderaClient:
             logger.exception("Tradera fetch_token failed")
             return {"error": str(e)}
 
+    def _parse_order_items(self, order) -> list[dict]:
+        """Parse order items from a SOAP SellerOrder object."""
+        return [
+            {
+                "item_id": getattr(item, "ItemId", None),
+                "title": getattr(item, "Title", None),
+                "price": getattr(item, "Price", 0),
+                "quantity": getattr(item, "Quantity", 1),
+            }
+            for item in self._soap_list(getattr(order, "Items", None), "SellerOrderItem")
+        ]
+
+    def _parse_order_payments(self, order) -> list[dict]:
+        """Parse payments from a SOAP SellerOrder object."""
+        return [
+            {
+                "type": getattr(payment, "PaymentType", None),
+                "amount": getattr(payment, "Amount", 0),
+            }
+            for payment in self._soap_list(getattr(order, "Payments", None), "Payment")
+        ]
+
     @retry_on_transient()
     def _get_orders_api_call(self, from_dt, to_dt, headers):
         return self.order_client.service.GetSellerOrders(
@@ -527,14 +546,10 @@ class TraderaClient:
 
     def get_orders(self, from_date: str | None = None, to_date: str | None = None) -> dict:
         try:
-            if to_date:
-                to_dt = datetime.fromisoformat(to_date)
-            else:
-                to_dt = datetime.now(UTC)
-            if from_date:
-                from_dt = datetime.fromisoformat(from_date)
-            else:
-                from_dt = to_dt - timedelta(days=30)
+            to_dt = datetime.fromisoformat(to_date) if to_date else datetime.now(UTC)
+            from_dt = (
+                datetime.fromisoformat(from_date) if from_date else to_dt - timedelta(days=30)
+            )
 
             response = self._get_orders_api_call(
                 from_dt,
@@ -542,38 +557,10 @@ class TraderaClient:
                 self._auth_headers(self.order_client, include_authorization=True),
             )
 
-            orders_obj = getattr(response, "Orders", None)
-            if orders_obj and hasattr(orders_obj, "SellerOrder"):
-                raw_orders = orders_obj.SellerOrder or []
-            else:
-                raw_orders = []
+            raw_orders = self._soap_list(getattr(response, "Orders", None), "SellerOrder")
 
             orders = []
             for order in raw_orders:
-                items = []
-                order_items = getattr(order, "Items", None)
-                if order_items and hasattr(order_items, "SellerOrderItem"):
-                    for item in order_items.SellerOrderItem or []:
-                        items.append(
-                            {
-                                "item_id": getattr(item, "ItemId", None),
-                                "title": getattr(item, "Title", None),
-                                "price": getattr(item, "Price", 0),
-                                "quantity": getattr(item, "Quantity", 1),
-                            }
-                        )
-
-                payments = []
-                order_payments = getattr(order, "Payments", None)
-                if order_payments and hasattr(order_payments, "Payment"):
-                    for payment in order_payments.Payment or []:
-                        payments.append(
-                            {
-                                "type": getattr(payment, "PaymentType", None),
-                                "amount": getattr(payment, "Amount", 0),
-                            }
-                        )
-
                 orders.append(
                     {
                         "order_id": getattr(order, "OrderId", None),
@@ -581,8 +568,8 @@ class TraderaClient:
                         "buyer_address": getattr(order, "BuyerAddress", None),
                         "sub_total": getattr(order, "SubTotal", 0),
                         "shipping_cost": getattr(order, "ShippingCost", 0),
-                        "items": items,
-                        "payments": payments,
+                        "items": self._parse_order_items(order),
+                        "payments": self._parse_order_payments(order),
                     }
                 )
 

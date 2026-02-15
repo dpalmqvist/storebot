@@ -32,12 +32,12 @@ class Product(Base):
     title: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     category: Mapped[str | None] = mapped_column(String)
-    status: Mapped[str] = mapped_column(String, default="draft")  # draft/listed/sold/archived
+    status: Mapped[str] = mapped_column(String, default="draft")
     previous_status: Mapped[str | None] = mapped_column(String)
     acquisition_cost: Mapped[float | None] = mapped_column(Float)
     listing_price: Mapped[float | None] = mapped_column(Float)
     sold_price: Mapped[float | None] = mapped_column(Float)
-    source: Mapped[str | None] = mapped_column(String)  # tradera/blocket/market/estate_sale
+    source: Mapped[str | None] = mapped_column(String)
     condition: Mapped[str | None] = mapped_column(String)
     dimensions: Mapped[str | None] = mapped_column(String)
     weight_grams: Mapped[int | None] = mapped_column(Integer)
@@ -70,13 +70,11 @@ class PlatformListing(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
-    platform: Mapped[str] = mapped_column(String, nullable=False)  # tradera/blocket
+    platform: Mapped[str] = mapped_column(String, nullable=False)
     external_id: Mapped[str | None] = mapped_column(String)
     listing_url: Mapped[str | None] = mapped_column(String)
-    status: Mapped[str] = mapped_column(
-        String, default="draft"
-    )  # draft/approved/active/ended/sold/cancelled
-    listing_type: Mapped[str | None] = mapped_column(String)  # auction/buy_it_now
+    status: Mapped[str] = mapped_column(String, default="draft")
+    listing_type: Mapped[str | None] = mapped_column(String)
     listing_title: Mapped[str | None] = mapped_column(String)
     listing_description: Mapped[str | None] = mapped_column(Text)
     start_price: Mapped[float | None] = mapped_column(Float)
@@ -120,9 +118,7 @@ class Order(Base):
     sale_price: Mapped[float | None] = mapped_column(Float)
     platform_fee: Mapped[float | None] = mapped_column(Float)
     shipping_cost: Mapped[float | None] = mapped_column(Float)
-    status: Mapped[str] = mapped_column(
-        String, default="pending"
-    )  # pending/shipped/delivered/returned
+    status: Mapped[str] = mapped_column(String, default="pending")
     voucher_id: Mapped[int | None] = mapped_column(ForeignKey("vouchers.id"))
     ordered_at: Mapped[datetime | None] = mapped_column(DateTime)
     shipped_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -163,7 +159,7 @@ class ConversationMessage(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     chat_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    role: Mapped[str] = mapped_column(String, nullable=False)  # "user" or "assistant"
+    role: Mapped[str] = mapped_column(String, nullable=False)
     content: Mapped[dict | str | list | None] = mapped_column(JSON)
     image_paths: Mapped[list | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(
@@ -176,7 +172,7 @@ class SavedSearch(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     query: Mapped[str] = mapped_column(String, nullable=False)
-    platform: Mapped[str] = mapped_column(String, default="both")  # tradera/blocket/both
+    platform: Mapped[str] = mapped_column(String, default="both")
     category: Mapped[str | None] = mapped_column(String)
     max_price: Mapped[float | None] = mapped_column(Float)
     region: Mapped[str | None] = mapped_column(String)
@@ -193,7 +189,7 @@ class SeenItem(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     saved_search_id: Mapped[int] = mapped_column(ForeignKey("saved_searches.id"), nullable=False)
-    platform: Mapped[str] = mapped_column(String, nullable=False)  # tradera/blocket
+    platform: Mapped[str] = mapped_column(String, nullable=False)
     external_id: Mapped[str] = mapped_column(String, nullable=False)
     title: Mapped[str | None] = mapped_column(String)
     price: Mapped[float | None] = mapped_column(Float)
@@ -262,17 +258,16 @@ def _load_sqlite_vec(dbapi_connection, connection_record):
         sqlite_vec.load(dbapi_connection)
         dbapi_connection.enable_load_extension(False)
     except Exception:
-        pass  # sqlite-vec not installed or unavailable
+        pass
 
 
 def _secure_db_file(database_path: str) -> None:
-    """Restrict database file permissions to owner-only (0600)."""
     db_path = Path(database_path)
     if db_path.exists():
         try:
             os.chmod(db_path, 0o600)
         except OSError:
-            pass  # May fail on non-POSIX systems
+            pass
 
 
 def create_engine(database_path: str | None = None) -> sa.Engine:
@@ -289,7 +284,6 @@ def create_engine(database_path: str | None = None) -> sa.Engine:
 
 
 def _find_alembic_ini() -> Path | None:
-    """Locate alembic.ini relative to the project root (two levels above src/storebot/)."""
     candidate = Path(__file__).resolve().parents[2] / "alembic.ini"
     return candidate if candidate.exists() else None
 

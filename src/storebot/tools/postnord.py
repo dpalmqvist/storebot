@@ -58,10 +58,8 @@ def parse_buyer_address(buyer_name: str, buyer_address: str) -> Address:
     if not buyer_address or not buyer_address.strip():
         raise ValueError("Buyer address is empty")
 
-    # Normalize: replace newlines with comma separator
     addr = buyer_address.replace("\n", ", ").strip()
 
-    # Split on comma
     parts = [p.strip() for p in addr.split(",") if p.strip()]
 
     if len(parts) < 2:
@@ -69,11 +67,9 @@ def parse_buyer_address(buyer_name: str, buyer_address: str) -> Address:
 
     street = parts[0]
 
-    # Last part should contain postal code + city: "123 45 Stockholm" or "12345 Stockholm"
     postal_city = parts[-1]
     match = re.match(r"(\d{3}\s?\d{2})\s+(.+)", postal_city)
     if not match:
-        # Fallback: treat entire last part as city, no postal code
         raise ValueError(f"Cannot parse postal code from: {postal_city!r}")
 
     postal_code = match.group(1).replace(" ", "")
@@ -222,12 +218,10 @@ class PostNordClient:
 
         logger.info("Retrieved shipping label for shipment: %s", shipment_id)
 
-        # Response may be direct PDF or JSON with base64
         content_type = resp.headers.get("Content-Type", "")
         if "application/pdf" in content_type:
             return resp.content
 
-        # Fallback: JSON with base64-encoded PDF
         try:
             data = resp.json()
             b64 = data.get("labelPrintout", "")

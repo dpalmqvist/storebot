@@ -148,29 +148,23 @@ class MarketingService:
     def get_performance_report(self) -> dict:
         """Aggregate performance report across all listings."""
         with Session(self.engine) as session:
-            active_listings = (
-                session.query(PlatformListing).filter(PlatformListing.status == "active").all()
-            )
-            sold_listings = (
-                session.query(PlatformListing).filter(PlatformListing.status == "sold").all()
-            )
             all_listings = (
                 session.query(PlatformListing)
                 .filter(PlatformListing.status.in_(["active", "ended", "sold"]))
                 .all()
             )
+            active_listings = [lst for lst in all_listings if lst.status == "active"]
+            sold_listings = [lst for lst in all_listings if lst.status == "sold"]
 
             total_views = sum((lst.views or 0) for lst in all_listings)
             total_watchers = sum((lst.watchers or 0) for lst in all_listings)
 
-            best = None
-            worst = None
-            for listing in active_listings:
-                v = listing.views or 0
-                if best is None or v > (best.views or 0):
-                    best = listing
-                if worst is None or v < (worst.views or 0):
-                    worst = listing
+            best = (
+                max(active_listings, key=lambda lst: lst.views or 0) if active_listings else None
+            )
+            worst = (
+                min(active_listings, key=lambda lst: lst.views or 0) if active_listings else None
+            )
 
             total_revenue = 0.0
             total_profit = 0.0
@@ -345,7 +339,7 @@ class MarketingService:
             return "insufficient_data"
 
         recent = snapshots[:3]
-        view_deltas = [recent[i].views - recent[i + 1].views for i in range(len(recent) - 1)]
+        view_deltas = [a.views - b.views for a, b in zip(recent, recent[1:])]
         avg_delta = sum(view_deltas) / len(view_deltas)
 
         if avg_delta > 5:

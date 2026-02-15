@@ -13,6 +13,59 @@ Each tool also carries a ``category`` tag used by the dynamic tool filtering
 in ``agent.py`` to send only relevant tools per turn.
 """
 
+# Shared sub-schema for listing details (shipping, reserve price).
+# Used by create_draft_listing, update_draft_listing, and relist_product.
+_DETAILS_SCHEMA = {
+    "anyOf": [
+        {
+            "type": "object",
+            "properties": {
+                "shipping_options": {
+                    "anyOf": [
+                        {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "cost": {"type": "number"},
+                                    "shipping_product_id": {"type": "integer"},
+                                    "shipping_provider_id": {"type": "integer"},
+                                    "name": {"type": "string"},
+                                },
+                                "required": [
+                                    "cost",
+                                    "shipping_product_id",
+                                    "shipping_provider_id",
+                                    "name",
+                                ],
+                                "additionalProperties": False,
+                            },
+                        },
+                        {"type": "null"},
+                    ],
+                },
+                "shipping_cost": {
+                    "anyOf": [{"type": "number"}, {"type": "null"}],
+                },
+                "shipping_condition": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                },
+                "reserve_price": {
+                    "anyOf": [{"type": "number"}, {"type": "null"}],
+                },
+            },
+            "required": [
+                "shipping_options",
+                "shipping_cost",
+                "shipping_condition",
+                "reserve_price",
+            ],
+            "additionalProperties": False,
+        },
+        {"type": "null"},
+    ],
+}
+
 TOOLS = [
     # --- Tradera ---
     {
@@ -196,55 +249,7 @@ TOOLS = [
                     "description": "Tradera category ID (null to omit)",
                 },
                 "details": {
-                    "anyOf": [
-                        {
-                            "type": "object",
-                            "description": "Shipping and extra details",
-                            "properties": {
-                                "shipping_options": {
-                                    "anyOf": [
-                                        {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "object",
-                                                "properties": {
-                                                    "cost": {"type": "number"},
-                                                    "shipping_product_id": {"type": "integer"},
-                                                    "shipping_provider_id": {"type": "integer"},
-                                                    "name": {"type": "string"},
-                                                },
-                                                "required": [
-                                                    "cost",
-                                                    "shipping_product_id",
-                                                    "shipping_provider_id",
-                                                    "name",
-                                                ],
-                                                "additionalProperties": False,
-                                            },
-                                        },
-                                        {"type": "null"},
-                                    ],
-                                },
-                                "shipping_cost": {
-                                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                                },
-                                "shipping_condition": {
-                                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                                },
-                                "reserve_price": {
-                                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                                },
-                            },
-                            "required": [
-                                "shipping_options",
-                                "shipping_cost",
-                                "shipping_condition",
-                                "reserve_price",
-                            ],
-                            "additionalProperties": False,
-                        },
-                        {"type": "null"},
-                    ],
+                    **_DETAILS_SCHEMA,
                     "description": "Shipping and extra details (null to omit). Set shipping_options OR shipping_cost, not both.",
                 },
             },
@@ -335,54 +340,7 @@ TOOLS = [
                     "description": "New category ID (null to keep current)",
                 },
                 "details": {
-                    "anyOf": [
-                        {
-                            "type": "object",
-                            "properties": {
-                                "shipping_options": {
-                                    "anyOf": [
-                                        {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "object",
-                                                "properties": {
-                                                    "cost": {"type": "number"},
-                                                    "shipping_product_id": {"type": "integer"},
-                                                    "shipping_provider_id": {"type": "integer"},
-                                                    "name": {"type": "string"},
-                                                },
-                                                "required": [
-                                                    "cost",
-                                                    "shipping_product_id",
-                                                    "shipping_provider_id",
-                                                    "name",
-                                                ],
-                                                "additionalProperties": False,
-                                            },
-                                        },
-                                        {"type": "null"},
-                                    ],
-                                },
-                                "shipping_cost": {
-                                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                                },
-                                "shipping_condition": {
-                                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                                },
-                                "reserve_price": {
-                                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                                },
-                            },
-                            "required": [
-                                "shipping_options",
-                                "shipping_cost",
-                                "shipping_condition",
-                                "reserve_price",
-                            ],
-                            "additionalProperties": False,
-                        },
-                        {"type": "null"},
-                    ],
+                    **_DETAILS_SCHEMA,
                     "description": "New details (null to keep current)",
                 },
             },
@@ -511,54 +469,7 @@ TOOLS = [
                     "description": "Ny Tradera-kategori (null to keep original)",
                 },
                 "details": {
-                    "anyOf": [
-                        {
-                            "type": "object",
-                            "properties": {
-                                "shipping_options": {
-                                    "anyOf": [
-                                        {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "object",
-                                                "properties": {
-                                                    "cost": {"type": "number"},
-                                                    "shipping_product_id": {"type": "integer"},
-                                                    "shipping_provider_id": {"type": "integer"},
-                                                    "name": {"type": "string"},
-                                                },
-                                                "required": [
-                                                    "cost",
-                                                    "shipping_product_id",
-                                                    "shipping_provider_id",
-                                                    "name",
-                                                ],
-                                                "additionalProperties": False,
-                                            },
-                                        },
-                                        {"type": "null"},
-                                    ],
-                                },
-                                "shipping_cost": {
-                                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                                },
-                                "shipping_condition": {
-                                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                                },
-                                "reserve_price": {
-                                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                                },
-                            },
-                            "required": [
-                                "shipping_options",
-                                "shipping_cost",
-                                "shipping_condition",
-                                "reserve_price",
-                            ],
-                            "additionalProperties": False,
-                        },
-                        {"type": "null"},
-                    ],
+                    **_DETAILS_SCHEMA,
                     "description": "Nya detaljer/frakt (null to keep original)",
                 },
             },
@@ -1402,6 +1313,3 @@ TOOLS = [
 TOOL_CATEGORIES: dict[str, list[str]] = {}
 for _tool in TOOLS:
     TOOL_CATEGORIES.setdefault(_tool.get("category", "core"), []).append(_tool["name"])
-
-# Lookup: tool name → full tool dict
-TOOLS_BY_NAME: dict[str, dict] = {t["name"]: t for t in TOOLS}

@@ -132,11 +132,9 @@ def _reconstruct_image_blocks(content, image_paths):
 def _is_tool_result_message(msg: dict) -> bool:
     """Check if a message contains tool_result blocks."""
     content = msg.get("content")
-    if isinstance(content, list):
-        return any(
-            isinstance(block, dict) and block.get("type") == "tool_result" for block in content
-        )
-    return False
+    return isinstance(content, list) and any(
+        isinstance(block, dict) and block.get("type") == "tool_result" for block in content
+    )
 
 
 def _trim_orphaned_tool_messages(messages: list[dict]) -> list[dict]:
@@ -171,22 +169,21 @@ class ConversationService:
         self.timeout_minutes = timeout_minutes
         self.max_content_bytes = max_content_bytes
 
+    @staticmethod
+    def _to_row(chat_id: str, msg: dict) -> ConversationMessage:
+        content = msg.get("content")
+        return ConversationMessage(
+            chat_id=str(chat_id),
+            role=msg.get("role"),
+            content=_serialize_content(content),
+            image_paths=_extract_image_paths(content),
+        )
+
     def save_messages(self, chat_id: str, messages: list[dict]) -> None:
         """Save a list of message dicts to the database."""
         with sa.orm.Session(self.engine) as session:
             for msg in messages:
-                role = msg.get("role")
-                content = msg.get("content")
-                image_paths = _extract_image_paths(content)
-                serialized = _serialize_content(content)
-
-                row = ConversationMessage(
-                    chat_id=str(chat_id),
-                    role=role,
-                    content=serialized,
-                    image_paths=image_paths,
-                )
-                session.add(row)
+                session.add(self._to_row(chat_id, msg))
             session.commit()
 
     def load_history(self, chat_id: str) -> list[dict]:
@@ -238,18 +235,7 @@ class ConversationService:
                 ConversationMessage.chat_id == str(chat_id),
             ).delete()
             for msg in messages:
-                role = msg.get("role")
-                content = msg.get("content")
-                image_paths = _extract_image_paths(content)
-                serialized = _serialize_content(content)
-                session.add(
-                    ConversationMessage(
-                        chat_id=str(chat_id),
-                        role=role,
-                        content=serialized,
-                        image_paths=image_paths,
-                    )
-                )
+                session.add(self._to_row(chat_id, msg))
             session.commit()
 
     def clear_history(self, chat_id: str) -> None:

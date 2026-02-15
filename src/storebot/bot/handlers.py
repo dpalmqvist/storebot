@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 TELEGRAM_MAX_MESSAGE_LENGTH = 4000
 
-# Per-chat rate limiting: {chat_id: [timestamp, ...]}
 _rate_limit_buckets: dict[int, list[float]] = defaultdict(list)
 
 
@@ -64,10 +63,8 @@ def _split_message(text: str) -> list[str]:
             remaining = remaining[split_at:].lstrip("\n")
         return chunks
 
-    # Split, then verify header length matches actual chunk count (may shift at digit boundaries)
-    header_len = len(
-        f"({len(text) // TELEGRAM_MAX_MESSAGE_LENGTH + 1}/{len(text) // TELEGRAM_MAX_MESSAGE_LENGTH + 1})\n"
-    )
+    estimated_parts = len(text) // TELEGRAM_MAX_MESSAGE_LENGTH + 1
+    header_len = len(f"({estimated_parts}/{estimated_parts})\n")
     chunks = _do_split(TELEGRAM_MAX_MESSAGE_LENGTH - header_len)
     actual_header_len = len(f"({len(chunks)}/{len(chunks)})\n")
     if actual_header_len > header_len:
@@ -112,12 +109,9 @@ async def _handle_with_conversation(
     conversation: ConversationService = context.bot_data["conversation"]
     chat_id = str(update.effective_chat.id)
 
-    history: list[dict] = []
-
     try:
         history = conversation.load_history(chat_id)
 
-        # Context compaction: summarize old messages instead of dropping them
         if len(history) > agent.settings.compact_threshold:
             compacted = agent.compact_history(history)
             if compacted is not history:  # compaction succeeded (new list)
@@ -140,7 +134,7 @@ async def _handle_with_conversation(
             "Error in conversation handler: %s: %s",
             type(exc).__name__,
             exc,
-            extra={"chat_id": chat_id, "history_len": len(history)},
+            extra={"chat_id": chat_id},
         )
         await update.message.reply_text(error_text)
 
@@ -250,7 +244,7 @@ async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _check_access(update, context):
         return
-    photo = update.message.photo[-1]  # Highest resolution
+    photo = update.message.photo[-1]
     file = await photo.get_file()
 
     settings: Settings = context.bot_data["settings"]
@@ -481,7 +475,6 @@ def main() -> None:
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    # Scheduled order polling
     if app.job_queue:
         app.job_queue.run_repeating(
             poll_orders_job,
@@ -493,7 +486,6 @@ def main() -> None:
             settings.order_poll_interval_minutes,
         )
 
-        # Daily scout digest
         app.job_queue.run_daily(
             scout_digest_job,
             time=dt_time(hour=settings.scout_digest_hour),
@@ -503,7 +495,6 @@ def main() -> None:
             settings.scout_digest_hour,
         )
 
-        # Daily marketing stats refresh
         app.job_queue.run_daily(
             marketing_refresh_job,
             time=dt_time(hour=settings.marketing_refresh_hour),
@@ -513,7 +504,6 @@ def main() -> None:
             settings.marketing_refresh_hour,
         )
 
-        # Weekly business comparison (Sundays at 18:00)
         app.job_queue.run_daily(
             weekly_comparison_job,
             time=dt_time(hour=18),

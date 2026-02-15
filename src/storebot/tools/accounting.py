@@ -30,6 +30,25 @@ class AccountingService:
         self.engine = engine
         self.export_path = Path(export_path)
 
+    @staticmethod
+    def _serialize_voucher(v: Voucher) -> dict:
+        return {
+            "voucher_id": v.id,
+            "voucher_number": v.voucher_number,
+            "description": v.description,
+            "transaction_date": v.transaction_date.isoformat(),
+            "order_id": v.order_id,
+            "rows": [
+                {
+                    "account": r.account_number,
+                    "account_name": r.account_name,
+                    "debit": r.debit,
+                    "credit": r.credit,
+                }
+                for r in v.rows
+            ],
+        }
+
     def _next_voucher_number(self, session: sa.orm.Session) -> str:
         max_id = session.execute(sa.select(sa.func.max(Voucher.id))).scalar()
         return f"V-{(max_id or 0) + 1:03d}"
@@ -80,22 +99,7 @@ class AccountingService:
 
             session.commit()
 
-            return {
-                "voucher_id": voucher.id,
-                "voucher_number": voucher.voucher_number,
-                "description": voucher.description,
-                "transaction_date": voucher.transaction_date.isoformat(),
-                "order_id": voucher.order_id,
-                "rows": [
-                    {
-                        "account": r.account_number,
-                        "account_name": r.account_name,
-                        "debit": r.debit,
-                        "credit": r.credit,
-                    }
-                    for r in voucher.rows
-                ],
-            }
+            return self._serialize_voucher(voucher)
 
     def get_vouchers(self, from_date: str | None = None, to_date: str | None = None) -> list[dict]:
         with sa.orm.Session(self.engine) as session:
@@ -107,25 +111,7 @@ class AccountingService:
                 query = query.where(Voucher.transaction_date <= datetime.fromisoformat(to_date))
 
             vouchers = session.scalars(query).all()
-            return [
-                {
-                    "voucher_id": v.id,
-                    "voucher_number": v.voucher_number,
-                    "description": v.description,
-                    "transaction_date": v.transaction_date.isoformat(),
-                    "order_id": v.order_id,
-                    "rows": [
-                        {
-                            "account": r.account_number,
-                            "account_name": r.account_name,
-                            "debit": r.debit,
-                            "credit": r.credit,
-                        }
-                        for r in v.rows
-                    ],
-                }
-                for v in vouchers
-            ]
+            return [self._serialize_voucher(v) for v in vouchers]
 
     def list_vouchers(self, from_date: str | None = None, to_date: str | None = None) -> dict:
         """List vouchers with optional date filtering."""
@@ -134,34 +120,17 @@ class AccountingService:
 
     def _build_voucher_story(self, voucher: Voucher, styles) -> list:
         """Build reportlab story elements for a single voucher."""
-        elements = []
-
-        elements.append(
-            Paragraph(
-                f"Verifikation #{voucher.voucher_number}",
-                styles["Title"],
-            )
-        )
-        elements.append(Spacer(1, 4 * mm))
-        elements.append(
+        elements = [
+            Paragraph(f"Verifikation #{voucher.voucher_number}", styles["Title"]),
+            Spacer(1, 4 * mm),
             Paragraph(
                 f"<b>Datum:</b> {voucher.transaction_date.strftime('%Y-%m-%d')}",
                 styles["Normal"],
-            )
-        )
-        elements.append(
-            Paragraph(
-                f"<b>Beskrivning:</b> {voucher.description}",
-                styles["Normal"],
-            )
-        )
+            ),
+            Paragraph(f"<b>Beskrivning:</b> {voucher.description}", styles["Normal"]),
+        ]
         if voucher.order_id:
-            elements.append(
-                Paragraph(
-                    f"<b>Order:</b> #{voucher.order_id}",
-                    styles["Normal"],
-                )
-            )
+            elements.append(Paragraph(f"<b>Order:</b> #{voucher.order_id}", styles["Normal"]))
         elements.append(Spacer(1, 6 * mm))
 
         table_data = [["Konto", "Kontonamn", "Debet", "Kredit"]]
@@ -206,8 +175,7 @@ class AccountingService:
             if not voucher:
                 raise ValueError(f"Verifikation {voucher_id} hittades inte")
 
-            # Eagerly load rows
-            _ = voucher.rows
+            _ = voucher.rows  # force eager load before session closes
 
             filename = f"{voucher.voucher_number}.pdf"
             filepath = self.export_path / filename
@@ -237,8 +205,7 @@ class AccountingService:
             if not vouchers:
                 raise ValueError(f"Inga verifikationer hittades mellan {from_date} och {to_date}")
 
-            # Eagerly load rows
-            for v in vouchers:
+            for v in vouchers:  # force eager load before session closes
                 _ = v.rows
 
             filename = f"verifikationer_{from_date}_{to_date}.pdf"
@@ -246,15 +213,10 @@ class AccountingService:
 
             doc = SimpleDocTemplate(str(filepath), pagesize=A4)
             styles = getSampleStyleSheet()
-            story = []
-
-            story.append(
-                Paragraph(
-                    f"Verifikationer {from_date} — {to_date}",
-                    styles["Title"],
-                )
-            )
-            story.append(Spacer(1, 8 * mm))
+            story = [
+                Paragraph(f"Verifikationer {from_date} — {to_date}", styles["Title"]),
+                Spacer(1, 8 * mm),
+            ]
 
             for i, voucher in enumerate(vouchers):
                 story.extend(self._build_voucher_story(voucher, styles))
