@@ -8,6 +8,7 @@ comparisons, and sourcing analysis.
 import logging
 import re
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
@@ -597,7 +598,7 @@ class AnalyticsService:
             total_cache_creation = int(totals.cache_creation)
             total_cache_read = int(totals.cache_read)
             total_tool_calls = int(totals.tool_calls)
-            total_cost = float(totals.cost_sek)
+            total_cost = Decimal(str(totals.cost_sek)) if totals.cost_sek else Decimal("0")
 
             # Daily breakdown via SQL GROUP BY
             day_col = sa.func.strftime("%Y-%m-%d", ApiUsage.created_at).label("day")
@@ -616,16 +617,21 @@ class AnalyticsService:
 
             daily: dict[str, dict] = {}
             for row in daily_rows:
+                day_cost = Decimal(str(row.cost_sek)) if row.cost_sek else Decimal("0")
                 daily[row.day] = {
                     "turns": int(row.turns),
                     "input_tokens": int(row.input_tokens),
                     "output_tokens": int(row.output_tokens),
-                    "cost_sek": round(float(row.cost_sek), 2),
+                    "cost_sek": float(day_cost.quantize(Decimal("0.01"))),
                 }
 
             avg_input = round(total_input / total_turns) if total_turns else 0
             avg_output = round(total_output / total_turns) if total_turns else 0
-            avg_cost = round(total_cost / total_turns, 4) if total_turns else 0.0
+            avg_cost = (
+                float((total_cost / total_turns).quantize(Decimal("0.0001")))
+                if total_turns
+                else 0.0
+            )
 
             log_action(
                 session,
@@ -641,7 +647,7 @@ class AnalyticsService:
                 "total_output_tokens": total_output,
                 "total_cache_creation_tokens": total_cache_creation,
                 "total_cache_read_tokens": total_cache_read,
-                "total_cost_sek": round(total_cost, 2),
+                "total_cost_sek": float(total_cost.quantize(Decimal("0.01"))),
                 "total_turns": total_turns,
                 "total_tool_calls": total_tool_calls,
                 "avg_input_per_turn": avg_input,

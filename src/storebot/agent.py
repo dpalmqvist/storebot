@@ -339,10 +339,11 @@ class Agent:
         tool_call_count = 0
 
         response = self._call_api(messages)
-        total_input += response.usage.input_tokens
-        total_output += response.usage.output_tokens
-        total_cache_creation += getattr(response.usage, "cache_creation_input_tokens", 0) or 0
-        total_cache_read += getattr(response.usage, "cache_read_input_tokens", 0) or 0
+        usage = getattr(response, "usage", None)
+        total_input += getattr(usage, "input_tokens", 0) or 0
+        total_output += getattr(usage, "output_tokens", 0) or 0
+        total_cache_creation += getattr(usage, "cache_creation_input_tokens", 0) or 0
+        total_cache_read += getattr(usage, "cache_read_input_tokens", 0) or 0
         all_display_images = []
 
         while response.stop_reason == "tool_use":
@@ -368,10 +369,11 @@ class Agent:
             messages.append({"role": "user", "content": tool_results})
 
             response = self._call_api(messages)
-            total_input += response.usage.input_tokens
-            total_output += response.usage.output_tokens
-            total_cache_creation += getattr(response.usage, "cache_creation_input_tokens", 0) or 0
-            total_cache_read += getattr(response.usage, "cache_read_input_tokens", 0) or 0
+            usage = getattr(response, "usage", None)
+            total_input += getattr(usage, "input_tokens", 0) or 0
+            total_output += getattr(usage, "output_tokens", 0) or 0
+            total_cache_creation += getattr(usage, "cache_creation_input_tokens", 0) or 0
+            total_cache_read += getattr(usage, "cache_read_input_tokens", 0) or 0
 
         messages.append({"role": "assistant", "content": response.content})
 
