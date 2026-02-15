@@ -80,12 +80,12 @@ Storebot includes local double-entry bookkeeping using the Swedish BAS-kontoplan
 
 ## Agent Tools
 
-The Claude agent has access to 44 tools organized by domain:
+The Claude agent has access to 45 tools organized by domain:
 
 | Domain | Count | Tools |
 |--------|-------|-------|
 | **Search** | 3 | `search_tradera`, `search_blocket`, `get_blocket_ad` |
-| **Products** | 6 | `create_product`, `save_product_image`, `search_products`, `get_product_images`, `archive_product`, `unarchive_product` |
+| **Products** | 7 | `create_product`, `update_product`, `save_product_image`, `search_products`, `get_product_images`, `archive_product`, `unarchive_product` |
 | **Listings** | 9 | `create_draft_listing`, `list_draft_listings`, `get_draft_listing`, `update_draft_listing`, `approve_draft_listing`, `reject_draft_listing`, `publish_listing`, `get_categories`, `get_shipping_options` |
 | **Orders** | 8 | `check_new_orders`, `list_orders`, `get_order`, `create_sale_voucher`, `mark_order_shipped`, `create_shipping_label`, `list_orders_pending_feedback`, `leave_feedback` |
 | **Accounting** | 2 | `create_voucher`, `export_vouchers` |

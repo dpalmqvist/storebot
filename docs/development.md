@@ -20,7 +20,7 @@ See [installation.md](installation.md) for full configuration reference.
 
 ```
 src/storebot/
-  agent.py             Claude API tool loop (44 tools, vision support)
+  agent.py             Claude API tool loop (45 tools, vision support)
   config.py            Pydantic Settings from .env
   db.py                SQLAlchemy 2.0 models (SQLite, 12 tables)
   cli.py               Tradera authorization CLI
@@ -29,7 +29,7 @@ src/storebot/
   bot/
     handlers.py        Telegram bot entry point (7 commands, photo handling, scheduled jobs)
   tools/
-    definitions.py     Tool schemas for Claude API (44 tool definitions)
+    definitions.py     Tool schemas for Claude API (45 tool definitions)
     tradera.py         Tradera SOAP API (search, create, upload, orders, shipping)
     blocket.py         Blocket unofficial REST API (price research)
     accounting.py      Local voucher storage + PDF export (BAS-kontoplan)
@@ -43,7 +43,9 @@ src/storebot/
     scout.py           Saved searches + dedup + daily digest
     marketing.py       Listing performance tracking + recommendations
     helpers.py         Shared utilities (log_action, naive_now)
-tests/                 pytest tests (17 modules)
+  tui/
+    log_viewer.py      Textual TUI for agent_actions audit log
+tests/                 pytest tests (18 modules)
 deploy/
   storebot.service     systemd unit file
   backup.sh            SQLite backup script (cron, gzip, integrity check)
@@ -67,8 +69,8 @@ User (Telegram) → handlers.py → agent.py → Claude API
 The agent loop in `agent.py` works as follows:
 
 1. Receives a user message (text and/or images) with conversation history
-2. Sends to Claude API with the system prompt and 44 tool definitions
-3. Claude responds with either text or tool use requests
+2. Sends to Claude API with the system prompt and 45 tool definitions
+3. Claude responds with either text or tool-use requests
 4. For each tool use request, the agent dispatches to the appropriate service method
 5. Tool results are sent back to Claude for further processing
 6. The loop continues until Claude responds with only text (no more tool calls)
@@ -205,7 +207,7 @@ pytest -v
 
 ### Test Modules
 
-17 test modules covering all core functionality:
+18 test modules covering all core functionality:
 
 | Module | Coverage |
 |--------|----------|
@@ -226,6 +228,7 @@ pytest -v
 | `test_retry.py` | Retry decorator, backoff behavior |
 | `test_logging_config.py` | JSON/human formatter, file handler |
 | `test_handlers.py` | Telegram command handlers, access control |
+| `test_log_viewer.py` | Audit log TUI data queries, filtering, sorting |
 
 ### Writing New Tests
 
