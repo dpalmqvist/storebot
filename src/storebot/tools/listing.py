@@ -340,7 +340,7 @@ class ListingService:
         shipping_options = details.get("shipping_options")
         shipping_condition = details.get("shipping_condition")
         shipping_cost = None if shipping_options else details.get("shipping_cost")
-        reserve_price = details.get("reserve_price")
+        reserve_price = details.get("reserve_price") if listing.listing_type == "auction" else None
 
         create_result = self.tradera.create_listing(
             title=listing.listing_title,
