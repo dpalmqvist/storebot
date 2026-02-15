@@ -230,10 +230,21 @@ class TraderaClient:
             if shipping_condition is not None:
                 params["ShippingCondition"] = shipping_condition
 
-            response = self._create_listing_api_call(
-                params,
-                self._auth_headers(self.restricted_client, include_authorization=True),
+            logger.debug(
+                "AddItem params (pre-SOAP): %s",
+                {k: v for k, v in params.items() if k != "Description"},
             )
+
+            history = HistoryPlugin()
+            self.restricted_client.plugins.append(history)
+            try:
+                response = self._create_listing_api_call(
+                    params,
+                    self._auth_headers(self.restricted_client, include_authorization=True),
+                )
+            finally:
+                self.restricted_client.plugins.remove(history)
+                self._log_soap_exchange(history, "AddItem")
 
             request_id = getattr(response, "RequestId", None)
             item_id = getattr(response, "ItemId", None)
@@ -248,6 +259,23 @@ class TraderaClient:
         except Exception as e:
             logger.exception("Tradera create_listing failed")
             return {"error": str(e)}
+
+    def _log_soap_exchange(self, history: HistoryPlugin, operation: str) -> None:
+        """Log the SOAP request/response XML from a HistoryPlugin."""
+        try:
+            sent_env = history.last_sent.get("envelope")
+            if sent_env is not None:
+                sent_xml = etree.tostring(sent_env, pretty_print=True).decode()
+                logger.debug("%s SOAP request:\n%s", operation, sent_xml)
+        except Exception:
+            logger.debug("%s: could not extract sent XML", operation)
+        try:
+            recv_env = history.last_received.get("envelope")
+            if recv_env is not None:
+                recv_xml = etree.tostring(recv_env, pretty_print=True).decode()
+                logger.debug("%s SOAP response:\n%s", operation, recv_xml)
+        except Exception:
+            logger.debug("%s: could not extract received XML", operation)
 
     # Map MIME types to Tradera ImageFormat enum values
     _MEDIA_TYPE_TO_FORMAT = {
@@ -466,22 +494,7 @@ class TraderaClient:
                 )
             finally:
                 self.public_client.plugins.remove(history)
-
-            sent_xml = None
-            received_xml = None
-            try:
-                sent_env = history.last_sent.get("envelope")
-                if sent_env is not None:
-                    sent_xml = etree.tostring(sent_env, pretty_print=True).decode()
-            except Exception:
-                pass
-            try:
-                recv_env = history.last_received.get("envelope")
-                if recv_env is not None:
-                    received_xml = etree.tostring(recv_env, pretty_print=True).decode()
-            except Exception:
-                pass
-            logger.debug("FetchToken SOAP exchange completed (XML redacted for security)")
+                self._log_soap_exchange(history, "FetchToken")
 
             token = getattr(response, "AuthToken", None)
             expires = getattr(response, "HardExpirationTime", None)
@@ -490,8 +503,7 @@ class TraderaClient:
 
             if token is None:
                 return {
-                    "error": f"FetchToken response missing AuthToken. Raw XML:\n{received_xml}",
-                    "sent_xml": sent_xml,
+                    "error": "FetchToken response missing AuthToken",
                     "response_repr": repr(response),
                 }
 
