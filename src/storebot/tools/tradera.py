@@ -260,22 +260,23 @@ class TraderaClient:
             logger.exception("Tradera create_listing failed")
             return {"error": str(e)}
 
+    @staticmethod
+    def _soap_body_xml(envelope) -> str | None:
+        """Extract the SOAP Body from an envelope, omitting auth headers."""
+        body = envelope.find("{http://schemas.xmlsoap.org/soap/envelope/}Body")
+        if body is not None:
+            return etree.tostring(body, pretty_print=True).decode()
+        return etree.tostring(envelope, pretty_print=True).decode()
+
     def _log_soap_exchange(self, history: HistoryPlugin, operation: str) -> None:
-        """Log the SOAP request/response XML from a HistoryPlugin."""
-        try:
-            sent_env = history.last_sent.get("envelope")
-            if sent_env is not None:
-                sent_xml = etree.tostring(sent_env, pretty_print=True).decode()
-                logger.debug("%s SOAP request:\n%s", operation, sent_xml)
-        except Exception:
-            logger.debug("%s: could not extract sent XML", operation)
-        try:
-            recv_env = history.last_received.get("envelope")
-            if recv_env is not None:
-                recv_xml = etree.tostring(recv_env, pretty_print=True).decode()
-                logger.debug("%s SOAP response:\n%s", operation, recv_xml)
-        except Exception:
-            logger.debug("%s: could not extract received XML", operation)
+        """Log the SOAP Body (no auth headers) from a HistoryPlugin."""
+        for label, attr in (("request", "last_sent"), ("response", "last_received")):
+            try:
+                env = getattr(history, attr, {}).get("envelope")
+                if env is not None:
+                    logger.debug("%s SOAP %s:\n%s", operation, label, self._soap_body_xml(env))
+            except Exception:
+                logger.debug("%s: could not extract %s XML", operation, label)
 
     # Map MIME types to Tradera ImageFormat enum values
     _MEDIA_TYPE_TO_FORMAT = {
