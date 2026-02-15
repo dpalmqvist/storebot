@@ -100,7 +100,7 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **Tradera authorization CLI** — `storebot-authorize-tradera` command for obtaining user tokens via consent flow. `TraderaClient.fetch_token()` calls `PublicService.FetchToken`. Saves credentials to `.env`.
 - **PostNord shipping labels** — `PostNordClient` REST client: `create_shipment()`, `get_label()`, `save_label()`. `Address` dataclass for sender/recipient, `parse_buyer_address()` for parsing Swedish addresses. Sandbox/production URL switching. Integrated into `OrderService.create_shipping_label()` with validation (weight, address), PDF label storage, tracking number persistence, and `AgentAction` audit trail.
 - **Resilience & observability** — Retry decorator with exponential backoff on transient errors (Tradera SOAP, Blocket REST, PostNord REST), structured JSON logging (`LOG_JSON` toggle), startup credential validation, admin alerts on scheduled job failures. SQLite WAL mode + busy timeout. Systemd restart limits, backup integrity checks with gzip compression.
-- **Tests** — 592 tests across 18 modules covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, analytics, postnord, CLI, retry, logging, handlers, and log_viewer.
+- **Tests** — 596 tests across 18 modules covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, analytics, postnord, CLI, retry, logging, handlers, and log_viewer.
 
 ### Not started
 
