@@ -811,7 +811,16 @@ class ListingService:
             session.flush()
 
             if product and product.status in ("sold", "listed"):
-                product.status = "draft"
+                other_active = (
+                    session.query(PlatformListing)
+                    .filter(
+                        PlatformListing.product_id == source.product_id,
+                        PlatformListing.status == "active",
+                    )
+                    .count()
+                )
+                if other_active == 0:
+                    product.status = "draft"
 
             log_action(
                 session,

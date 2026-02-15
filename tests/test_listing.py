@@ -1406,6 +1406,40 @@ class TestRelistProduct:
             p = session.get(Product, product)
             assert p.status == "draft"
 
+    def test_keeps_listed_when_other_active_exists(self, service, engine):
+        with Session(engine) as session:
+            p = Product(title="Multi-listed", status="listed")
+            session.add(p)
+            session.flush()
+            ended = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="ended",
+                listing_type="auction",
+                listing_title="Old",
+                listing_description="D",
+                start_price=100.0,
+                duration_days=7,
+            )
+            active = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Current",
+                listing_description="D",
+            )
+            session.add_all([ended, active])
+            session.commit()
+            ended_id, pid = ended.id, p.id
+
+        result = service.relist_product(ended_id)
+
+        assert "error" not in result
+        with Session(engine) as session:
+            p = session.get(Product, pid)
+            assert p.status == "listed"
+
 
 class TestDeleteProductImage:
     def test_deletes_image(self, service, product, tmp_path, engine):
