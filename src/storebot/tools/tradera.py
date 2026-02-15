@@ -212,6 +212,7 @@ class TraderaClient:
                 "Restarts": 0,
                 "ItemType": item_type,
                 "AutoCommit": auto_commit,
+                "AcceptedBidderId": [],
             }
             if start_price is not None:
                 params["StartPrice"] = int(start_price)
