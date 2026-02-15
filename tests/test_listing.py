@@ -1013,6 +1013,45 @@ class TestPublishListing:
         assert call_kwargs["shipping_options"] is None
 
 
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
+    def test_passes_reserve_price_from_details(
+        self, mock_encode, mock_optimize, pub_service, approved_listing, engine
+    ):
+        listing_id, _ = approved_listing
+        mock_optimize.return_value = "/tmp/optimized.jpg"
+        mock_encode.return_value = ("base64data", "image/jpeg")
+
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            listing.details = {"reserve_price": 1500}
+            session.commit()
+
+        pub_service.publish_listing(listing_id)
+
+        call_kwargs = pub_service.tradera.create_listing.call_args.kwargs
+        assert call_kwargs["reserve_price"] == 1500
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
+    def test_omits_reserve_price_when_not_in_details(
+        self, mock_encode, mock_optimize, pub_service, approved_listing, engine
+    ):
+        listing_id, _ = approved_listing
+        mock_optimize.return_value = "/tmp/optimized.jpg"
+        mock_encode.return_value = ("base64data", "image/jpeg")
+
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            listing.details = {"shipping_cost": 49}
+            session.commit()
+
+        pub_service.publish_listing(listing_id)
+
+        call_kwargs = pub_service.tradera.create_listing.call_args.kwargs
+        assert call_kwargs.get("reserve_price") is None
+
+
 def _create_product_with_listing(engine, product_status, listing_status, listing_title="Test"):
     """Create a product with an associated PlatformListing. Returns the product ID."""
     with Session(engine) as session:

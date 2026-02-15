@@ -619,6 +619,45 @@ class TestGetShippingTypes:
         assert result["error"] == "Auth failed"
 
 
+class TestCreateListingReservePrice:
+    def test_reserve_price_sent_as_api_field(self, client):
+        response = MagicMock()
+        response.ItemId = 1
+        response.RequestId = 87001
+        client._restricted_client.service.AddItem.return_value = response
+
+        client.create_listing(
+            title="Antik stol",
+            description="Vacker stol",
+            category_id=344,
+            listing_type="auction",
+            start_price=500,
+            reserve_price=1500,
+        )
+
+        call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
+        item_req = call_kwargs["itemRequest"]
+        assert item_req["ReservePrice"] == 1500
+
+    def test_reserve_price_omitted_when_none(self, client):
+        response = MagicMock()
+        response.ItemId = 1
+        response.RequestId = 87002
+        client._restricted_client.service.AddItem.return_value = response
+
+        client.create_listing(
+            title="Antik stol",
+            description="Vacker stol",
+            category_id=344,
+            listing_type="auction",
+            start_price=500,
+        )
+
+        call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
+        item_req = call_kwargs["itemRequest"]
+        assert "ReservePrice" not in item_req
+
+
 class TestCreateListingShipping:
     def test_structured_shipping_options(self, client):
         response = MagicMock()
