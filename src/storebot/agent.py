@@ -36,6 +36,8 @@ REFLECTION_TOOLS: set[str] = {
     "create_sale_voucher",
 }
 
+# "Review: check accuracy, completeness, and reasonableness before
+# presenting the result to the owner."
 _REFLECTION_PROMPT = (
     "\n\n[Granska: kontrollera noggrannhet, fullständighet och rimlighet "
     "innan du presenterar resultatet för ägaren.]"
@@ -572,7 +574,12 @@ class Agent:
             tool_results = []
             for b in tool_blocks:
                 result_json = json.dumps(result_by_id[b.id], ensure_ascii=False)
-                if b.name in REFLECTION_TOOLS and "error" not in result_by_id[b.id]:
+                result = result_by_id[b.id]
+                if (
+                    b.name in REFLECTION_TOOLS
+                    and isinstance(result, dict)
+                    and not result.get("error")
+                ):
                     result_json += _REFLECTION_PROMPT
                 tool_results.append(
                     {

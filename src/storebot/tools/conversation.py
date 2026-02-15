@@ -228,7 +228,11 @@ class ConversationService:
         return _trim_orphaned_tool_messages(messages)
 
     def replace_history(self, chat_id: str, messages: list[dict]) -> None:
-        """Replace all conversation messages with compacted history."""
+        """Replace all conversation messages with compacted history.
+
+        Not thread-safe: a concurrent read between DELETE and INSERT could
+        see empty history. Acceptable for single-user deployment (Raspberry Pi).
+        """
         with sa.orm.Session(self.engine) as session:
             session.query(ConversationMessage).filter(
                 ConversationMessage.chat_id == str(chat_id),
