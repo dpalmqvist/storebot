@@ -25,9 +25,14 @@ def _is_base64_image_block(block: dict) -> bool:
 def _serialize_block(block):
     """Serialize a single content block for JSON storage.
 
+    Skips thinking/redacted_thinking blocks (transient per-turn reasoning).
     Anthropic SDK objects are converted via model_dump().
     Base64 image data is replaced with a lightweight placeholder.
     """
+    block_type = block.get("type") if isinstance(block, dict) else getattr(block, "type", None)
+    if block_type in ("thinking", "redacted_thinking"):
+        return None
+
     if hasattr(block, "model_dump"):
         return block.model_dump()
     if isinstance(block, dict) and _is_base64_image_block(block):
@@ -40,10 +45,10 @@ def _serialize_content(content):
 
     Handles Anthropic ContentBlock objects (TextBlock, ToolUseBlock, etc.)
     by calling .model_dump() on them. Strips base64 image data and replaces
-    with a placeholder referencing the file path.
+    with a placeholder referencing the file path. Filters out thinking blocks.
     """
     if isinstance(content, list):
-        return [_serialize_block(block) for block in content]
+        return [b for b in (_serialize_block(block) for block in content) if b is not None]
     return content
 
 
@@ -221,6 +226,27 @@ class ConversationService:
             messages.reverse()
 
         return _trim_orphaned_tool_messages(messages)
+
+    def replace_history(self, chat_id: str, messages: list[dict]) -> None:
+        """Replace all conversation messages with compacted history."""
+        with sa.orm.Session(self.engine) as session:
+            session.query(ConversationMessage).filter(
+                ConversationMessage.chat_id == str(chat_id),
+            ).delete()
+            for msg in messages:
+                role = msg.get("role")
+                content = msg.get("content")
+                image_paths = _extract_image_paths(content)
+                serialized = _serialize_content(content)
+                session.add(
+                    ConversationMessage(
+                        chat_id=str(chat_id),
+                        role=role,
+                        content=serialized,
+                        image_paths=image_paths,
+                    )
+                )
+            session.commit()
 
     def clear_history(self, chat_id: str) -> None:
         """Delete all conversation messages for a chat."""

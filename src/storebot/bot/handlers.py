@@ -116,6 +116,14 @@ async def _handle_with_conversation(
 
     try:
         history = conversation.load_history(chat_id)
+
+        # Context compaction: summarize old messages instead of dropping them
+        if len(history) > agent.settings.compact_threshold:
+            compacted = agent.compact_history(history)
+            if compacted is not history:  # compaction succeeded (new list)
+                conversation.replace_history(chat_id, compacted)
+                history = compacted
+
         result = agent.handle_message(
             user_message,
             image_paths=image_paths,
