@@ -321,6 +321,69 @@ class TestRequestTools:
         result = agent.execute_tool("request_tools", {"categories": ["listing"], "reason": "test"})
         assert "error" in result
 
+    def test_request_tools_with_concurrent_regular_tool(self, engine):
+        """Claude can call request_tools + regular tool in the same turn."""
+        agent = _make_agent(engine)
+
+        request_block = MagicMock()
+        request_block.type = "tool_use"
+        request_block.name = "request_tools"
+        request_block.input = {"categories": ["research"], "reason": "need search"}
+        request_block.id = "rt1"
+
+        search_block = MagicMock()
+        search_block.type = "tool_use"
+        search_block.name = "search_products"
+        search_block.input = {"query": "stol", "status": None, "include_archived": None}
+        search_block.id = "sp1"
+
+        usage = MagicMock()
+        usage.input_tokens = 100
+        usage.output_tokens = 50
+        usage.cache_creation_input_tokens = 0
+        usage.cache_read_input_tokens = 0
+
+        resp1 = MagicMock()
+        resp1.stop_reason = "tool_use"
+        resp1.content = [request_block, search_block]
+        resp1.usage = usage
+        resp1.model = "claude-sonnet-4-5-20250929"
+
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Klart."
+
+        resp2 = MagicMock()
+        resp2.stop_reason = "end_turn"
+        resp2.content = [text_block]
+        resp2.usage = usage
+        resp2.model = "claude-sonnet-4-5-20250929"
+
+        agent._call_api = MagicMock(side_effect=[resp1, resp2])
+        agent.execute_tool = MagicMock(return_value={"count": 0, "products": []})
+
+        result = agent.handle_message("hej")
+
+        # execute_tool called for regular tool only, not request_tools
+        agent.execute_tool.assert_called_once_with("search_products", search_block.input)
+
+        # Both results appear in the tool_result message
+        tool_result_msgs = [
+            m
+            for m in result.messages
+            if m.get("role") == "user" and isinstance(m.get("content"), list)
+        ]
+        assert len(tool_result_msgs) == 1
+        results = tool_result_msgs[0]["content"]
+        result_ids = {r["tool_use_id"] for r in results}
+        assert result_ids == {"rt1", "sp1"}
+
+        # request_tools result has correct structure
+        rt_content = next(r for r in results if r["tool_use_id"] == "rt1")
+        rt_data = json.loads(rt_content["content"])
+        assert rt_data["status"] == "ok"
+        assert "research" in rt_data["activated_categories"]
+
     def test_request_tools_schema_validation(self):
         """RequestToolsResult validates correctly."""
         result = {

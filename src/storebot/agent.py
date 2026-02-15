@@ -450,6 +450,8 @@ class Agent:
             len(filtered_tools),
             sorted(active_categories),
         )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Filtered tools: %s", [t["name"] for t in filtered_tools])
 
         response = self._call_api(messages, tools=filtered_tools)
         usage = getattr(response, "usage", None)
@@ -464,7 +466,8 @@ class Agent:
             tool_call_count += len(tool_blocks)
             messages.append({"role": "assistant", "content": response.content})
 
-            # Handle request_tools separately — it updates the tool set
+            # request_tools is handled separately because it modifies the tool set
+            # for the NEXT API call in this turn. Regular tools execute independently.
             request_blocks = [b for b in tool_blocks if b.name == "request_tools"]
             regular_blocks = [b for b in tool_blocks if b.name != "request_tools"]
 
@@ -508,7 +511,12 @@ class Agent:
                     }
                     results_by_index = {}
                     for future in futures:
-                        results_by_index[futures[future]] = future.result()
+                        idx = futures[future]
+                        try:
+                            results_by_index[idx] = future.result()
+                        except Exception as exc:
+                            logger.exception("Tool failed in parallel execution")
+                            results_by_index[idx] = {"error": str(exc)}
                 for i, tool_block in enumerate(regular_blocks):
                     result = results_by_index[i]
                     display_images = result.pop("_display_images", None)
