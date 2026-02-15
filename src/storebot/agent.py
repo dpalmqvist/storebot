@@ -91,6 +91,30 @@ Svara alltid på svenska om inte användaren skriver på engelska. Var kortfatta
 Alla annonser och produktbeskrivningar ska vara på svenska."""
 
 
+def _strip_nulls(value):
+    """Recursively remove None values from dicts/lists (strict mode sends null for omitted params).
+
+    Empty dicts/lists that result from stripping are collapsed to None so
+    that downstream ``is not None`` guards work correctly (e.g. details in
+    relist_product).
+    """
+    if isinstance(value, dict):
+        cleaned = {k: _strip_nulls(v) for k, v in value.items() if v is not None}
+        return cleaned or None
+    if isinstance(value, list):
+        return [_strip_nulls(v) for v in value]
+    return value
+
+
+def _get_cached_tools() -> list[dict]:
+    """Return TOOLS with cache_control on the last tool definition for prompt caching."""
+    if not TOOLS:
+        return TOOLS
+    tools = [dict(t) for t in TOOLS]
+    tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
+    return tools
+
+
 class Agent:
     def __init__(self, settings=None, engine=None):
         self.settings = settings or get_settings()
@@ -122,7 +146,13 @@ class Agent:
             engine=self.engine,
         )
         self.listing = (
-            ListingService(engine=self.engine, tradera=self.tradera) if self.engine else None
+            ListingService(
+                engine=self.engine,
+                tradera=self.tradera,
+                image_dir=self.settings.product_image_dir,
+            )
+            if self.engine
+            else None
         )
         self.postnord = None
         if self.settings.postnord_api_key:
@@ -175,13 +205,22 @@ class Agent:
             "API call: sending %d messages",
             len(messages),
         )
+        # Cache the system prompt and tool definitions (5-min TTL, ~90% cost reduction)
+        system = [
+            {
+                "type": "text",
+                "text": SYSTEM_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+        cached_tools = _get_cached_tools()
         try:
             response = self.client.messages.create(
                 model=self.settings.claude_model,
                 max_tokens=4096,
-                system=SYSTEM_PROMPT,
+                system=system,
                 messages=messages,
-                tools=TOOLS,
+                tools=cached_tools,
             )
         except anthropic.APIError as e:
             status = getattr(e, "status_code", None)
@@ -192,10 +231,15 @@ class Agent:
                 e,
             )
             raise
+        cache_creation = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+        cache_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
         logger.info(
-            "API call: input_tokens=%d, output_tokens=%d, stop_reason=%s",
+            "API call: input_tokens=%d, output_tokens=%d, "
+            "cache_creation=%d, cache_read=%d, stop_reason=%s",
             response.usage.input_tokens,
             response.usage.output_tokens,
+            cache_creation,
+            cache_read,
             response.stop_reason,
         )
         return response
@@ -340,10 +384,14 @@ class Agent:
         if not isinstance(tool_input, dict):
             return {"error": f"Invalid tool input type for '{name}': expected dict"}
 
+        # Strict mode sends null for optional params — strip them so Python
+        # methods use their default values instead.
+        cleaned = _strip_nulls(tool_input) or {}
+
         logger.debug(
             "Executing tool: %s with keys: %s",
             name,
-            list(tool_input.keys()),
+            list(cleaned.keys()),
             extra={"tool_name": name},
         )
 
@@ -361,7 +409,7 @@ class Agent:
             return {"error": f"Service '{service_attr}' not available"}
 
         try:
-            return getattr(service, method_name)(**tool_input)
+            return getattr(service, method_name)(**cleaned)
         except TypeError as e:
             logger.warning(
                 "Tool input validation failed: %s — %s", name, e, extra={"tool_name": name}

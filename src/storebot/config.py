@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     postnord_sender_phone: str = ""
     postnord_sender_email: str = ""
 
+    # Product images
+    product_image_dir: str = "data/images"
+
     # Shipping label export
     label_export_path: str = "data/labels"
 
