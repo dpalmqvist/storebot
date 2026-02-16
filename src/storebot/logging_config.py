@@ -7,10 +7,18 @@ Human-readable format for local development.
 import json
 import logging
 from datetime import UTC, datetime
+from decimal import Decimal
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 EXTRA_FIELDS = ("chat_id", "order_id", "listing_id", "tool_name", "job_name")
+
+
+def _json_default(o: object) -> object:
+    """JSON encoder fallback — converts Decimal (from zeep SOAP) to float."""
+    if isinstance(o, Decimal):
+        return float(o)
+    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
 
 
 class JSONFormatter(logging.Formatter):
@@ -32,7 +40,7 @@ class JSONFormatter(logging.Formatter):
             if value is not None:
                 log_entry[field] = value
 
-        return json.dumps(log_entry, ensure_ascii=False)
+        return json.dumps(log_entry, ensure_ascii=False, default=_json_default)
 
 
 def configure_logging(level: str = "INFO", json_format: bool = True, log_file: str = "") -> None:
