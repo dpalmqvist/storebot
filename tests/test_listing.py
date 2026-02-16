@@ -303,6 +303,23 @@ class TestApproveDraft:
         assert "kategoriattribut" in result["warning"]
         assert result["status"] == "draft"
 
+    def test_no_warning_when_empty_attributes(self, service, product):
+        """Empty attribute_values means user checked and found none required."""
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Test",
+            listing_description="Test",
+            start_price=100.0,
+            tradera_category_id=344,
+            details={"attribute_values": []},
+        )
+
+        result = service.approve_draft(draft["listing_id"])
+
+        assert "warning" not in result
+        assert result["status"] == "approved"
+
     def test_no_warning_when_attributes_present(self, service, product):
         draft = service.create_draft(
             product_id=product,
