@@ -73,6 +73,13 @@ _ONE_MILLION = Decimal("1000000")
 _COST_QUANTIZE = Decimal("0.0001")
 
 
+def _json_default(o: object) -> object:
+    """JSON encoder fallback — converts Decimal (from zeep SOAP) to float."""
+    if isinstance(o, Decimal):
+        return float(o)
+    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+
+
 def _estimate_cost_sek(
     model: str,
     input_tokens: int,
@@ -659,7 +666,7 @@ class Agent:
             tool_results = []
             for b in tool_blocks:
                 result = result_by_id[b.id]
-                result_json = json.dumps(result, ensure_ascii=False)
+                result_json = json.dumps(result, ensure_ascii=False, default=_json_default)
                 if (
                     b.name in REFLECTION_TOOLS
                     and isinstance(result, dict)
