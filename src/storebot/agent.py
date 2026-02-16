@@ -120,6 +120,7 @@ Du kan:
 - Ta bort produktbilder (delete_product_image)
 - Avbryta aktiva annonser lokalt (cancel_listing — kräver manuell åtgärd på Tradera)
 - Hämta Tradera frakttyper/leveransvillkor (get_shipping_types)
+- Hämta kategoriattribut (get_attribute_definitions) för att sätta obligatoriska egenskaper på annonser
 - Hantera sparade sökningar (scout): skapa, lista, uppdatera, ta bort
 - Köra sparade sökningar manuellt eller alla på en gång för att hitta nya fynd
 - Visa produktbilder direkt i chatten med get_product_images (använd för att granska bilder innan godkännande)
@@ -157,6 +158,15 @@ VIKTIGT — Frakt vid annonsering:
 2. Inkludera shipping_options i details vid create_draft_listing: varje option ska ha cost, shipping_product_id och shipping_provider_id.
 3. Alternativt: sätt details.shipping_cost för enkel fast fraktkostnad.
 4. Visa fraktalternativen i förhandsgranskningen så ägaren kan godkänna.
+
+VIKTIGT — Kategoriattribut vid annonsering:
+1. INNAN du godkänner ett utkast, använd get_attribute_definitions med annonsens kategori-ID.
+2. Attribut med min_values > 0 är obligatoriska — Tradera avvisar annonser utan dem.
+3. Föreslå lämpliga attributvärden baserat på produktens egenskaper (material, tidsepok, skick etc.).
+4. Visa förslagen för ägaren och invänta godkännande.
+5. Uppdatera utkastet med update_draft_listing (lägg item_attributes och attribute_values i details) INNAN approve.
+6. Varje attribute_values-post: {id, name, values (lista med valda värden från possible_values)}.
+7. Godkänn INTE utkastet förrän obligatoriska attribut är ifyllda.
 
 Om du behöver verktyg som inte är tillgängliga, använd request_tools för att begära fler.
 
@@ -766,6 +776,7 @@ class Agent:
         "get_categories": ("tradera", "get_categories"),
         "get_shipping_options": ("tradera", "get_shipping_options"),
         "get_shipping_types": ("tradera", "get_shipping_types"),
+        "get_attribute_definitions": ("tradera", "get_attribute_definitions"),
         "search_blocket": ("blocket", "search"),
         "get_blocket_ad": ("blocket", "get_ad"),
         "price_check": ("pricing", "price_check"),

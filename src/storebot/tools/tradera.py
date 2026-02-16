@@ -203,6 +203,8 @@ class TraderaClient:
         shipping_options: list[dict] | None = None,
         shipping_condition: str | None = None,
         auto_commit: bool = True,
+        item_attributes: list[int] | None = None,
+        attribute_values: list[dict] | None = None,
     ) -> dict:
         """Create a listing on Tradera via RestrictedService AddItem."""
         try:
@@ -234,6 +236,29 @@ class TraderaClient:
 
             if shipping_condition is not None:
                 params["ShippingCondition"] = shipping_condition
+
+            if item_attributes:
+                params["ItemAttributes"] = item_attributes
+            if attribute_values:
+                term_vals = []
+                number_vals = []
+                for av in attribute_values:
+                    entry = {
+                        "Id": int(av["id"]),
+                        "Name": av.get("name", ""),
+                        "Values": av["values"],
+                    }
+                    if av.get("type") == "number":
+                        number_vals.append(entry)
+                    else:
+                        term_vals.append(entry)
+                av_params = {}
+                if term_vals:
+                    av_params["TermAttributeValues"] = term_vals
+                if number_vals:
+                    av_params["NumberAttributeValues"] = number_vals
+                if av_params:
+                    params["AttributeValues"] = av_params
 
             logger.debug(
                 "AddItem params (pre-SOAP): %s",
@@ -361,6 +386,56 @@ class TraderaClient:
 
         except Exception as e:
             logger.exception("Tradera get_categories failed")
+            return {"error": str(e)}
+
+    @retry_on_transient()
+    def _get_attribute_definitions_api_call(self, category_id, headers):
+        return self.public_client.service.GetAttributeDefinitions(
+            categoryId=int(category_id), **headers
+        )
+
+    def get_attribute_definitions(self, category_id: int) -> dict:
+        """Get attribute definitions for a Tradera category.
+
+        Returns required and optional attributes (e.g. material, era, condition)
+        that can be set when creating a listing in this category.
+        """
+        try:
+            response = self._get_attribute_definitions_api_call(
+                category_id, self._auth_headers(self.public_client)
+            )
+
+            raw_attrs = self._soap_list(response, "AttributeDefinition")
+
+            attributes = []
+            for attr in raw_attrs:
+                possible = getattr(attr, "PossibleTermValues", None)
+                if possible is not None:
+                    # zeep may expose ArrayOfString as object with .string attr or as list
+                    values = getattr(possible, "string", None)
+                    if values is None:
+                        values = list(possible) if hasattr(possible, "__iter__") else []
+                    else:
+                        values = list(values)
+                else:
+                    values = []
+
+                attributes.append(
+                    {
+                        "id": getattr(attr, "Id", None),
+                        "name": getattr(attr, "Name", None),
+                        "description": getattr(attr, "Description", None),
+                        "key": getattr(attr, "Key", None),
+                        "min_values": getattr(attr, "MinNumberOfValues", 0) or 0,
+                        "max_values": getattr(attr, "MaxNumberOfValues", 0) or 0,
+                        "possible_values": values,
+                    }
+                )
+
+            return {"category_id": int(category_id), "attributes": attributes}
+
+        except Exception as e:
+            logger.exception("Tradera get_attribute_definitions failed")
             return {"error": str(e)}
 
     @retry_on_transient()

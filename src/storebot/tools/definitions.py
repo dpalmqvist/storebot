@@ -38,6 +38,36 @@ _DETAILS_SCHEMA = {
         "shipping_cost": {"type": "number"},
         "shipping_condition": {"type": "string"},
         "reserve_price": {"type": "number"},
+        "item_attributes": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "description": "Lista med attribut-ID:n (ItemAttributes) som krävs av kategorin",
+        },
+        "attribute_values": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Attribut-ID från get_attribute_definitions",
+                    },
+                    "name": {"type": "string", "description": "Attributnamn"},
+                    "values": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Valda värden (från possible_values)",
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "term (standard) eller number",
+                    },
+                },
+                "required": ["id", "values"],
+                "additionalProperties": False,
+            },
+            "description": "Kategoriattribut med valda värden",
+        },
     },
     "additionalProperties": False,
 }
@@ -126,6 +156,20 @@ TOOLS = [
         "category": "listing",
         "strict": True,
         "input_schema": _EMPTY_SCHEMA,
+    },
+    {
+        "name": "get_attribute_definitions",
+        "description": "Hämta attributdefinitioner för en Tradera-kategori. Visar vilka egenskaper (material, tidsepok, skick) som krävs eller är valfria. Använd innan approve_draft_listing.",
+        "category": "listing",
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "category_id": {"type": "integer", "description": "Tradera category ID"},
+            },
+            "required": ["category_id"],
+            "additionalProperties": False,
+        },
     },
     # --- Blocket ---
     {
