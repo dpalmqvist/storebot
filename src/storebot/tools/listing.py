@@ -367,7 +367,9 @@ class ListingService:
         shipping_condition = details.get("shipping_condition")
         shipping_cost = None if shipping_options else details.get("shipping_cost")
         reserve_price = details.get("reserve_price") if listing.listing_type == "auction" else None
-        item_attributes = details.get("item_attributes")
+        # ItemAttributes = global condition flags (1=Ny, 2=Begagnad), required by Tradera.
+        # Default to [2] (Begagnad) since this shop primarily sells second-hand items.
+        item_attributes = details.get("item_attributes") or [2]
         attribute_values = details.get("attribute_values")
 
         create_result = self.tradera.create_listing(

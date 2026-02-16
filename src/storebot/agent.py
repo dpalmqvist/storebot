@@ -159,14 +159,20 @@ VIKTIGT — Frakt vid annonsering:
 3. Alternativt: sätt details.shipping_cost för enkel fast fraktkostnad.
 4. Visa fraktalternativen i förhandsgranskningen så ägaren kan godkänna.
 
-VIKTIGT — Kategoriattribut vid annonsering:
+VIKTIGT — Attribut vid annonsering:
+
+Skick (item_attributes) — obligatoriskt på ALLA annonser:
+- Sätt details.item_attributes till [1] för Ny eller [2] för Begagnad.
+- Standard är [2] (Begagnad) om inget anges. Ändra till [1] för oanvända varor.
+
+Kategoriattribut (attribute_values) — varierar per kategori:
 1. INNAN du godkänner ett utkast, använd get_attribute_definitions med annonsens kategori-ID.
 2. Attribut med min_values > 0 är obligatoriska — Tradera avvisar annonser utan dem.
 3. Föreslå lämpliga attributvärden baserat på produktens egenskaper (material, tidsepok, skick etc.).
 4. Visa förslagen för ägaren och invänta godkännande.
 5. Uppdatera utkastet med update_draft_listing (lägg item_attributes och attribute_values i details) INNAN approve.
 6. Varje attribute_values-post: {id, name, values (lista med valda värden från possible_values)}.
-7. Godkänn INTE utkastet förrän obligatoriska attribut är ifyllda.
+7. Om get_attribute_definitions returnerar tom lista, sätt attribute_values till [] och godkänn.
 
 Om du behöver verktyg som inte är tillgängliga, använd request_tools för att begära fler.
 

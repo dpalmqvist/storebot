@@ -1210,7 +1210,7 @@ class TestPublishListing:
         pub_service.publish_listing(listing_id)
 
         call_kwargs = pub_service.tradera.create_listing.call_args.kwargs
-        assert call_kwargs.get("item_attributes") is None
+        assert call_kwargs["item_attributes"] == [2]  # default: Begagnad
         assert call_kwargs.get("attribute_values") is None
 
 
