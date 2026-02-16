@@ -172,7 +172,7 @@ _COMPACT_SYSTEM_PROMPT = (
 
 
 def _strip_nulls(value):
-    """Recursively remove None values from dicts/lists (strict mode sends null for omitted params).
+    """Recursively remove None values from dicts/lists.
 
     Empty dicts/lists that result from stripping are collapsed to None so
     that downstream ``is not None`` guards work correctly (e.g. details in
