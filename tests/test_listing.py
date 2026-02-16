@@ -769,6 +769,7 @@ class TestPublishListing:
                 "attribute_values": [
                     {"id": 101, "name": "Material", "values": ["Trä"]},
                 ],
+                "shipping_cost": 59,
             },
         )
 
@@ -851,7 +852,7 @@ class TestPublishListing:
             listing_description="Test",
             start_price=100.0,
             tradera_category_id=100,
-            details={"attribute_values": [{"id": 1, "values": ["X"]}]},
+            details={"attribute_values": [{"id": 1, "values": ["X"]}], "shipping_cost": 49},
         )
         pub_service.approve_draft(draft["listing_id"])
 
@@ -905,6 +906,26 @@ class TestPublishListing:
         result = service.publish_listing(1)
         assert "error" in result
         assert "not configured" in result["error"]
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
+    def test_missing_shipping_rejected(self, mock_encode, mock_optimize, pub_service, engine):
+        prod = pub_service.create_product(title="Test")
+        draft = pub_service.create_draft(
+            product_id=prod["product_id"],
+            listing_type="auction",
+            listing_title="Test",
+            listing_description="Test",
+            start_price=100.0,
+            tradera_category_id=100,
+            details={"attribute_values": [{"id": 1, "values": ["X"]}]},
+        )
+        pub_service.approve_draft(draft["listing_id"])
+
+        result = pub_service.publish_listing(draft["listing_id"])
+
+        assert "error" in result
+        assert "Fraktalternativ saknas" in result["error"]
 
     @patch("storebot.tools.listing.optimize_for_upload")
     @patch("storebot.tools.listing.encode_image_base64")
@@ -1034,6 +1055,7 @@ class TestPublishListing:
             tradera_category_id=100,
             details={
                 "attribute_values": [{"id": 1, "values": ["X"]}],
+                "shipping_cost": 49,
             },
         )
         service.approve_draft(draft["listing_id"])
@@ -1106,7 +1128,7 @@ class TestPublishListing:
 
         with Session(engine) as session:
             listing = session.get(PlatformListing, listing_id)
-            listing.details = {"reserve_price": 1500}
+            listing.details = {"reserve_price": 1500, "shipping_cost": 49}
             session.commit()
 
         pub_service.publish_listing(listing_id)
@@ -1157,6 +1179,7 @@ class TestPublishListing:
             details={
                 "reserve_price": 500,
                 "attribute_values": [{"id": 1, "values": ["X"]}],
+                "shipping_cost": 49,
             },
         )
         pub_service.approve_draft(draft["listing_id"])
@@ -1183,6 +1206,7 @@ class TestPublishListing:
             listing.details = {
                 "attribute_values": attr_values,
                 "item_attributes": [101, 102],
+                "shipping_cost": 49,
             }
             session.commit()
 
@@ -1201,10 +1225,10 @@ class TestPublishListing:
         mock_optimize.return_value = "/tmp/optimized.jpg"
         mock_encode.return_value = ("base64data", "image/jpeg")
 
-        # Clear details so no attributes are passed
+        # Clear details so no attributes are passed (keep shipping_cost for validation)
         with Session(engine) as session:
             listing = session.get(PlatformListing, listing_id)
-            listing.details = {}
+            listing.details = {"shipping_cost": 49}
             session.commit()
 
         pub_service.publish_listing(listing_id)

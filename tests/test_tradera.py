@@ -336,6 +336,7 @@ class TestTraderaCreateListing:
         assert item_req["ItemType"] == 1
         assert item_req["StartPrice"] == 500
         assert item_req["AutoCommit"] is True
+        assert item_req["AcceptedBidderId"] == 1
 
     def test_buy_it_now_listing(self, client):
         response = MagicMock()
@@ -412,6 +413,20 @@ class TestTraderaCreateListing:
         result = client.create_listing(title="Test", description="Test", category_id=100)
 
         assert result["error"] == "Tradera API response missing ItemId"
+
+    def test_custom_accepted_bidder_id(self, client):
+        response = MagicMock()
+        response.ItemId = 1
+        response.RequestId = 99006
+        client._restricted_client.service.AddItem.return_value = response
+
+        client.create_listing(
+            title="Test", description="Test", category_id=100, accepted_bidder_id=2
+        )
+
+        call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
+        item_req = call_kwargs["itemRequest"]
+        assert item_req["AcceptedBidderId"] == 2
 
 
 class TestCreateListingAttributes:

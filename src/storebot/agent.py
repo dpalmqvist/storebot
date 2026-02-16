@@ -153,17 +153,22 @@ VIKTIGT — Annonseringsflöde:
 6. Publicering laddar upp bilder och skapar annonsen på Tradera.
 7. Informera ägaren om den publicerade annonsens URL.
 
-VIKTIGT — Frakt vid annonsering:
+VIKTIGT — Frakt vid annonsering (obligatoriskt för publicering):
 1. Använd get_shipping_options med produktens vikt för att hitta tillgängliga fraktalternativ.
 2. Inkludera shipping_options i details vid create_draft_listing: varje option ska ha cost, shipping_product_id och shipping_provider_id.
 3. Alternativt: sätt details.shipping_cost för enkel fast fraktkostnad.
 4. Visa fraktalternativen i förhandsgranskningen så ägaren kan godkänna.
+5. Publicering misslyckas om varken shipping_options eller shipping_cost finns i details.
 
 VIKTIGT — Attribut vid annonsering:
 
 Skick (item_attributes) — obligatoriskt på ALLA annonser:
 - Sätt details.item_attributes till [1] för Ny eller [2] för Begagnad.
 - Standard är [2] (Begagnad) om inget anges. Ändra till [1] för oanvända varor.
+
+Målgrupp (accepted_bidder_id) — valfritt:
+- Standard är 1 (alla köpare). Kan sättas i details: 1=Alla, 2=Sverige, 3=Norden, 4=Europa.
+- Ändra till 2 om produkten bara ska säljas inom Sverige (t.ex. tunga möbler).
 
 Kategoriattribut (attribute_values) — varierar per kategori:
 1. INNAN du godkänner ett utkast, använd get_attribute_definitions med annonsens kategori-ID.
