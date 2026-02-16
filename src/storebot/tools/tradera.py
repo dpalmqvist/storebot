@@ -144,7 +144,7 @@ class TraderaClient:
 
     @retry_on_transient()
     def _search_api_call(self, params, headers):
-        return self.search_client.service.SearchAdvanced(**params, **headers)
+        return self.search_client.service.SearchAdvanced(request=params, **headers)
 
     def search(
         self,

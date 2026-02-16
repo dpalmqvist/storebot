@@ -119,6 +119,7 @@ Du kan:
 - Återlista produkter från avslutade/sålda annonser (relist_product)
 - Ta bort produktbilder (delete_product_image)
 - Avbryta aktiva annonser lokalt (cancel_listing — kräver manuell åtgärd på Tradera)
+- Hämta tillgängliga fraktalternativ från Tradera API (get_shipping_options) — OBLIGATORISKT innan publicering
 - Hämta Tradera frakttyper/leveransvillkor (get_shipping_types)
 - Hämta kategoriattribut (get_attribute_definitions) för att sätta obligatoriska egenskaper på annonser
 - Hantera sparade sökningar (scout): skapa, lista, uppdatera, ta bort
@@ -260,11 +261,15 @@ _TOOL_NAME_TO_CATEGORY: dict[str, str] = {
 }
 
 
+_CATEGORIES_TAG_PREFIX = "[Aktiva kategorier: "
+
+
 def _detect_categories(messages: list[dict], active_categories: set[str]) -> set[str]:
     """Detect relevant tool categories from recent messages.
 
     Always includes ``core``. Preserves ``active_categories`` for stickiness
-    within a single ``handle_message`` call.
+    within a single ``handle_message`` call. Also restores categories embedded
+    in compacted summary messages (``[Aktiva kategorier: ...]``).
     """
     cats: set[str] = {"core"} | active_categories
 
@@ -300,6 +305,18 @@ def _detect_categories(messages: list[dict], active_categories: set[str]) -> set
         for category, keywords in _KEYWORD_CATEGORIES.items():
             if any(kw in combined for kw in keywords):
                 cats.add(category)
+
+    # Restore categories from compacted summary tags. The tag is always in the
+    # first message when history has been compacted.
+    if messages:
+        first = messages[0].get("content", "")
+        if isinstance(first, str) and _CATEGORIES_TAG_PREFIX in first:
+            start = first.index(_CATEGORIES_TAG_PREFIX) + len(_CATEGORIES_TAG_PREFIX)
+            end = first.index("]", start)
+            for cat in first[start:end].split(", "):
+                cat = cat.strip()
+                if cat in TOOL_CATEGORIES:
+                    cats.add(cat)
 
     return cats
 
@@ -718,8 +735,10 @@ class Agent:
             return messages
         recent = messages[-keep:]
 
-        # Build text representation for summarization
+        # Build text representation for summarization, and collect tool
+        # categories used in the old messages so they survive compaction.
         lines = []
+        old_categories: set[str] = set()
         for msg in old:
             role = msg.get("role", "?")
             content = msg.get("content")
@@ -732,12 +751,25 @@ class Agent:
                         if block.get("type") == "text":
                             parts.append(block.get("text", ""))
                         elif block.get("type") == "tool_use":
-                            parts.append(f"[verktyg: {block.get('name', '?')}]")
+                            name = block.get("name", "?")
+                            parts.append(f"[verktyg: {name}]")
+                            if name in _TOOL_NAME_TO_CATEGORY:
+                                old_categories.add(_TOOL_NAME_TO_CATEGORY[name])
                         elif block.get("type") == "tool_result":
                             t = str(block.get("content", ""))
                             parts.append(f"[resultat: {t[:200]}{'...' if len(t) > 200 else ''}]")
                 if parts:
                     lines.append(f"{role}: {' '.join(parts)}")
+        # Also preserve categories already embedded in an earlier compaction.
+        first_content = old[0].get("content", "") if old else ""
+        if isinstance(first_content, str) and _CATEGORIES_TAG_PREFIX in first_content:
+            start = first_content.index(_CATEGORIES_TAG_PREFIX) + len(_CATEGORIES_TAG_PREFIX)
+            end = first_content.index("]", start)
+            for cat in first_content[start:end].split(", "):
+                cat = cat.strip()
+                if cat in TOOL_CATEGORIES:
+                    old_categories.add(cat)
+        old_categories.discard("core")  # always included, no need to persist
 
         try:
             response = self.client.messages.create(
@@ -768,9 +800,16 @@ class Agent:
                 len(summary),
                 len(recent),
             )
+            categories_tag = ""
+            if old_categories:
+                categories_tag = (
+                    f"\n\n{_CATEGORIES_TAG_PREFIX}{', '.join(sorted(old_categories))}]"
+                )
             summary_msg = {
                 "role": "user",
-                "content": f"[Sammanfattning av tidigare konversation]\n\n{summary}",
+                "content": (
+                    f"[Sammanfattning av tidigare konversation]\n\n{summary}{categories_tag}"
+                ),
             }
 
             from storebot.tools.conversation import _trim_orphaned_tool_messages

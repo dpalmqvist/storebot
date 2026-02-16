@@ -95,11 +95,12 @@ class TestTraderaSearch:
         client.search("stol", category=344, max_price=500, page=2, items_per_page=25)
 
         call_kwargs = client.search_client.service.SearchAdvanced.call_args
-        assert call_kwargs.kwargs["SearchWords"] == "stol"
-        assert call_kwargs.kwargs["CategoryId"] == 344
-        assert call_kwargs.kwargs["PriceMaximum"] == 500
-        assert call_kwargs.kwargs["PageNumber"] == 2
-        assert call_kwargs.kwargs["ItemsPerPage"] == 25
+        req = call_kwargs.kwargs["request"]
+        assert req["SearchWords"] == "stol"
+        assert req["CategoryId"] == 344
+        assert req["PriceMaximum"] == 500
+        assert req["PageNumber"] == 2
+        assert req["ItemsPerPage"] == 25
 
     def test_search_default_category_is_zero(self, client):
         response = _make_response()
@@ -108,8 +109,9 @@ class TestTraderaSearch:
         client.search("bord")
 
         call_kwargs = client.search_client.service.SearchAdvanced.call_args
-        assert call_kwargs.kwargs["CategoryId"] == 0
-        assert "PriceMaximum" not in call_kwargs.kwargs
+        req = call_kwargs.kwargs["request"]
+        assert req["CategoryId"] == 0
+        assert "PriceMaximum" not in req
 
     def test_search_handles_api_error(self, client):
         client.search_client.service.SearchAdvanced.side_effect = Exception("Connection refused")
