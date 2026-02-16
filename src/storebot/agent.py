@@ -264,12 +264,29 @@ _TOOL_NAME_TO_CATEGORY: dict[str, str] = {
 _CATEGORIES_TAG_PREFIX = "[Aktiva kategorier: "
 
 
+def _parse_category_tag(content: str) -> set[str]:
+    """Extract category names from an embedded ``[Aktiva kategorier: ...]`` tag.
+
+    Returns an empty set on missing or malformed tags.
+    """
+    if not isinstance(content, str) or _CATEGORIES_TAG_PREFIX not in content:
+        return set()
+    start = content.find(_CATEGORIES_TAG_PREFIX) + len(_CATEGORIES_TAG_PREFIX)
+    end = content.find("]", start)
+    if end == -1:
+        return set()
+    return {
+        cat.strip() for cat in content[start:end].split(", ") if cat.strip() in TOOL_CATEGORIES
+    }
+
+
 def _detect_categories(messages: list[dict], active_categories: set[str]) -> set[str]:
     """Detect relevant tool categories from recent messages.
 
-    Always includes ``core``. Preserves ``active_categories`` for stickiness
-    within a single ``handle_message`` call. Also restores categories embedded
-    in compacted summary messages (``[Aktiva kategorier: ...]``).
+    Always includes ``core`` (never persisted in tags, as it's always active).
+    Preserves ``active_categories`` for stickiness within a single
+    ``handle_message`` call. Also restores categories embedded in compacted
+    summary messages (``[Aktiva kategorier: ...]``).
     """
     cats: set[str] = {"core"} | active_categories
 
@@ -309,14 +326,7 @@ def _detect_categories(messages: list[dict], active_categories: set[str]) -> set
     # Restore categories from compacted summary tags. The tag is always in the
     # first message when history has been compacted.
     if messages:
-        first = messages[0].get("content", "")
-        if isinstance(first, str) and _CATEGORIES_TAG_PREFIX in first:
-            start = first.index(_CATEGORIES_TAG_PREFIX) + len(_CATEGORIES_TAG_PREFIX)
-            end = first.index("]", start)
-            for cat in first[start:end].split(", "):
-                cat = cat.strip()
-                if cat in TOOL_CATEGORIES:
-                    cats.add(cat)
+        cats |= _parse_category_tag(messages[0].get("content", ""))
 
     return cats
 
@@ -761,15 +771,11 @@ class Agent:
                 if parts:
                     lines.append(f"{role}: {' '.join(parts)}")
         # Also preserve categories already embedded in an earlier compaction.
-        first_content = old[0].get("content", "") if old else ""
-        if isinstance(first_content, str) and _CATEGORIES_TAG_PREFIX in first_content:
-            start = first_content.index(_CATEGORIES_TAG_PREFIX) + len(_CATEGORIES_TAG_PREFIX)
-            end = first_content.index("]", start)
-            for cat in first_content[start:end].split(", "):
-                cat = cat.strip()
-                if cat in TOOL_CATEGORIES:
-                    old_categories.add(cat)
-        old_categories.discard("core")  # always included, no need to persist
+        if old:
+            old_categories |= _parse_category_tag(old[0].get("content", ""))
+        old_categories.discard(
+            "core"
+        )  # always activated by _detect_categories, no persistence needed
 
         try:
             response = self.client.messages.create(

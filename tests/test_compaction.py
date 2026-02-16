@@ -6,7 +6,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from storebot.agent import Agent, _detect_categories
+from storebot.agent import Agent, _detect_categories, _parse_category_tag
 from storebot.db import Base, ConversationMessage
 from storebot.tools.conversation import ConversationService
 
@@ -355,6 +355,29 @@ class TestCompactHistory:
         summary_content = result[0]["content"]
         assert "listing" in summary_content
         assert "order" in summary_content
+
+    def test_detect_categories_handles_malformed_tag(self, engine):
+        """Malformed category tag (missing closing bracket) doesn't crash."""
+        messages = [
+            {
+                "role": "user",
+                "content": "[Aktiva kategorier: scout, analytics",
+            },
+        ]
+        # Should not raise ValueError — malformed tag is silently ignored
+        cats = _detect_categories(messages, set())
+        assert "core" in cats
+        # _parse_category_tag returns empty for malformed tag; keywords may
+        # still match (e.g. "scout" is a keyword), but analytics is not
+        assert "analytics" not in cats
+
+    def test_parse_category_tag_empty_cases(self, engine):
+        """_parse_category_tag handles edge cases gracefully."""
+        assert _parse_category_tag("") == set()
+        assert _parse_category_tag("no tag here") == set()
+        assert _parse_category_tag(42) == set()
+        assert _parse_category_tag("[Aktiva kategorier: listing]") == {"listing"}
+        assert _parse_category_tag("[Aktiva kategorier: ") == set()  # no closing ]
 
 
 class TestReplaceHistory:
