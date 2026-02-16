@@ -33,13 +33,8 @@ def _update_env_file(env_path: Path, key: str, value: str) -> None:
 
 
 def _parse_redirect_url(url: str) -> dict:
-    """Parse userId, token and expiration from Tradera's redirect URL.
-
-    Expected format:
-      http://localhost:8080/auth/accept?userId=123&token=abc-def&exp=2027-...
-    """
-    parsed = urlparse(url.strip())
-    params = parse_qs(parsed.query)
+    """Parse userId, token and expiration from Tradera's redirect URL."""
+    params = parse_qs(urlparse(url.strip()).query)
 
     result = {"user_id": params.get("userId", [None])[0]}
     token = params.get("token", [None])[0]
@@ -93,11 +88,9 @@ def authorize_tradera() -> None:
         print("Error: No URL provided.")
         sys.exit(1)
 
-    # Parse userId and token from redirect URL
     redirect_result = _parse_redirect_url(redirect_url)
     user_id = redirect_result.get("user_id")
 
-    # Try FetchToken (Option 2) first, fall back to redirect URL token (Option 3)
     print()
     print("Fetching authorization token from Tradera...")
     tradera = TraderaClient(

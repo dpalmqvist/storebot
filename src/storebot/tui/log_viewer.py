@@ -19,11 +19,6 @@ from storebot.db import AgentAction, Product, create_engine
 _NONE_SENTINEL = "__none__"
 
 
-# ---------------------------------------------------------------------------
-# Data-access helpers
-# ---------------------------------------------------------------------------
-
-
 def fetch_product_rows(session: Session, title_filter: str = "") -> list[tuple]:
     """Return (id, title, status, category, action_count) for every product."""
     stmt = (
@@ -102,11 +97,6 @@ def _details_str(details: dict | None) -> str:
     return _truncate(json.dumps(details, ensure_ascii=False))
 
 
-# ---------------------------------------------------------------------------
-# Screen 1 — Product List
-# ---------------------------------------------------------------------------
-
-
 class ProductListScreen(Screen):
     BINDINGS = [
         Binding("q", "quit_app", "Quit"),
@@ -154,11 +144,6 @@ class ProductListScreen(Screen):
 
     def action_quit_app(self) -> None:
         self.app.exit()
-
-
-# ---------------------------------------------------------------------------
-# Screen 2 — Audit Log
-# ---------------------------------------------------------------------------
 
 
 class AuditLogScreen(Screen):
@@ -283,11 +268,6 @@ class AuditLogScreen(Screen):
 
     def action_quit_app(self) -> None:
         self.app.exit()
-
-
-# ---------------------------------------------------------------------------
-# App
-# ---------------------------------------------------------------------------
 
 
 class LogViewerApp(App):

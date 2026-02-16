@@ -7,12 +7,12 @@ comparisons, and sourcing analysis.
 
 import logging
 import re
+from collections import Counter
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy.orm import Session
-
 import sqlalchemy as sa
+from sqlalchemy.orm import Session
 
 from storebot.db import ApiUsage, Order, PlatformListing, Product
 from storebot.tools.helpers import log_action, naive_now
@@ -262,13 +262,12 @@ class AnalyticsService:
         with Session(self.engine) as session:
             products = session.query(Product).all()
 
-            status_dist: dict[str, int] = {}
+            status_dist = Counter(p.status or "draft" for p in products)
             stock_value = 0.0
             aging: dict[str, list[dict]] = {label: [] for label, _ in _AGING_BUCKETS}
 
             for product in products:
                 status = product.status or "draft"
-                status_dist[status] = status_dist.get(status, 0) + 1
 
                 if status in ("draft", "listed"):
                     stock_value += product.acquisition_cost or 0
@@ -303,7 +302,7 @@ class AnalyticsService:
 
             return {
                 "total_products": len(products),
-                "status_distribution": status_dist,
+                "status_distribution": dict(status_dist),
                 "stock_value": round(stock_value, 2),
                 "aging_counts": aging_counts,
                 "stale_items": stale_items,
@@ -385,18 +384,13 @@ class AnalyticsService:
                 if days is not None:
                     ch["sale_times"].append(days)
 
-            # Count sourced items per channel
             sourced_products = (
                 session.query(Product)
                 .filter(Product.created_at >= start, Product.created_at < end)
                 .all()
             )
-            sourced_by_channel: dict[str, int] = {}
-            for p in sourced_products:
-                src = p.source or "Okänd"
-                sourced_by_channel[src] = sourced_by_channel.get(src, 0) + 1
+            sourced_by_channel = Counter(p.source or "Okänd" for p in sourced_products)
 
-            # Build result, merging sales data with sourcing counts
             result_channels: dict[str, dict] = {}
             for source in set(channels) | set(sourced_by_channel):
                 ch = channels.get(source, {})
@@ -438,8 +432,6 @@ class AnalyticsService:
                 "best_channel": best,
                 "worst_channel": worst,
             }
-
-    # --- Swedish text formatters ---
 
     @staticmethod
     def _format_summary(data: dict) -> str:
@@ -549,13 +541,13 @@ class AnalyticsService:
     def _format_full_report(self, summary: dict, profitability: dict, inventory: dict) -> str:
         """Combined report for /rapport, fits within 4000 chars."""
         text = "\n".join(
-            [
+            (
                 self._format_summary(summary),
                 "",
                 self._format_profitability(profitability),
                 "",
                 self._format_inventory(inventory),
-            ]
+            )
         )
         if len(text) > 3900:
             text = text[:3900] + "\n\n...avkortat"

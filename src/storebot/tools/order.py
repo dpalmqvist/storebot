@@ -226,11 +226,9 @@ class OrderService:
             shipping_cost = order.shipping_cost or 0
             platform_fee = order.platform_fee or 0
 
-            # VAT calculation: 25% VAT is included in sale_price
+            # 25% VAT is included in sale_price
             revenue_excl_vat = round(sale_price / 1.25, 2)
             vat = round(sale_price - revenue_excl_vat, 2)
-
-            # Bank deposit = sale + shipping - platform fee
             bank_deposit = round(sale_price + shipping_cost - platform_fee, 2)
 
             rows = [
@@ -247,7 +245,7 @@ class OrderService:
                 # Actual shipping expense (6250 debit) is recorded when paying the carrier.
                 rows.append({"account": 3001, "debit": 0, "credit": shipping_cost})
 
-            product = session.get(Product, order.product_id) if order.product_id else None
+            product = session.get(Product, order.product_id)
             product_title = product.title if product else f"Produkt #{order.product_id}"
 
             result = self.accounting.create_voucher(
@@ -291,7 +289,6 @@ class OrderService:
             if tracking_number:
                 order.tracking_number = tracking_number
 
-            # Try to notify Tradera (non-blocking on failure)
             tradera_status = None
             if self.tradera and order.external_order_id:
                 try:
@@ -381,15 +378,12 @@ class OrderService:
                 logger.error("PostNord shipment creation failed for order %s: %s", order_id, e)
                 return {"error": f"PostNord API-fel: {e}"}
 
-            # Obtain label PDF: prefer inline base64, fall back to separate fetch
             label_data = self._get_label_data(result)
-
             label_path = None
             if label_data:
                 label_path = str(Path(self.label_export_path) / f"order_{order.id}.pdf")
                 self.postnord.save_label(label_data, label_path)
 
-            # Update order
             order.tracking_number = result["tracking_number"]
             if label_path:
                 order.label_path = label_path

@@ -47,29 +47,23 @@ class PricingService:
 
         all_comparables = tradera_comparables + blocket_comparables
 
+        tradera_section = {"count": len(tradera_comparables), "stats": tradera_stats}
+        if tradera_result.get("error"):
+            tradera_section["error"] = tradera_result["error"]
+
+        blocket_section = {"count": len(blocket_comparables), "stats": blocket_stats}
+        if blocket_result.get("error"):
+            blocket_section["error"] = blocket_result["error"]
+
         analysis = {
             "query": query,
             "product_id": product_id,
-            "tradera": {
-                "count": len(tradera_comparables),
-                "stats": tradera_stats,
-                "error": tradera_result.get("error"),
-            },
-            "blocket": {
-                "count": len(blocket_comparables),
-                "stats": blocket_stats,
-                "error": blocket_result.get("error"),
-            },
+            "tradera": tradera_section,
+            "blocket": blocket_section,
             "combined_stats": combined_stats,
             "suggested_range": suggested_range,
             "comparables": all_comparables,
         }
-
-        # Strip None error fields for cleaner output
-        if analysis["tradera"]["error"] is None:
-            del analysis["tradera"]["error"]
-        if analysis["blocket"]["error"] is None:
-            del analysis["blocket"]["error"]
 
         if product_id is not None and self.engine is not None:
             _log_pricing_action(self.engine, product_id, analysis)
@@ -83,7 +77,7 @@ class PricingService:
                 try:
                     kwargs["category"] = int(category)
                 except (ValueError, TypeError):
-                    pass  # Skip category filter if not convertible to int
+                    pass
             return self.tradera.search(**kwargs)
         except Exception as e:
             logger.exception("Tradera search failed in price_check")
