@@ -511,19 +511,24 @@ class TraderaClient:
         """
         pkg = getattr(prod, "PackageRequirements", None)
         delivery = getattr(prod, "DeliveryInformation", None)
+        cost = getattr(prod, "Price", None)
+        vat = getattr(prod, "VatPercent", None)
+        max_l = getattr(pkg, "MaxLength", None) if pkg else None
+        max_w = getattr(pkg, "MaxWidth", None) if pkg else None
+        max_h = getattr(pkg, "MaxHeight", None) if pkg else None
         return {
             "shipping_product_id": getattr(prod, "Id", None),
             "shipping_provider_id": getattr(prod, "ShippingProviderId", None),
             "provider_name": getattr(prod, "ShippingProvider", None),
             "name": getattr(prod, "Name", None),
-            "cost": getattr(prod, "Price", None),
+            "cost": float(cost) if cost is not None else None,
             "weight_limit_grams": weight_limit,
-            "vat_percent": getattr(prod, "VatPercent", None),
+            "vat_percent": float(vat) if vat is not None else None,
             "from_country": getattr(prod, "FromCountry", None),
             "to_country": getattr(prod, "ToCountry", None),
-            "max_length_cm": getattr(pkg, "MaxLength", None) if pkg else None,
-            "max_width_cm": getattr(pkg, "MaxWidth", None) if pkg else None,
-            "max_height_cm": getattr(pkg, "MaxHeight", None) if pkg else None,
+            "max_length_cm": float(max_l) if max_l is not None else None,
+            "max_width_cm": float(max_w) if max_w is not None else None,
+            "max_height_cm": float(max_h) if max_h is not None else None,
             "service_point": getattr(delivery, "ServicePoint", None) if delivery else None,
             "traceable": getattr(delivery, "IsTraceable", None) if delivery else None,
         }
