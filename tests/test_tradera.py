@@ -483,6 +483,26 @@ class TestCreateListingAttributes:
         assert "ItemAttributes" not in item_req
         assert "AttributeValues" not in item_req
 
+    def test_rejects_attribute_missing_id(self, client):
+        result = client.create_listing(
+            title="Test",
+            description="Test",
+            category_id=100,
+            attribute_values=[{"name": "Material", "values": ["Trä"]}],
+        )
+        assert "error" in result
+        assert "missing 'id' or 'values'" in result["error"]
+
+    def test_rejects_attribute_values_not_list(self, client):
+        result = client.create_listing(
+            title="Test",
+            description="Test",
+            category_id=100,
+            attribute_values=[{"id": 101, "values": "Trä"}],
+        )
+        assert "error" in result
+        assert "'values' must be a list" in result["error"]
+
 
 class TestTraderaUploadImages:
     def test_success(self, client):

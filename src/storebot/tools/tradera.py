@@ -240,6 +240,15 @@ class TraderaClient:
             if item_attributes:
                 params["ItemAttributes"] = item_attributes
             if attribute_values:
+                for av in attribute_values:
+                    if "id" not in av or "values" not in av:
+                        return {
+                            "error": f"Invalid attribute_values entry: missing 'id' or 'values' in {av}"
+                        }
+                    if not isinstance(av["values"], list):
+                        return {
+                            "error": f"Invalid attribute_values: 'values' must be a list in {av}"
+                        }
                 term_vals = []
                 number_vals = []
                 for av in attribute_values:

@@ -221,6 +221,7 @@ class ListingService:
             details = listing.details or {}
             if listing.tradera_category_id and not details.get("attribute_values"):
                 return {
+                    "success": False,
                     "warning": "Inga kategoriattribut har angetts. Använd get_attribute_definitions "
                     "och update_draft_listing för att lägga till obligatoriska attribut innan godkännande.",
                     "listing_id": listing.id,

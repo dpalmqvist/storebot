@@ -298,6 +298,7 @@ class TestApproveDraft:
 
         result = service.approve_draft(draft["listing_id"])
 
+        assert result["success"] is False
         assert "warning" in result
         assert "kategoriattribut" in result["warning"]
         assert result["status"] == "draft"
