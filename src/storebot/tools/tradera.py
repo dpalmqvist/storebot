@@ -228,11 +228,11 @@ class TraderaClient:
             if buy_it_now_price is not None:
                 params["BuyItNowPrice"] = int(buy_it_now_price)
             if shipping_options:
-                params["ShippingOptions"] = [
-                    self._build_shipping_option(opt) for opt in shipping_options
-                ]
+                params["ShippingOptions"] = {
+                    "ItemShipping": [self._build_shipping_option(opt) for opt in shipping_options]
+                }
             elif shipping_cost is not None:
-                params["ShippingOptions"] = [{"Cost": int(shipping_cost)}]
+                params["ShippingOptions"] = {"ItemShipping": [{"Cost": int(shipping_cost)}]}
 
             if shipping_condition is not None:
                 params["ShippingCondition"] = shipping_condition

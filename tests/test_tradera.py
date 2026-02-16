@@ -376,7 +376,7 @@ class TestTraderaCreateListing:
         call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
         item_req = call_kwargs["itemRequest"]
         assert "ShippingCost" not in item_req
-        assert item_req["ShippingOptions"] == [{"Cost": 99}]
+        assert item_req["ShippingOptions"] == {"ItemShipping": [{"Cost": 99}]}
 
     def test_auto_commit_false(self, client):
         response = MagicMock()
@@ -878,7 +878,7 @@ class TestCreateListingShipping:
         assert "ShippingOptions" in item_req
         assert "ShippingCost" not in item_req
         assert item_req["ShippingCondition"] == "PostBefordran"
-        soap_opt = item_req["ShippingOptions"][0]
+        soap_opt = item_req["ShippingOptions"]["ItemShipping"][0]
         assert soap_opt["Cost"] == 59
         assert soap_opt["ShippingProductId"] == 10
         assert soap_opt["ShippingProviderId"] == 1
@@ -919,7 +919,7 @@ class TestCreateListingShipping:
         call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
         item_req = call_kwargs["itemRequest"]
         assert "ShippingCost" not in item_req
-        assert item_req["ShippingOptions"] == [{"Cost": 49}]
+        assert item_req["ShippingOptions"] == {"ItemShipping": [{"Cost": 49}]}
 
 
 class TestTraderaLeaveFeedback:
