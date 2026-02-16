@@ -714,30 +714,37 @@ class TestGetAttributeDefinitions:
 
 class TestGetShippingOptions:
     def test_returns_parsed_options(self, client):
+        # Mock matches actual WSDL Product type field names
+        pkg = MagicMock()
+        pkg.MaxLength = 0.60
+        pkg.MaxWidth = 0.40
+        pkg.MaxHeight = 0.30
+
+        delivery = MagicMock()
+        delivery.ServicePoint = True
+        delivery.IsTraceable = True
+
         prod1 = MagicMock()
         prod1.Id = 10
-        prod1.ProviderName = "PostNord"
-        prod1.ProviderId = 1
+        prod1.ShippingProvider = "PostNord"
+        prod1.ShippingProviderId = 1
         prod1.Name = "MyPack Collect"
-        prod1.PriceInSek = 59.0
-        prod1.VatInPercent = 25
-        prod1.FromCountryCode = "SE"
-        prod1.ToCountryCode = "SE"
-        prod1.MaxLengthInCm = 60
-        prod1.MaxWidthInCm = 40
-        prod1.MaxHeightInCm = 30
-        prod1.ServicePoint = True
-        prod1.Traceable = True
+        prod1.Price = 59
+        prod1.VatPercent = 25
+        prod1.FromCountry = "SE"
+        prod1.ToCountry = "SE"
+        prod1.PackageRequirements = pkg
+        prod1.DeliveryInformation = delivery
 
         products_obj = MagicMock()
-        products_obj.ShippingProduct = [prod1]
+        products_obj.Product = [prod1]
 
         span = MagicMock()
-        span.WeightInGrams = 2000
+        span.Weight = 2.0  # 2 kg in decimal
         span.Products = products_obj
 
         spans_obj = MagicMock()
-        spans_obj.ShippingOptionsPerWeightSpan = [span]
+        spans_obj.ProductsPerWeightSpan = [span]
 
         response = MagicMock()
         response.ProductsPerWeightSpan = spans_obj
@@ -747,12 +754,14 @@ class TestGetShippingOptions:
 
         assert len(result["shipping_options"]) == 1
         opt = result["shipping_options"][0]
-        assert opt["id"] == 10
+        assert opt["shipping_product_id"] == 10
+        assert opt["shipping_provider_id"] == 1
         assert opt["provider_name"] == "PostNord"
         assert opt["name"] == "MyPack Collect"
         assert opt["weight_limit_grams"] == 2000
-        assert opt["price_sek"] == 59.0
+        assert opt["cost"] == 59
         assert opt["service_point"] is True
+        assert opt["traceable"] is True
 
     def test_empty_response(self, client):
         response = MagicMock()
@@ -769,6 +778,57 @@ class TestGetShippingOptions:
         result = client.get_shipping_options()
 
         assert result["error"] == "Timeout"
+
+    def test_weight_filter_excludes_light_options(self, client):
+        """Options below requested weight are excluded."""
+        light_prod = MagicMock()
+        light_prod.Id = 1
+        light_prod.ShippingProvider = "PostNord"
+        light_prod.ShippingProviderId = 13
+        light_prod.Name = "50 g"
+        light_prod.Price = 22
+        light_prod.VatPercent = 0
+        light_prod.FromCountry = "SE"
+        light_prod.ToCountry = "SE"
+        light_prod.PackageRequirements = None
+        light_prod.DeliveryInformation = None
+
+        heavy_prod = MagicMock()
+        heavy_prod.Id = 2
+        heavy_prod.ShippingProvider = "PostNord"
+        heavy_prod.ShippingProviderId = 13
+        heavy_prod.Name = "2 kg"
+        heavy_prod.Price = 59
+        heavy_prod.VatPercent = 0
+        heavy_prod.FromCountry = "SE"
+        heavy_prod.ToCountry = "SE"
+        heavy_prod.PackageRequirements = None
+        heavy_prod.DeliveryInformation = None
+
+        light_products = MagicMock()
+        light_products.Product = [light_prod]
+        light_span = MagicMock()
+        light_span.Weight = 0.050  # 50g in kg
+        light_span.Products = light_products
+
+        heavy_products = MagicMock()
+        heavy_products.Product = [heavy_prod]
+        heavy_span = MagicMock()
+        heavy_span.Weight = 2.0  # 2kg
+        heavy_span.Products = heavy_products
+
+        spans_obj = MagicMock()
+        spans_obj.ProductsPerWeightSpan = [light_span, heavy_span]
+
+        response = MagicMock()
+        response.ProductsPerWeightSpan = spans_obj
+        client._public_client.service.GetShippingOptions.return_value = response
+
+        result = client.get_shipping_options(weight_grams=500)
+
+        assert len(result["shipping_options"]) == 1
+        assert result["shipping_options"][0]["name"] == "2 kg"
+        assert result["filtered_by_weight_grams"] == 500
 
     def test_passes_country_code(self, client):
         response = MagicMock()

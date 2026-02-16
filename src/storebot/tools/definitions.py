@@ -137,7 +137,7 @@ TOOLS = [
     },
     {
         "name": "get_shipping_options",
-        "description": "Hämta tillgängliga fraktalternativ från Tradera. Returnerar fraktprodukter med leverantör, viktgräns och pris. Använd produktens vikt för att filtrera.",
+        "description": "Hämta tillgängliga fraktalternativ från Tradera. Returnerar en lista med fälten shipping_product_id, shipping_provider_id, cost, name m.fl. — skicka valda alternativ direkt till shipping_options i update_draft_listing. Använd produktens vikt för att filtrera.",
         "category": "listing",
         "input_schema": {
             "type": "object",

@@ -468,12 +468,22 @@ class TraderaClient:
                 return {"shipping_options": []}
 
             options = []
-            for span in getattr(spans, "ShippingOptionsPerWeightSpan", None) or []:
-                weight_limit = getattr(span, "WeightInGrams", None)
+            # ArrayOfProductsPerWeightSpan → ProductsPerWeightSpan elements
+            span_list = getattr(spans, "ProductsPerWeightSpan", None) or spans
+            if not hasattr(span_list, "__iter__"):
+                span_list = [span_list]
+            for span in span_list:
+                # Weight is decimal kg in the WSDL; convert to grams
+                weight_kg = getattr(span, "Weight", None)
+                weight_limit = int(weight_kg * 1000) if weight_kg is not None else None
                 products = getattr(span, "Products", None)
                 if not products:
                     continue
-                for prod in getattr(products, "ShippingProduct", None) or []:
+                # ArrayOfProduct → Product elements
+                prod_list = getattr(products, "Product", None) or products
+                if not hasattr(prod_list, "__iter__"):
+                    prod_list = [prod_list]
+                for prod in prod_list:
                     options.append(self._parse_shipping_product(prod, weight_limit))
 
             if weight_grams is not None:
@@ -493,22 +503,29 @@ class TraderaClient:
 
     @staticmethod
     def _parse_shipping_product(prod, weight_limit: int | None) -> dict:
-        """Parse a SOAP ShippingProduct object into a plain dict."""
+        """Parse a SOAP Product object into a shipping option dict.
+
+        Output field names match ``_build_shipping_option`` input so the agent
+        can pass a selected option directly to ``shipping_options`` in listing
+        details.
+        """
+        pkg = getattr(prod, "PackageRequirements", None)
+        delivery = getattr(prod, "DeliveryInformation", None)
         return {
-            "id": getattr(prod, "Id", None),
-            "provider_name": getattr(prod, "ProviderName", None),
-            "provider_id": getattr(prod, "ProviderId", None),
+            "shipping_product_id": getattr(prod, "Id", None),
+            "shipping_provider_id": getattr(prod, "ShippingProviderId", None),
+            "provider_name": getattr(prod, "ShippingProvider", None),
             "name": getattr(prod, "Name", None),
+            "cost": getattr(prod, "Price", None),
             "weight_limit_grams": weight_limit,
-            "price_sek": getattr(prod, "PriceInSek", None),
-            "vat_percent": getattr(prod, "VatInPercent", None),
-            "from_country": getattr(prod, "FromCountryCode", None),
-            "to_country": getattr(prod, "ToCountryCode", None),
-            "max_length_cm": getattr(prod, "MaxLengthInCm", None),
-            "max_width_cm": getattr(prod, "MaxWidthInCm", None),
-            "max_height_cm": getattr(prod, "MaxHeightInCm", None),
-            "service_point": getattr(prod, "ServicePoint", None),
-            "traceable": getattr(prod, "Traceable", None),
+            "vat_percent": getattr(prod, "VatPercent", None),
+            "from_country": getattr(prod, "FromCountry", None),
+            "to_country": getattr(prod, "ToCountry", None),
+            "max_length_cm": getattr(pkg, "MaxLength", None) if pkg else None,
+            "max_width_cm": getattr(pkg, "MaxWidth", None) if pkg else None,
+            "max_height_cm": getattr(pkg, "MaxHeight", None) if pkg else None,
+            "service_point": getattr(delivery, "ServicePoint", None) if delivery else None,
+            "traceable": getattr(delivery, "IsTraceable", None) if delivery else None,
         }
 
     _SHIPPING_OPTION_FIELDS = {
