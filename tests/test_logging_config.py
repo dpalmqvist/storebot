@@ -3,6 +3,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 from storebot.logging_config import JSONFormatter, configure_logging
+from storebot.db import init_db
 
 
 class TestJSONFormatter:
@@ -168,3 +169,17 @@ class TestConfigureLogging:
 
         assert len(root.handlers) == 1
         assert not isinstance(root.handlers[0], RotatingFileHandler)
+
+    def test_storebot_loggers_not_disabled_after_init_db(self):
+        """Alembic fileConfig must not disable existing storebot loggers."""
+        # Ensure storebot loggers exist before init_db
+        test_logger = logging.getLogger("storebot.test_check")
+        test_logger.info("pre-init")
+
+        init_db()
+        configure_logging(level="INFO", json_format=True)
+
+        assert not test_logger.disabled, (
+            "storebot logger disabled by Alembic fileConfig — "
+            "check disable_existing_loggers=False in alembic/env.py"
+        )
