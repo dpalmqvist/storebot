@@ -242,8 +242,11 @@ class AuditLogScreen(Screen):
         detail_key = f"{key}_detail"
 
         if key in self._expanded_rows:
-            self._expanded_rows.remove(key)
-            table.remove_row(detail_key)
+            self._expanded_rows.discard(key)
+            try:
+                table.remove_row(detail_key)
+            except Exception:
+                pass
             return
 
         with Session(self.app.db_engine) as session:
