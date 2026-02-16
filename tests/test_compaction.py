@@ -6,7 +6,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from storebot.agent import Agent
+from storebot.agent import Agent, _detect_categories, _parse_category_tag
 from storebot.db import Base, ConversationMessage
 from storebot.tools.conversation import ConversationService
 
@@ -251,6 +251,133 @@ class TestCompactHistory:
 
             call_kwargs = mock.call_args[1]
             assert call_kwargs["model"] == "claude-haiku-3-5-20241022"
+
+    def test_compaction_embeds_tool_categories(self, engine):
+        """Categories from tool_use blocks in old messages are embedded in summary."""
+        settings = _make_settings(compact_threshold=4, compact_keep_recent=2)
+        agent = Agent(settings=settings, engine=engine)
+
+        messages = [
+            {"role": "user", "content": "Publicera annons 2"},
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "t1", "name": "update_draft_listing", "input": {}},
+                ],
+            },
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}],
+            },
+            {"role": "assistant", "content": "Klart!"},
+            {"role": "user", "content": "Tack"},
+            {"role": "assistant", "content": "Varsågod"},
+        ]
+
+        summary_block = MagicMock()
+        summary_block.type = "text"
+        summary_block.text = "Användaren publicerade en annons."
+
+        mock_response = MagicMock()
+        mock_response.content = [summary_block]
+
+        with patch.object(agent.client.messages, "create", return_value=mock_response):
+            result = agent.compact_history(messages)
+
+        summary_content = result[0]["content"]
+        assert "[Aktiva kategorier: listing]" in summary_content
+
+    def test_detect_categories_reads_compacted_tag(self, engine):
+        """_detect_categories restores categories from compacted summary tag."""
+        messages = [
+            {
+                "role": "user",
+                "content": (
+                    "[Sammanfattning av tidigare konversation]\n\n"
+                    "Diskuterade annonser.\n\n"
+                    "[Aktiva kategorier: listing, order]"
+                ),
+            },
+            {"role": "user", "content": "Vad är status?"},
+        ]
+        cats = _detect_categories(messages, set())
+        assert "listing" in cats
+        assert "order" in cats
+        assert "core" in cats
+
+    def test_detect_categories_ignores_invalid_tags(self, engine):
+        """Invalid category names in the tag are ignored."""
+        messages = [
+            {
+                "role": "user",
+                "content": (
+                    "[Sammanfattning av tidigare konversation]\n\n"
+                    "Sammanfattning.\n\n"
+                    "[Aktiva kategorier: listing, bogus_category]"
+                ),
+            },
+        ]
+        cats = _detect_categories(messages, set())
+        assert "listing" in cats
+        assert "bogus_category" not in cats
+
+    def test_compaction_preserves_categories_from_earlier_compaction(self, engine):
+        """Categories from a previous compaction are carried forward."""
+        settings = _make_settings(compact_threshold=4, compact_keep_recent=2)
+        agent = Agent(settings=settings, engine=engine)
+
+        messages = [
+            {
+                "role": "user",
+                "content": (
+                    "[Sammanfattning av tidigare konversation]\n\n"
+                    "Tidigare: ordrar och annonser.\n\n"
+                    "[Aktiva kategorier: listing, order]"
+                ),
+            },
+            {"role": "assistant", "content": "OK"},
+            {"role": "user", "content": "Bra"},
+            {"role": "assistant", "content": "Fint"},
+            {"role": "user", "content": "Nästa steg"},
+            {"role": "assistant", "content": "Klart"},
+        ]
+
+        summary_block = MagicMock()
+        summary_block.type = "text"
+        summary_block.text = "Sammanfattning av ordrar."
+
+        mock_response = MagicMock()
+        mock_response.content = [summary_block]
+
+        with patch.object(agent.client.messages, "create", return_value=mock_response):
+            result = agent.compact_history(messages)
+
+        summary_content = result[0]["content"]
+        assert "listing" in summary_content
+        assert "order" in summary_content
+
+    def test_detect_categories_handles_malformed_tag(self, engine):
+        """Malformed category tag (missing closing bracket) doesn't crash."""
+        messages = [
+            {
+                "role": "user",
+                "content": "[Aktiva kategorier: scout, analytics",
+            },
+        ]
+        # Should not raise ValueError — malformed tag is silently ignored
+        cats = _detect_categories(messages, set())
+        assert "core" in cats
+        # _parse_category_tag returns empty for malformed tag; keywords may
+        # still match (e.g. "scout" is a keyword), but analytics is not
+        assert "analytics" not in cats
+
+    def test_parse_category_tag_empty_cases(self, engine):
+        """_parse_category_tag handles edge cases gracefully."""
+        assert _parse_category_tag("") == set()
+        assert _parse_category_tag("no tag here") == set()
+        assert _parse_category_tag(42) == set()
+        assert _parse_category_tag("[Aktiva kategorier: listing]") == {"listing"}
+        assert _parse_category_tag("[Aktiva kategorier: ") == set()  # no closing ]
 
 
 class TestReplaceHistory:
