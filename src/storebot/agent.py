@@ -883,6 +883,7 @@ class Agent:
         "analyze_listing": ("marketing", "analyze_listing"),
         "get_performance_report": ("marketing", "get_performance_report"),
         "get_recommendations": ("marketing", "get_recommendations"),
+        "listing_dashboard": ("marketing", "get_listing_dashboard"),
         "business_summary": ("analytics", "business_summary"),
         "profitability_report": ("analytics", "profitability_report"),
         "inventory_report": ("analytics", "inventory_report"),

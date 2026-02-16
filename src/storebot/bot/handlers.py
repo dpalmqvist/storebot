@@ -97,6 +97,65 @@ async def _send_display_images(update: Update, display_images: list[dict]) -> No
             await update.message.reply_text(f"Bildfilen saknas: {img['path']}")
 
 
+_TREND_LABELS = {
+    "improving": "Uppåt",
+    "declining": "Nedåt",
+    "stable": "Stabil",
+    "insufficient_data": "—",
+}
+
+
+def _format_delta(value: int | None) -> str:
+    if value is None:
+        return ""
+    if value == 0:
+        return " (\u00b10)"
+    if value > 0:
+        return f" (+{value})"
+    return f" ({value})"
+
+
+def _format_listing_dashboard(dashboard: dict) -> str:
+    """Format listing dashboard dict as Swedish text for Telegram."""
+    listings = dashboard.get("listings", [])
+    if not listings:
+        return "Inga aktiva annonser just nu."
+
+    date = dashboard.get("date", "")
+    lines = [f"Daglig annonsrapport ({date})\n"]
+
+    for i, lst in enumerate(listings, 1):
+        lines.append(f"{i}. {lst['title']}")
+        lines.append(
+            f"   Visningar: {lst['views']}{_format_delta(lst['views_delta'])}"
+            f" | Bud: {lst['bids']}{_format_delta(lst['bids_delta'])}"
+            f" | Bevakare: {lst['watchers']}{_format_delta(lst['watchers_delta'])}"
+        )
+
+        price_str = (
+            f"{lst['current_price']:,.0f} kr".replace(",", " ") if lst["current_price"] else "—"
+        )
+        days_str = f"{lst['days_remaining']} dagar" if lst["days_remaining"] is not None else "—"
+        lines.append(f"   Pris: {price_str} | Kvar: {days_str}")
+
+        trend_label = _TREND_LABELS.get(lst["trend"], lst["trend"])
+        lines.append(
+            f"   Trend: {trend_label}"
+            f" | Bevakningsgrad: {lst['watcher_rate']:.1f}%"
+            f" | Budfrekvens: {lst['bid_rate']:.1f}%"
+        )
+        lines.append("")
+
+    totals = dashboard.get("totals", {})
+    lines.append(
+        f"Totalt: {totals.get('active_count', 0)} aktiva annonser"
+        f" | {totals.get('total_views', 0)} visningar"
+        f" | {totals.get('total_bids', 0)} bud"
+    )
+
+    return "\n".join(lines)
+
+
 async def _handle_with_conversation(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -413,6 +472,31 @@ async def marketing_refresh_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         await _alert_admin(context, "Fel i marknadsföringsjobbet. Kontrollera loggarna.")
 
 
+async def daily_listing_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.info("Starting scheduled job: listing_report", extra={"job_name": "listing_report"})
+    agent: Agent = context.bot_data.get("agent")
+    if not agent or not agent.marketing:
+        return
+
+    try:
+        agent.marketing.refresh_listing_stats()
+        dashboard = agent.marketing.get_listing_dashboard()
+
+        if not dashboard.get("listings"):
+            return
+
+        chat_id = context.bot_data.get("owner_chat_id")
+        if not chat_id:
+            logger.warning("No owner_chat_id set — cannot send listing report")
+            return
+
+        text = _format_listing_dashboard(dashboard)
+        await _send(context, chat_id, text)
+    except Exception:
+        logger.exception("Error in listing report job", extra={"job_name": "listing_report"})
+        await _alert_admin(context, "Fel i annonsrapport-jobbet. Kontrollera loggarna.")
+
+
 async def poll_orders_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.info("Starting scheduled job: poll_orders", extra={"job_name": "poll_orders"})
     agent: Agent = context.bot_data.get("agent")
@@ -502,6 +586,15 @@ def main() -> None:
         logger.info(
             "Marketing refresh scheduled daily at %02d:00",
             settings.marketing_refresh_hour,
+        )
+
+        app.job_queue.run_daily(
+            daily_listing_report_job,
+            time=dt_time(hour=settings.listing_report_hour),
+        )
+        logger.info(
+            "Listing dashboard report scheduled daily at %02d:00",
+            settings.listing_report_hour,
         )
 
         app.job_queue.run_daily(

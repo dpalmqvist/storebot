@@ -641,3 +641,108 @@ class TestFormatReport:
 
         assert "Bäst presterande" in text
         assert "Sämst presterande" not in text
+
+
+class TestGetListingDashboard:
+    @patch("storebot.tools.marketing.naive_now", return_value=FIXED_NOW)
+    def test_no_active_listings(self, _mock_now, service):
+        result = service.get_listing_dashboard()
+
+        assert result["listings"] == []
+        assert result["totals"]["active_count"] == 0
+        assert result["date"] == "2025-06-15"
+
+    @patch("storebot.tools.marketing.naive_now", return_value=FIXED_NOW)
+    def test_with_listings_and_deltas(self, _mock_now, service, engine):
+        pid = _create_product(engine, title="Ekfåtölj 1950-tal")
+        lid = _create_listing(
+            engine,
+            pid,
+            views=45,
+            watchers=8,
+            listing_title="Ekfåtölj 1950-tal",
+            ends_at=FIXED_NOW + timedelta(days=4),
+        )
+        now = datetime.now(UTC)
+        _create_snapshot(
+            engine,
+            lid,
+            views=33,
+            watchers=6,
+            bids=2,
+            current_price=1000.0,
+            snapshot_at=now - timedelta(hours=24),
+        )
+        _create_snapshot(
+            engine,
+            lid,
+            views=45,
+            watchers=8,
+            bids=3,
+            current_price=1200.0,
+            snapshot_at=now,
+        )
+
+        result = service.get_listing_dashboard()
+
+        assert len(result["listings"]) == 1
+        lst = result["listings"][0]
+        assert lst["listing_id"] == lid
+        assert lst["title"] == "Ekfåtölj 1950-tal"
+        assert lst["views"] == 45
+        assert lst["views_delta"] == 12
+        assert lst["bids"] == 3
+        assert lst["bids_delta"] == 1
+        assert lst["watchers"] == 8
+        assert lst["watchers_delta"] == 2
+        assert lst["current_price"] == 1200.0
+        assert lst["days_remaining"] == 4
+        assert lst["watcher_rate"] == 17.8
+        assert lst["bid_rate"] == 6.7
+
+        assert result["totals"]["active_count"] == 1
+        assert result["totals"]["total_views"] == 45
+
+    @patch("storebot.tools.marketing.naive_now", return_value=FIXED_NOW)
+    def test_first_day_deltas_are_none(self, _mock_now, service, engine):
+        pid = _create_product(engine)
+        lid = _create_listing(engine, pid, views=20, watchers=3)
+        _create_snapshot(engine, lid, views=20, watchers=3, bids=1, current_price=500.0)
+
+        result = service.get_listing_dashboard()
+
+        lst = result["listings"][0]
+        assert lst["views_delta"] is None
+        assert lst["bids_delta"] is None
+        assert lst["watchers_delta"] is None
+
+    @patch("storebot.tools.marketing.naive_now", return_value=FIXED_NOW)
+    def test_trend_from_snapshots(self, _mock_now, service, engine):
+        pid = _create_product(engine)
+        lid = _create_listing(engine, pid, views=150, watchers=10)
+        now = datetime.now(UTC)
+        _create_snapshot(engine, lid, views=100, snapshot_at=now - timedelta(hours=2))
+        _create_snapshot(engine, lid, views=120, snapshot_at=now - timedelta(hours=1))
+        _create_snapshot(engine, lid, views=150, snapshot_at=now)
+
+        result = service.get_listing_dashboard()
+
+        assert result["listings"][0]["trend"] == "improving"
+
+    @patch("storebot.tools.marketing.naive_now", return_value=FIXED_NOW)
+    def test_logs_agent_action(self, _mock_now, service, engine):
+        service.get_listing_dashboard()
+
+        with Session(engine) as session:
+            actions = session.query(AgentAction).filter_by(action_type="listing_dashboard").all()
+            assert len(actions) == 1
+            assert actions[0].agent_name == "marketing"
+
+    @patch("storebot.tools.marketing.naive_now", return_value=FIXED_NOW)
+    def test_excludes_non_tradera(self, _mock_now, service, engine):
+        pid = _create_product(engine)
+        _create_listing(engine, pid, platform="blocket", external_id="b1")
+
+        result = service.get_listing_dashboard()
+
+        assert result["totals"]["active_count"] == 0
