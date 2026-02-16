@@ -237,8 +237,7 @@ class TraderaClient:
             if shipping_condition is not None:
                 params["ShippingCondition"] = shipping_condition
 
-            if item_attributes:
-                params["ItemAttributes"] = item_attributes
+            params["ItemAttributes"] = item_attributes or []
             if attribute_values:
                 for av in attribute_values:
                     if "id" not in av or "values" not in av:
