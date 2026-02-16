@@ -929,6 +929,22 @@ class TestPublishListing:
 
     @patch("storebot.tools.listing.optimize_for_upload")
     @patch("storebot.tools.listing.encode_image_base64")
+    def test_invalid_accepted_bidder_id_rejected(
+        self, mock_encode, mock_optimize, pub_service, approved_listing, engine
+    ):
+        listing_id, _ = approved_listing
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            listing.details = {"shipping_cost": 49, "accepted_bidder_id": 5}
+            session.commit()
+
+        result = pub_service.publish_listing(listing_id)
+
+        assert "error" in result
+        assert "accepted_bidder_id" in result["error"]
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
     def test_api_error_keeps_approved(
         self, mock_encode, mock_optimize, pub_service, approved_listing, engine
     ):

@@ -351,6 +351,9 @@ class ListingService:
                 "tillgängliga alternativ och lägg till shipping_options eller shipping_cost "
                 "i details via update_draft_listing."
             }
+        bid_id = details.get("accepted_bidder_id")
+        if bid_id is not None and bid_id not in (1, 2, 3, 4):
+            return {"error": "accepted_bidder_id måste vara 1, 2, 3 eller 4"}
         return None
 
     @staticmethod
@@ -379,7 +382,7 @@ class ListingService:
         item_attributes = details.get("item_attributes") or [2]
         attribute_values = details.get("attribute_values")
         # AcceptedBidderId: 1=Alla, 2=Sverige, 3=Norden, 4=Europa. Default 1.
-        accepted_bidder_id = details.get("accepted_bidder_id", 1)
+        accepted_bidder_id = details.get("accepted_bidder_id") or 1
 
         create_result = self.tradera.create_listing(
             title=listing.listing_title,
