@@ -219,7 +219,7 @@ class ListingService:
                 return {"error": f"Cannot approve listing with status '{listing.status}'"}
 
             details = listing.details or {}
-            if listing.tradera_category_id and not details.get("attribute_values"):
+            if listing.tradera_category_id and details.get("attribute_values") is None:
                 return {
                     "success": False,
                     "warning": "Inga kategoriattribut har angetts. Använd get_attribute_definitions "
