@@ -344,6 +344,16 @@ class ListingService:
             }
         if not listing.tradera_category_id:
             return {"error": "Listing must have a tradera_category_id to publish"}
+        details = listing.details or {}
+        if not details.get("shipping_options") and details.get("shipping_cost") is None:
+            return {
+                "error": "Fraktalternativ saknas. Använd get_shipping_options för att hämta "
+                "tillgängliga alternativ och lägg till shipping_options eller shipping_cost "
+                "i details via update_draft_listing."
+            }
+        bid_id = details.get("accepted_bidder_id")
+        if bid_id is not None and bid_id not in (1, 2, 3, 4):
+            return {"error": "accepted_bidder_id måste vara 1, 2, 3 eller 4"}
         return None
 
     @staticmethod
@@ -371,6 +381,8 @@ class ListingService:
         # Default to [2] (Begagnad) since this shop primarily sells second-hand items.
         item_attributes = details.get("item_attributes") or [2]
         attribute_values = details.get("attribute_values")
+        # AcceptedBidderId: 1=Alla, 2=Sverige, 3=Norden, 4=Europa. Default 1.
+        accepted_bidder_id = details.get("accepted_bidder_id") or 1
 
         create_result = self.tradera.create_listing(
             title=listing.listing_title,
@@ -387,6 +399,7 @@ class ListingService:
             auto_commit=False,
             item_attributes=item_attributes,
             attribute_values=attribute_values,
+            accepted_bidder_id=accepted_bidder_id,
         )
 
         if "error" in create_result:
