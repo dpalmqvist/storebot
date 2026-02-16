@@ -6,9 +6,11 @@ import pytest
 from storebot.bot.handlers import (
     TELEGRAM_MAX_MESSAGE_LENGTH,
     _alert_admin,
+    _format_listing_dashboard,
     _send_display_images,
     _split_message,
     _validate_credentials,
+    daily_listing_report_job,
 )
 from storebot.config import Settings
 
@@ -208,5 +210,208 @@ class TestAlertAdmin:
         context.bot.send_message = AsyncMock()
 
         await _alert_admin(context, "Test alert")
+
+        context.bot.send_message.assert_not_awaited()
+
+
+class TestFormatListingDashboard:
+    def test_empty_dashboard(self):
+        dashboard = {"date": "2025-06-15", "listings": [], "totals": {"active_count": 0}}
+
+        text = _format_listing_dashboard(dashboard)
+
+        assert text == "Inga aktiva annonser just nu."
+
+    def test_with_listings_and_deltas(self):
+        dashboard = {
+            "date": "2025-06-15",
+            "listings": [
+                {
+                    "listing_id": 1,
+                    "title": "Ekfåtölj 1950-tal",
+                    "views": 45,
+                    "views_delta": 12,
+                    "bids": 3,
+                    "bids_delta": 1,
+                    "watchers": 8,
+                    "watchers_delta": 2,
+                    "current_price": 1200.0,
+                    "days_remaining": 4,
+                    "watcher_rate": 17.8,
+                    "bid_rate": 6.7,
+                    "trend": "improving",
+                },
+            ],
+            "totals": {
+                "active_count": 1,
+                "total_views": 45,
+                "total_bids": 3,
+                "total_watchers": 8,
+            },
+        }
+
+        text = _format_listing_dashboard(dashboard)
+
+        assert "Daglig annonsrapport (2025-06-15)" in text
+        assert "Ekfåtölj 1950-tal" in text
+        assert "Visningar: 45 (+12)" in text
+        assert "Bud: 3 (+1)" in text
+        assert "Bevakare: 8 (+2)" in text
+        assert "1 200 kr" in text
+        assert "Kvar: 4 dagar" in text
+        assert "Trend: Uppåt" in text
+        assert "Bevakningsgrad: 17.8%" in text
+        assert "Budfrekvens: 6.7%" in text
+        assert "1 aktiva annonser" in text
+        assert "45 visningar" in text
+        assert "3 bud" in text
+
+    def test_none_deltas_first_day(self):
+        dashboard = {
+            "date": "2025-06-15",
+            "listings": [
+                {
+                    "listing_id": 1,
+                    "title": "Stol",
+                    "views": 10,
+                    "views_delta": None,
+                    "bids": 0,
+                    "bids_delta": None,
+                    "watchers": 1,
+                    "watchers_delta": None,
+                    "current_price": 500.0,
+                    "days_remaining": 7,
+                    "watcher_rate": 10.0,
+                    "bid_rate": 0.0,
+                    "trend": "insufficient_data",
+                },
+            ],
+            "totals": {
+                "active_count": 1,
+                "total_views": 10,
+                "total_bids": 0,
+                "total_watchers": 1,
+            },
+        }
+
+        text = _format_listing_dashboard(dashboard)
+
+        assert "Visningar: 10 |" in text
+        assert "(+" not in text
+        assert "(-" not in text
+        assert "Trend: \u2014" in text
+
+    def test_zero_delta(self):
+        dashboard = {
+            "date": "2025-06-15",
+            "listings": [
+                {
+                    "listing_id": 1,
+                    "title": "Bord",
+                    "views": 20,
+                    "views_delta": 0,
+                    "bids": 1,
+                    "bids_delta": 0,
+                    "watchers": 3,
+                    "watchers_delta": 0,
+                    "current_price": 800.0,
+                    "days_remaining": 2,
+                    "watcher_rate": 15.0,
+                    "bid_rate": 5.0,
+                    "trend": "stable",
+                },
+            ],
+            "totals": {
+                "active_count": 1,
+                "total_views": 20,
+                "total_bids": 1,
+                "total_watchers": 3,
+            },
+        }
+
+        text = _format_listing_dashboard(dashboard)
+
+        assert "(\u00b10)" in text
+        assert "Trend: Stabil" in text
+
+
+class TestDailyListingReportJob:
+    @pytest.mark.asyncio
+    async def test_sends_report(self):
+        marketing = MagicMock()
+        marketing.refresh_listing_stats.return_value = {"refreshed": 1}
+        marketing.get_listing_dashboard.return_value = {
+            "date": "2025-06-15",
+            "listings": [
+                {
+                    "listing_id": 1,
+                    "title": "Test",
+                    "views": 10,
+                    "views_delta": 5,
+                    "bids": 0,
+                    "bids_delta": 0,
+                    "watchers": 1,
+                    "watchers_delta": 1,
+                    "current_price": 100.0,
+                    "days_remaining": 3,
+                    "watcher_rate": 10.0,
+                    "bid_rate": 0.0,
+                    "trend": "stable",
+                },
+            ],
+            "totals": {
+                "active_count": 1,
+                "total_views": 10,
+                "total_bids": 0,
+                "total_watchers": 1,
+            },
+        }
+
+        agent = MagicMock()
+        agent.marketing = marketing
+
+        context = MagicMock()
+        context.bot_data = {"agent": agent, "owner_chat_id": 12345}
+        context.bot.send_message = AsyncMock()
+
+        await daily_listing_report_job(context)
+
+        marketing.refresh_listing_stats.assert_called_once()
+        marketing.get_listing_dashboard.assert_called_once()
+        context.bot.send_message.assert_awaited_once()
+        sent_text = context.bot.send_message.call_args.kwargs["text"]
+        assert "Daglig annonsrapport" in sent_text
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_listings(self):
+        marketing = MagicMock()
+        marketing.refresh_listing_stats.return_value = {"refreshed": 0}
+        marketing.get_listing_dashboard.return_value = {
+            "date": "2025-06-15",
+            "listings": [],
+            "totals": {"active_count": 0},
+        }
+
+        agent = MagicMock()
+        agent.marketing = marketing
+
+        context = MagicMock()
+        context.bot_data = {"agent": agent, "owner_chat_id": 12345}
+        context.bot.send_message = AsyncMock()
+
+        await daily_listing_report_job(context)
+
+        context.bot.send_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_marketing(self):
+        agent = MagicMock()
+        agent.marketing = None
+
+        context = MagicMock()
+        context.bot_data = {"agent": agent}
+        context.bot.send_message = AsyncMock()
+
+        await daily_listing_report_job(context)
 
         context.bot.send_message.assert_not_awaited()

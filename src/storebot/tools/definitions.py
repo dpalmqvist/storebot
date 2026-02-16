@@ -1074,6 +1074,13 @@ TOOLS = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "listing_dashboard",
+        "description": "Daglig annonsrapport: visa per-annons-statistik (visningar, bud, bevakare, pris, dagar kvar, trend) med dagliga förändringar för alla aktiva Tradera-annonser.",
+        "category": "marketing",
+        "strict": True,
+        "input_schema": _EMPTY_SCHEMA,
+    },
     # --- Analytics ---
     {
         "name": "business_summary",

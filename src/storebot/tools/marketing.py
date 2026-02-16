@@ -266,6 +266,87 @@ class MarketingService:
                 "count": len(recommendations),
             }
 
+    def get_listing_dashboard(self) -> dict:
+        """Per-listing dashboard with daily deltas for all active Tradera listings."""
+        now = naive_now()
+        with Session(self.engine) as session:
+            active = (
+                session.query(PlatformListing)
+                .filter(
+                    PlatformListing.status == "active",
+                    PlatformListing.platform == "tradera",
+                )
+                .all()
+            )
+
+            listings = []
+            for listing in active:
+                snapshots = (
+                    session.query(ListingSnapshot)
+                    .filter(ListingSnapshot.listing_id == listing.id)
+                    .order_by(ListingSnapshot.snapshot_at.desc())
+                    .limit(3)
+                    .all()
+                )
+
+                latest = snapshots[0] if snapshots else None
+                previous = snapshots[1] if len(snapshots) >= 2 else None
+
+                views = latest.views if latest else (listing.views or 0)
+                bids = latest.bids if latest else 0  # PlatformListing has no bids column
+                watchers = latest.watchers if latest else (listing.watchers or 0)
+                current_price = latest.current_price if latest else None
+
+                views_delta = (views - previous.views) if previous else None
+                bids_delta = (bids - previous.bids) if previous else None
+                watchers_delta = (watchers - previous.watchers) if previous else None
+
+                watcher_rate = round(watchers / views * 100, 1) if views > 0 else 0.0
+                bid_rate = round(bids / views * 100, 1) if views > 0 else 0.0
+                days_remaining = (listing.ends_at - now).days if listing.ends_at else None
+                trend = self._compute_trend(snapshots)
+
+                listings.append(
+                    {
+                        "listing_id": listing.id,
+                        "title": listing.listing_title,
+                        "views": views,
+                        "views_delta": views_delta,
+                        "bids": bids,
+                        "bids_delta": bids_delta,
+                        "watchers": watchers,
+                        "watchers_delta": watchers_delta,
+                        "current_price": current_price,
+                        "days_remaining": days_remaining,
+                        "watcher_rate": watcher_rate,
+                        "bid_rate": bid_rate,
+                        "trend": trend,
+                    }
+                )
+
+            listings.sort(
+                key=lambda x: x["days_remaining"] if x["days_remaining"] is not None else 999
+            )
+
+            log_action(
+                session,
+                "marketing",
+                "listing_dashboard",
+                {"active_count": len(listings)},
+            )
+            session.commit()
+
+            return {
+                "date": now.strftime("%Y-%m-%d"),
+                "listings": listings,
+                "totals": {
+                    "active_count": len(listings),
+                    "total_views": sum(lst["views"] for lst in listings),
+                    "total_bids": sum(lst["bids"] for lst in listings),
+                    "total_watchers": sum(lst["watchers"] for lst in listings),
+                },
+            }
+
     def _format_report(self, report: dict) -> str:
         """Format a performance report as Swedish human-readable text."""
         lines = ["Marknadsföringsrapport\n"]
