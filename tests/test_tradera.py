@@ -480,7 +480,7 @@ class TestCreateListingAttributes:
 
         call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
         item_req = call_kwargs["itemRequest"]
-        assert "ItemAttributes" not in item_req
+        assert item_req["ItemAttributes"] == []
         assert "AttributeValues" not in item_req
 
     def test_rejects_attribute_missing_id(self, client):
