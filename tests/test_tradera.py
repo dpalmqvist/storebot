@@ -1,3 +1,5 @@
+import json
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -839,6 +841,46 @@ class TestGetShippingOptions:
 
         call_kwargs = client._public_client.service.GetShippingOptions.call_args.kwargs
         assert call_kwargs["request"] == {"FromCountryCodes": ["NO"]}
+
+    def test_decimal_values_are_json_serializable(self, client):
+        """Regression: zeep returns Decimal for numeric WSDL fields."""
+        pkg = MagicMock()
+        pkg.MaxLength = Decimal("60.00")
+        pkg.MaxWidth = Decimal("40.00")
+        pkg.MaxHeight = Decimal("30.00")
+        delivery = MagicMock()
+        delivery.ServicePoint = True
+        delivery.IsTraceable = True
+
+        prod = MagicMock()
+        prod.Id = 10
+        prod.ShippingProvider = "PostNord"
+        prod.ShippingProviderId = 1
+        prod.Name = "MyPack Collect"
+        prod.Price = Decimal("59.00")
+        prod.VatPercent = Decimal("25.00")
+        prod.FromCountry = "SE"
+        prod.ToCountry = "SE"
+        prod.PackageRequirements = pkg
+        prod.DeliveryInformation = delivery
+
+        span = MagicMock()
+        span.Weight = Decimal("2.000")
+        span.Products = MagicMock(Product=[prod])
+
+        response = MagicMock()
+        response.ProductsPerWeightSpan = MagicMock(ProductsPerWeightSpan=[span])
+        client._public_client.service.GetShippingOptions.return_value = response
+
+        result = client.get_shipping_options()
+
+        # Must not raise TypeError: Object of type Decimal is not JSON serializable
+        json.dumps(result)
+        opt = result["shipping_options"][0]
+        assert opt["cost"] == 59.0
+        assert opt["vat_percent"] == 25.0
+        assert opt["max_length_cm"] == 60.0
+        assert isinstance(opt["cost"], float)
 
 
 class TestGetShippingTypes:

@@ -116,8 +116,8 @@ class TraderaClient:
         return []
 
     def _parse_item(self, item) -> dict:
-        buy_now = getattr(item, "BuyItNowPrice", 0) or 0
-        max_bid = getattr(item, "MaxBid", 0) or 0
+        buy_now = float(getattr(item, "BuyItNowPrice", 0) or 0)
+        max_bid = float(getattr(item, "MaxBid", 0) or 0)
         price = max(buy_now, max_bid)
 
         image_links = getattr(item, "ImageLinks", None)
@@ -622,7 +622,7 @@ class TraderaClient:
             {
                 "item_id": getattr(item, "ItemId", None),
                 "title": getattr(item, "Title", None),
-                "price": getattr(item, "Price", 0),
+                "price": float(getattr(item, "Price", 0) or 0),
                 "quantity": getattr(item, "Quantity", 1),
             }
             for item in self._soap_list(getattr(order, "Items", None), "SellerOrderItem")
@@ -633,7 +633,7 @@ class TraderaClient:
         return [
             {
                 "type": getattr(payment, "PaymentType", None),
-                "amount": getattr(payment, "Amount", 0),
+                "amount": float(getattr(payment, "Amount", 0) or 0),
             }
             for payment in self._soap_list(getattr(order, "Payments", None), "Payment")
         ]
@@ -671,8 +671,8 @@ class TraderaClient:
                         "order_id": getattr(order, "OrderId", None),
                         "buyer_name": getattr(order, "BuyerName", None),
                         "buyer_address": getattr(order, "BuyerAddress", None),
-                        "sub_total": getattr(order, "SubTotal", 0),
-                        "shipping_cost": getattr(order, "ShippingCost", 0),
+                        "sub_total": float(getattr(order, "SubTotal", 0) or 0),
+                        "shipping_cost": float(getattr(order, "ShippingCost", 0) or 0),
                         "items": self._parse_order_items(order),
                         "payments": self._parse_order_payments(order),
                     }
@@ -700,9 +700,9 @@ class TraderaClient:
                 "id": getattr(response, "Id", item_id),
                 "title": getattr(response, "Title", None),
                 "description": getattr(response, "Description", None),
-                "price": getattr(response, "BuyItNowPrice", 0)
-                or getattr(response, "MaxBid", 0)
-                or 0,
+                "price": float(
+                    getattr(response, "BuyItNowPrice", 0) or getattr(response, "MaxBid", 0) or 0
+                ),
                 "status": getattr(response, "Status", None),
                 "end_date": end_date,
                 "url": getattr(response, "ItemUrl", None),
