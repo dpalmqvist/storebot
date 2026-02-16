@@ -35,6 +35,11 @@ def draft_listing(service, product):
         start_price=300.0,
         duration_days=7,
         tradera_category_id=344,
+        details={
+            "attribute_values": [
+                {"id": 101, "name": "Material", "values": ["Trä"]},
+            ],
+        },
     )
 
 
@@ -280,6 +285,57 @@ class TestApproveDraft:
     def test_not_found(self, service):
         result = service.approve_draft(9999)
         assert "error" in result
+
+    def test_warns_when_no_attributes_set(self, service, product):
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Test",
+            listing_description="Test",
+            start_price=100.0,
+            tradera_category_id=344,
+        )
+
+        result = service.approve_draft(draft["listing_id"])
+
+        assert result["success"] is False
+        assert "warning" in result
+        assert "kategoriattribut" in result["warning"]
+        assert result["status"] == "draft"
+
+    def test_no_warning_when_attributes_present(self, service, product):
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Test",
+            listing_description="Test",
+            start_price=100.0,
+            tradera_category_id=344,
+            details={
+                "attribute_values": [
+                    {"id": 101, "name": "Material", "values": ["Trä"]},
+                ],
+            },
+        )
+
+        result = service.approve_draft(draft["listing_id"])
+
+        assert "warning" not in result
+        assert result["status"] == "approved"
+
+    def test_no_warning_when_no_category_id(self, service, product):
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Test",
+            listing_description="Test",
+            start_price=100.0,
+        )
+
+        result = service.approve_draft(draft["listing_id"])
+
+        assert "warning" not in result
+        assert result["status"] == "approved"
 
     def test_sets_approved_at(self, service, draft_listing, engine):
         service.approve_draft(draft_listing["listing_id"])
@@ -692,6 +748,11 @@ class TestPublishListing:
             start_price=500.0,
             duration_days=7,
             tradera_category_id=344,
+            details={
+                "attribute_values": [
+                    {"id": 101, "name": "Material", "values": ["Trä"]},
+                ],
+            },
         )
 
         # Approve
@@ -773,6 +834,7 @@ class TestPublishListing:
             listing_description="Test",
             start_price=100.0,
             tradera_category_id=100,
+            details={"attribute_values": [{"id": 1, "values": ["X"]}]},
         )
         pub_service.approve_draft(draft["listing_id"])
 
@@ -812,6 +874,7 @@ class TestPublishListing:
             buy_it_now_price=500.0,
             platform="blocket",
             tradera_category_id=100,
+            details={"attribute_values": [{"id": 1, "values": ["X"]}]},
         )
         pub_service.approve_draft(draft["listing_id"])
 
@@ -952,6 +1015,9 @@ class TestPublishListing:
             listing_description="Fin lampa",
             buy_it_now_price=1200.0,
             tradera_category_id=100,
+            details={
+                "attribute_values": [{"id": 1, "values": ["X"]}],
+            },
         )
         service.approve_draft(draft["listing_id"])
 
@@ -1071,13 +1137,64 @@ class TestPublishListing:
             buy_it_now_price=800.0,
             duration_days=7,
             tradera_category_id=100,
-            details={"reserve_price": 500},
+            details={
+                "reserve_price": 500,
+                "attribute_values": [{"id": 1, "values": ["X"]}],
+            },
         )
         pub_service.approve_draft(draft["listing_id"])
         pub_service.publish_listing(draft["listing_id"])
 
         call_kwargs = pub_service.tradera.create_listing.call_args.kwargs
         assert call_kwargs.get("reserve_price") is None
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
+    def test_passes_attributes_from_details(
+        self, mock_encode, mock_optimize, pub_service, approved_listing, engine
+    ):
+        listing_id, _ = approved_listing
+        mock_optimize.return_value = "/tmp/optimized.jpg"
+        mock_encode.return_value = ("base64data", "image/jpeg")
+
+        attr_values = [
+            {"id": 101, "name": "Material", "values": ["Trä"]},
+            {"id": 102, "name": "Epok", "values": ["1920-tal"]},
+        ]
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            listing.details = {
+                "attribute_values": attr_values,
+                "item_attributes": [101, 102],
+            }
+            session.commit()
+
+        pub_service.publish_listing(listing_id)
+
+        call_kwargs = pub_service.tradera.create_listing.call_args.kwargs
+        assert call_kwargs["attribute_values"] == attr_values
+        assert call_kwargs["item_attributes"] == [101, 102]
+
+    @patch("storebot.tools.listing.optimize_for_upload")
+    @patch("storebot.tools.listing.encode_image_base64")
+    def test_omits_attributes_when_not_in_details(
+        self, mock_encode, mock_optimize, pub_service, approved_listing, engine
+    ):
+        listing_id, _ = approved_listing
+        mock_optimize.return_value = "/tmp/optimized.jpg"
+        mock_encode.return_value = ("base64data", "image/jpeg")
+
+        # Clear details so no attributes are passed
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            listing.details = {}
+            session.commit()
+
+        pub_service.publish_listing(listing_id)
+
+        call_kwargs = pub_service.tradera.create_listing.call_args.kwargs
+        assert call_kwargs.get("item_attributes") is None
+        assert call_kwargs.get("attribute_values") is None
 
 
 def _create_product_with_listing(engine, product_status, listing_status, listing_title="Test"):

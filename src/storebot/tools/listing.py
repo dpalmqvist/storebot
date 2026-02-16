@@ -218,6 +218,16 @@ class ListingService:
             if listing.status != "draft":
                 return {"error": f"Cannot approve listing with status '{listing.status}'"}
 
+            details = listing.details or {}
+            if listing.tradera_category_id and not details.get("attribute_values"):
+                return {
+                    "success": False,
+                    "warning": "Inga kategoriattribut har angetts. Använd get_attribute_definitions "
+                    "och update_draft_listing för att lägga till obligatoriska attribut innan godkännande.",
+                    "listing_id": listing.id,
+                    "status": listing.status,
+                }
+
             listing.status = "approved"
             now = datetime.now(UTC)
 
@@ -357,6 +367,8 @@ class ListingService:
         shipping_condition = details.get("shipping_condition")
         shipping_cost = None if shipping_options else details.get("shipping_cost")
         reserve_price = details.get("reserve_price") if listing.listing_type == "auction" else None
+        item_attributes = details.get("item_attributes")
+        attribute_values = details.get("attribute_values")
 
         create_result = self.tradera.create_listing(
             title=listing.listing_title,
@@ -371,6 +383,8 @@ class ListingService:
             shipping_options=shipping_options,
             shipping_condition=shipping_condition,
             auto_commit=False,
+            item_attributes=item_attributes,
+            attribute_values=attribute_values,
         )
 
         if "error" in create_result:

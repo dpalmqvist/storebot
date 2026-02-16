@@ -414,6 +414,96 @@ class TestTraderaCreateListing:
         assert result["error"] == "Tradera API response missing ItemId"
 
 
+class TestCreateListingAttributes:
+    def test_with_item_attributes_and_attribute_values(self, client):
+        response = MagicMock()
+        response.ItemId = 1
+        response.RequestId = 90001
+        client._restricted_client.service.AddItem.return_value = response
+
+        client.create_listing(
+            title="Antik byrå",
+            description="Vacker byrå",
+            category_id=344,
+            start_price=500,
+            item_attributes=[101, 102],
+            attribute_values=[
+                {"id": 101, "name": "Material", "values": ["Trä"]},
+                {"id": 102, "name": "Epok", "values": ["1920-tal"]},
+            ],
+        )
+
+        call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
+        item_req = call_kwargs["itemRequest"]
+        assert item_req["ItemAttributes"] == [101, 102]
+        assert "TermAttributeValues" in item_req["AttributeValues"]
+        term_vals = item_req["AttributeValues"]["TermAttributeValues"]
+        assert len(term_vals) == 2
+        assert term_vals[0]["Id"] == 101
+        assert term_vals[0]["Name"] == "Material"
+        assert term_vals[0]["Values"] == ["Trä"]
+
+    def test_number_attribute_values(self, client):
+        response = MagicMock()
+        response.ItemId = 1
+        response.RequestId = 90002
+        client._restricted_client.service.AddItem.return_value = response
+
+        client.create_listing(
+            title="Test",
+            description="Test",
+            category_id=100,
+            attribute_values=[
+                {"id": 201, "name": "Vikt", "values": ["3500"], "type": "number"},
+            ],
+        )
+
+        call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
+        item_req = call_kwargs["itemRequest"]
+        assert "NumberAttributeValues" in item_req["AttributeValues"]
+        assert "TermAttributeValues" not in item_req["AttributeValues"]
+        num_vals = item_req["AttributeValues"]["NumberAttributeValues"]
+        assert num_vals[0]["Id"] == 201
+        assert num_vals[0]["Values"] == ["3500"]
+
+    def test_attributes_omitted_when_none(self, client):
+        response = MagicMock()
+        response.ItemId = 1
+        response.RequestId = 90003
+        client._restricted_client.service.AddItem.return_value = response
+
+        client.create_listing(
+            title="Test",
+            description="Test",
+            category_id=100,
+        )
+
+        call_kwargs = client._restricted_client.service.AddItem.call_args.kwargs
+        item_req = call_kwargs["itemRequest"]
+        assert "ItemAttributes" not in item_req
+        assert "AttributeValues" not in item_req
+
+    def test_rejects_attribute_missing_id(self, client):
+        result = client.create_listing(
+            title="Test",
+            description="Test",
+            category_id=100,
+            attribute_values=[{"name": "Material", "values": ["Trä"]}],
+        )
+        assert "error" in result
+        assert "missing 'id' or 'values'" in result["error"]
+
+    def test_rejects_attribute_values_not_list(self, client):
+        result = client.create_listing(
+            title="Test",
+            description="Test",
+            category_id=100,
+            attribute_values=[{"id": 101, "values": "Trä"}],
+        )
+        assert "error" in result
+        assert "'values' must be a list" in result["error"]
+
+
 class TestTraderaUploadImages:
     def test_success(self, client):
         client._restricted_client.service.AddItemImage.return_value = None
@@ -518,6 +608,91 @@ class TestTraderaGetCategories:
         result = client.get_categories()
 
         assert result["categories"] == []
+
+
+class TestGetAttributeDefinitions:
+    def test_returns_parsed_definitions(self, client):
+        attr1 = MagicMock()
+        attr1.Id = 101
+        attr1.Name = "Material"
+        attr1.Description = "Materialtyp"
+        attr1.Key = "material"
+        attr1.MinNumberOfValues = 1
+        attr1.MaxNumberOfValues = 3
+        terms1 = MagicMock()
+        terms1.string = ["Trä", "Metall", "Glas"]
+        attr1.PossibleTermValues = terms1
+
+        attr2 = MagicMock()
+        attr2.Id = 102
+        attr2.Name = "Epok"
+        attr2.Description = "Tidsperiod"
+        attr2.Key = "era"
+        attr2.MinNumberOfValues = 0
+        attr2.MaxNumberOfValues = 1
+        attr2.PossibleTermValues = None
+
+        response = MagicMock()
+        response.AttributeDefinition = [attr1, attr2]
+        client._public_client.service.GetAttributeDefinitions.return_value = response
+
+        result = client.get_attribute_definitions(344)
+
+        assert result["category_id"] == 344
+        assert len(result["attributes"]) == 2
+
+        a1 = result["attributes"][0]
+        assert a1["id"] == 101
+        assert a1["name"] == "Material"
+        assert a1["key"] == "material"
+        assert a1["min_values"] == 1
+        assert a1["max_values"] == 3
+        assert a1["possible_values"] == ["Trä", "Metall", "Glas"]
+
+        a2 = result["attributes"][1]
+        assert a2["id"] == 102
+        assert a2["name"] == "Epok"
+        assert a2["min_values"] == 0
+        assert a2["possible_values"] == []
+
+    def test_empty_response(self, client):
+        response = MagicMock()
+        response.AttributeDefinition = []
+        client._public_client.service.GetAttributeDefinitions.return_value = response
+
+        result = client.get_attribute_definitions(999)
+
+        assert result["category_id"] == 999
+        assert result["attributes"] == []
+
+    def test_api_error(self, client):
+        client._public_client.service.GetAttributeDefinitions.side_effect = Exception(
+            "Category not found"
+        )
+
+        result = client.get_attribute_definitions(999)
+
+        assert result["error"] == "Category not found"
+
+    def test_possible_values_as_list(self, client):
+        """Test when zeep exposes PossibleTermValues as a direct list (no .string attr)."""
+        attr = MagicMock(spec=[])
+        attr.Id = 103
+        attr.Name = "Skick"
+        attr.Description = None
+        attr.Key = "condition"
+        attr.MinNumberOfValues = 1
+        attr.MaxNumberOfValues = 1
+        # Simulate direct list (no .string attribute)
+        attr.PossibleTermValues = ["Nytt", "Bra skick", "Slitage"]
+
+        response = MagicMock()
+        response.AttributeDefinition = [attr]
+        client._public_client.service.GetAttributeDefinitions.return_value = response
+
+        result = client.get_attribute_definitions(100)
+
+        assert result["attributes"][0]["possible_values"] == ["Nytt", "Bra skick", "Slitage"]
 
 
 class TestGetShippingOptions:
