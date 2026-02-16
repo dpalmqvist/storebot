@@ -293,7 +293,7 @@ class MarketingService:
                 previous = snapshots[1] if len(snapshots) >= 2 else None
 
                 views = latest.views if latest else (listing.views or 0)
-                bids = latest.bids if latest else 0
+                bids = latest.bids if latest else 0  # PlatformListing has no bids column
                 watchers = latest.watchers if latest else (listing.watchers or 0)
                 current_price = latest.current_price if latest else None
 
@@ -323,6 +323,10 @@ class MarketingService:
                         "trend": trend,
                     }
                 )
+
+            listings.sort(
+                key=lambda x: x["days_remaining"] if x["days_remaining"] is not None else 999
+            )
 
             log_action(
                 session,

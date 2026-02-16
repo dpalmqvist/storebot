@@ -132,9 +132,8 @@ def _format_listing_dashboard(dashboard: dict) -> str:
             f" | Bevakare: {lst['watchers']}{_format_delta(lst['watchers_delta'])}"
         )
 
-        price_str = (
-            f"{lst['current_price']:,.0f} kr".replace(",", " ") if lst["current_price"] else "—"
-        )
+        price = lst["current_price"]
+        price_str = f"{price:,.0f} kr".replace(",", " ") if price is not None else "—"
         days_str = f"{lst['days_remaining']} dagar" if lst["days_remaining"] is not None else "—"
         lines.append(f"   Pris: {price_str} | Kvar: {days_str}")
 
