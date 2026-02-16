@@ -3,11 +3,9 @@
 Each entry defines a tool name, description, and input schema that Claude
 uses to decide when and how to call the tool.
 
-All tools use strict mode (``strict: true``) so Claude must produce
-schema-valid calls.  Rules:
-- Every ``input_schema`` has ``additionalProperties: false``
-- ALL properties are listed in ``required``
-- Optional parameters use ``anyOf`` with null (model sends null to omit)
+Optional parameters are omitted from ``required`` — Claude leaves them out
+when not needed.  Tools with only required parameters use ``strict: true``
+for guaranteed schema-valid calls; tools with optional parameters omit it.
 
 Each tool also carries a ``category`` tag used by the dynamic tool filtering
 in ``agent.py`` to send only relevant tools per turn.
@@ -16,54 +14,51 @@ in ``agent.py`` to send only relevant tools per turn.
 # Shared sub-schema for listing details (shipping, reserve price).
 # Used by create_draft_listing, update_draft_listing, and relist_product.
 _DETAILS_SCHEMA = {
-    "anyOf": [
-        {
-            "type": "object",
-            "properties": {
-                "shipping_options": {
-                    "anyOf": [
-                        {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "cost": {"type": "number"},
-                                    "shipping_product_id": {"type": "integer"},
-                                    "shipping_provider_id": {"type": "integer"},
-                                    "name": {"type": "string"},
-                                },
-                                "required": [
-                                    "cost",
-                                    "shipping_product_id",
-                                    "shipping_provider_id",
-                                    "name",
-                                ],
-                                "additionalProperties": False,
-                            },
-                        },
-                        {"type": "null"},
-                    ],
+    "type": "object",
+    "properties": {
+        "shipping_options": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "cost": {"type": "number"},
+                    "shipping_product_id": {"type": "integer"},
+                    "shipping_provider_id": {"type": "integer"},
+                    "name": {"type": "string"},
                 },
-                "shipping_cost": {
-                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                },
-                "shipping_condition": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                },
-                "reserve_price": {
-                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                },
+                "required": [
+                    "cost",
+                    "shipping_product_id",
+                    "shipping_provider_id",
+                    "name",
+                ],
+                "additionalProperties": False,
             },
-            "required": [
-                "shipping_options",
-                "shipping_cost",
-                "shipping_condition",
-                "reserve_price",
-            ],
-            "additionalProperties": False,
         },
-        {"type": "null"},
-    ],
+        "shipping_cost": {"type": "number"},
+        "shipping_condition": {"type": "string"},
+        "reserve_price": {"type": "number"},
+    },
+    "additionalProperties": False,
+}
+
+# Schema for the optional period parameter shared by analytics tools.
+_PERIOD_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "period": {
+            "type": "string",
+            "description": "Period: YYYY-MM (månad), YYYY-QN (kvartal), YYYY (år). Standard: innevarande månad.",
+        },
+    },
+    "additionalProperties": False,
+}
+
+# Schema for tools that take no parameters.
+_EMPTY_SCHEMA = {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": False,
 }
 
 TOOLS = [
@@ -72,21 +67,20 @@ TOOLS = [
         "name": "search_tradera",
         "description": "Search Tradera for items matching a query. Use for price research and finding comparable listings.",
         "category": "research",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search query"},
                 "category": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Category filter (null to omit)",
+                    "type": "string",
+                    "description": "Category filter (omit to skip)",
                 },
                 "max_price": {
-                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                    "description": "Maximum price in SEK (null to omit)",
+                    "type": "number",
+                    "description": "Maximum price in SEK (omit to skip)",
                 },
             },
-            "required": ["query", "category", "max_price"],
+            "required": ["query"],
             "additionalProperties": False,
         },
     },
@@ -109,27 +103,20 @@ TOOLS = [
         "description": "Get all Tradera categories. Use to find the right category ID for a listing.",
         "category": "listing",
         "strict": True,
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": False,
-        },
+        "input_schema": _EMPTY_SCHEMA,
     },
     {
         "name": "get_shipping_options",
         "description": "Hämta tillgängliga fraktalternativ från Tradera. Returnerar fraktprodukter med leverantör, viktgräns och pris. Använd produktens vikt för att filtrera.",
         "category": "listing",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "weight_grams": {
-                    "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    "description": "Paketets vikt i gram — filtrerar till alternativ som klarar vikten (null to omit)",
+                    "type": "integer",
+                    "description": "Paketets vikt i gram — filtrerar till alternativ som klarar vikten",
                 },
             },
-            "required": ["weight_grams"],
             "additionalProperties": False,
         },
     },
@@ -138,33 +125,27 @@ TOOLS = [
         "description": "Hämta alla tillgängliga frakttyper (leveransvillkor) från Tradera. Returnerar en lista med ID och namn.",
         "category": "listing",
         "strict": True,
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": False,
-        },
+        "input_schema": _EMPTY_SCHEMA,
     },
     # --- Blocket ---
     {
         "name": "search_blocket",
         "description": "Search Blocket for items. Read-only, useful for price research and sourcing opportunities.",
         "category": "research",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search query"},
                 "category": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Category filter (null to omit)",
+                    "type": "string",
+                    "description": "Category filter (omit to skip)",
                 },
                 "region": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Region filter (null to omit)",
+                    "type": "string",
+                    "description": "Region filter (omit to skip)",
                 },
             },
-            "required": ["query", "category", "region"],
+            "required": ["query"],
             "additionalProperties": False,
         },
     },
@@ -187,7 +168,6 @@ TOOLS = [
         "name": "price_check",
         "description": "Search both Tradera and Blocket for comparable items and compute price statistics with a suggested price range. Use for pricing research before listing a product.",
         "category": "core",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
@@ -196,15 +176,15 @@ TOOLS = [
                     "description": "Search query describing the item to price",
                 },
                 "product_id": {
-                    "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    "description": "Local product ID to link analysis to (null to omit)",
+                    "type": "integer",
+                    "description": "Local product ID to link analysis to (omit to skip)",
                 },
                 "category": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Category filter — Tradera int or Blocket string (null to omit)",
+                    "type": "string",
+                    "description": "Category filter — Tradera int or Blocket string (omit to skip)",
                 },
             },
-            "required": ["query", "product_id", "category"],
+            "required": ["query"],
             "additionalProperties": False,
         },
     },
@@ -213,7 +193,6 @@ TOOLS = [
         "name": "create_draft_listing",
         "description": "Create a draft listing for a product. The draft must be approved before publishing. Use after price_check to set appropriate pricing.",
         "category": "listing",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
@@ -229,28 +208,29 @@ TOOLS = [
                     "description": "Listing description in Swedish",
                 },
                 "platform": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Platform: tradera or blocket (null defaults to tradera)",
+                    "type": "string",
+                    "description": "Platform: tradera or blocket (omit defaults to tradera)",
                 },
                 "start_price": {
-                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                    "description": "Auction start price in SEK (required for auctions, null otherwise)",
+                    "type": "number",
+                    "description": "Auction start price in SEK (required for auctions)",
                 },
                 "buy_it_now_price": {
-                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                    "description": "Fixed price / buy-it-now price in SEK (null to omit)",
+                    "type": "number",
+                    "description": "Fixed price / buy-it-now price in SEK (omit to skip)",
                 },
                 "duration_days": {
-                    "anyOf": [{"type": "integer", "enum": [3, 5, 7, 10, 14]}, {"type": "null"}],
-                    "description": "Listing duration in days (null defaults to 7)",
+                    "type": "integer",
+                    "enum": [3, 5, 7, 10, 14],
+                    "description": "Listing duration in days (omit defaults to 7)",
                 },
                 "tradera_category_id": {
-                    "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    "description": "Tradera category ID (null to omit)",
+                    "type": "integer",
+                    "description": "Tradera category ID (omit to skip)",
                 },
                 "details": {
                     **_DETAILS_SCHEMA,
-                    "description": "Shipping and extra details (null to omit). Set shipping_options OR shipping_cost, not both.",
+                    "description": "Shipping and extra details (omit to skip). Set shipping_options OR shipping_cost, not both.",
                 },
             },
             "required": [
@@ -258,12 +238,6 @@ TOOLS = [
                 "listing_type",
                 "listing_title",
                 "listing_description",
-                "platform",
-                "start_price",
-                "buy_it_now_price",
-                "duration_days",
-                "tradera_category_id",
-                "details",
             ],
             "additionalProperties": False,
         },
@@ -272,16 +246,14 @@ TOOLS = [
         "name": "list_draft_listings",
         "description": "List listings filtered by status. Defaults to showing drafts awaiting approval.",
         "category": "listing",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "status": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Filter by status: draft, approved, active, ended, sold (null defaults to draft)",
+                    "type": "string",
+                    "description": "Filter by status: draft, approved, active, ended, sold (omit defaults to draft)",
                 },
             },
-            "required": ["status"],
             "additionalProperties": False,
         },
     },
@@ -301,60 +273,48 @@ TOOLS = [
     },
     {
         "name": "update_draft_listing",
-        "description": "Update fields on a draft listing. Only drafts can be edited.",
+        "description": "Update fields on a draft listing. Only drafts can be edited. Only include fields to change.",
         "category": "listing",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "listing_id": {"type": "integer", "description": "Listing ID"},
                 "listing_title": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "New title (null to keep current)",
+                    "type": "string",
+                    "description": "New title (omit to keep current)",
                 },
                 "listing_description": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "New description (null to keep current)",
+                    "type": "string",
+                    "description": "New description (omit to keep current)",
                 },
                 "listing_type": {
-                    "anyOf": [
-                        {"type": "string", "enum": ["auction", "buy_it_now"]},
-                        {"type": "null"},
-                    ],
-                    "description": "New listing type (null to keep current)",
+                    "type": "string",
+                    "enum": ["auction", "buy_it_now"],
+                    "description": "New listing type (omit to keep current)",
                 },
                 "start_price": {
-                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                    "description": "New start price (null to keep current)",
+                    "type": "number",
+                    "description": "New start price (omit to keep current)",
                 },
                 "buy_it_now_price": {
-                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                    "description": "New buy-it-now price (null to keep current)",
+                    "type": "number",
+                    "description": "New buy-it-now price (omit to keep current)",
                 },
                 "duration_days": {
-                    "anyOf": [{"type": "integer", "enum": [3, 5, 7, 10, 14]}, {"type": "null"}],
-                    "description": "New duration (null to keep current)",
+                    "type": "integer",
+                    "enum": [3, 5, 7, 10, 14],
+                    "description": "New duration (omit to keep current)",
                 },
                 "tradera_category_id": {
-                    "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    "description": "New category ID (null to keep current)",
+                    "type": "integer",
+                    "description": "New category ID (omit to keep current)",
                 },
                 "details": {
                     **_DETAILS_SCHEMA,
-                    "description": "New details (null to keep current)",
+                    "description": "New details (omit to keep current)",
                 },
             },
-            "required": [
-                "listing_id",
-                "listing_title",
-                "listing_description",
-                "listing_type",
-                "start_price",
-                "buy_it_now_price",
-                "duration_days",
-                "tradera_category_id",
-                "details",
-            ],
+            "required": ["listing_id"],
             "additionalProperties": False,
         },
     },
@@ -376,17 +336,16 @@ TOOLS = [
         "name": "revise_draft_listing",
         "description": "Move an approved listing back to draft status for editing. Use when changes are needed before publishing.",
         "category": "listing",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "listing_id": {"type": "integer", "description": "Listing ID to revise"},
                 "reason": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Reason for revision (null to omit, for audit trail)",
+                    "type": "string",
+                    "description": "Reason for revision (for audit trail)",
                 },
             },
-            "required": ["listing_id", "reason"],
+            "required": ["listing_id"],
             "additionalProperties": False,
         },
     },
@@ -394,17 +353,16 @@ TOOLS = [
         "name": "reject_draft_listing",
         "description": "Reject and delete a draft listing.",
         "category": "listing",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "listing_id": {"type": "integer", "description": "Listing ID to reject"},
                 "reason": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Reason for rejection (null to omit)",
+                    "type": "string",
+                    "description": "Reason for rejection",
                 },
             },
-            "required": ["listing_id", "reason"],
+            "required": ["listing_id"],
             "additionalProperties": False,
         },
     },
@@ -427,9 +385,8 @@ TOOLS = [
     },
     {
         "name": "relist_product",
-        "description": "Skapa ett nytt annonsutkast genom att kopiera från en avslutad eller såld annons. Kräver godkännande innan publicering.",
+        "description": "Skapa ett nytt annonsutkast genom att kopiera från en avslutad eller såld annons. Kräver godkännande innan publicering. Inkludera bara fält som ska ändras.",
         "category": "listing",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
@@ -438,52 +395,41 @@ TOOLS = [
                     "description": "ID på den avslutade/sålda annonsen att kopiera från",
                 },
                 "listing_title": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Ny titel (null to keep original)",
+                    "type": "string",
+                    "description": "Ny titel (omit to keep original)",
                 },
                 "listing_description": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Ny beskrivning (null to keep original)",
+                    "type": "string",
+                    "description": "Ny beskrivning (omit to keep original)",
                 },
                 "listing_type": {
-                    "anyOf": [
-                        {"type": "string", "enum": ["auction", "buy_it_now"]},
-                        {"type": "null"},
-                    ],
-                    "description": "Ny annonstyp (null to keep original)",
+                    "type": "string",
+                    "enum": ["auction", "buy_it_now"],
+                    "description": "Ny annonstyp (omit to keep original)",
                 },
                 "start_price": {
-                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                    "description": "Nytt startpris (null to keep original)",
+                    "type": "number",
+                    "description": "Nytt startpris (omit to keep original)",
                 },
                 "buy_it_now_price": {
-                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                    "description": "Nytt köp nu-pris (null to keep original)",
+                    "type": "number",
+                    "description": "Nytt köp nu-pris (omit to keep original)",
                 },
                 "duration_days": {
-                    "anyOf": [{"type": "integer", "enum": [3, 5, 7, 10, 14]}, {"type": "null"}],
-                    "description": "Ny varaktighet i dagar (null to keep original)",
+                    "type": "integer",
+                    "enum": [3, 5, 7, 10, 14],
+                    "description": "Ny varaktighet i dagar (omit to keep original)",
                 },
                 "tradera_category_id": {
-                    "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    "description": "Ny Tradera-kategori (null to keep original)",
+                    "type": "integer",
+                    "description": "Ny Tradera-kategori (omit to keep original)",
                 },
                 "details": {
                     **_DETAILS_SCHEMA,
-                    "description": "Nya detaljer/frakt (null to keep original)",
+                    "description": "Nya detaljer/frakt (omit to keep original)",
                 },
             },
-            "required": [
-                "listing_id",
-                "listing_title",
-                "listing_description",
-                "listing_type",
-                "start_price",
-                "buy_it_now_price",
-                "duration_days",
-                "tradera_category_id",
-                "details",
-            ],
+            "required": ["listing_id"],
             "additionalProperties": False,
         },
     },
@@ -509,24 +455,22 @@ TOOLS = [
         "name": "search_products",
         "description": "Search the local product database. Archived products are hidden by default.",
         "category": "core",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "query": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Search query (null to list all)",
+                    "type": "string",
+                    "description": "Search query (omit to list all)",
                 },
                 "status": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Filter by status: draft, listed, sold, archived (null to show all non-archived)",
+                    "type": "string",
+                    "description": "Filter by status: draft, listed, sold, archived (omit to show all non-archived)",
                 },
                 "include_archived": {
-                    "anyOf": [{"type": "boolean"}, {"type": "null"}],
-                    "description": "Include archived products in results (null defaults to false)",
+                    "type": "boolean",
+                    "description": "Include archived products in results (omit defaults to false)",
                 },
             },
-            "required": ["query", "status", "include_archived"],
             "additionalProperties": False,
         },
     },
@@ -534,126 +478,101 @@ TOOLS = [
         "name": "create_product",
         "description": "Create a new product in the database. Use when the user wants to register a new item.",
         "category": "core",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "title": {"type": "string", "description": "Product title in Swedish"},
                 "description": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Product description in Swedish (null to omit)",
+                    "type": "string",
+                    "description": "Product description in Swedish",
                 },
                 "category": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "type": "string",
                     "description": "Category (e.g. möbler, inredning, kuriosa, antikviteter)",
                 },
                 "condition": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "type": "string",
                     "description": "Condition (e.g. renoverad, bra skick, slitage)",
                 },
                 "materials": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "type": "string",
                     "description": "Materials (e.g. ek, mässing, glas)",
                 },
                 "era": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "type": "string",
                     "description": "Era or period (e.g. 1940-tal, jugend, art deco)",
                 },
                 "dimensions": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "type": "string",
                     "description": "Dimensions (e.g. 60x40x80 cm)",
                 },
                 "source": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "type": "string",
                     "description": "Where it was acquired (e.g. loppis, dödsbo, tradera)",
                 },
                 "acquisition_cost": {
-                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                    "description": "Purchase cost in SEK (null to omit)",
+                    "type": "number",
+                    "description": "Purchase cost in SEK",
                 },
                 "weight_grams": {
-                    "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    "description": "Weight in grams (required for shipping labels, null to omit)",
+                    "type": "integer",
+                    "description": "Weight in grams (needed for shipping labels)",
                 },
             },
-            "required": [
-                "title",
-                "description",
-                "category",
-                "condition",
-                "materials",
-                "era",
-                "dimensions",
-                "source",
-                "acquisition_cost",
-                "weight_grams",
-            ],
+            "required": ["title"],
             "additionalProperties": False,
         },
     },
     {
         "name": "update_product",
-        "description": "Uppdatera fält på en befintlig produkt. Skicka bara värden för de fält som ska ändras, null för övriga.",
+        "description": "Uppdatera fält på en befintlig produkt. Inkludera bara de fält som ska ändras.",
         "category": "core",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "product_id": {"type": "integer", "description": "Product ID to update"},
                 "title": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "New title (null to keep current)",
+                    "type": "string",
+                    "description": "New title (omit to keep current)",
                 },
                 "description": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "New description (null to keep current)",
+                    "type": "string",
+                    "description": "New description (omit to keep current)",
                 },
                 "category": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "New category (null to keep current)",
+                    "type": "string",
+                    "description": "New category (omit to keep current)",
                 },
                 "condition": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "New condition (null to keep current)",
+                    "type": "string",
+                    "description": "New condition (omit to keep current)",
                 },
                 "materials": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "New materials (null to keep current)",
+                    "type": "string",
+                    "description": "New materials (omit to keep current)",
                 },
                 "era": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "New era (null to keep current)",
+                    "type": "string",
+                    "description": "New era (omit to keep current)",
                 },
                 "dimensions": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "New dimensions (null to keep current)",
+                    "type": "string",
+                    "description": "New dimensions (omit to keep current)",
                 },
                 "source": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "New source (null to keep current)",
+                    "type": "string",
+                    "description": "New source (omit to keep current)",
                 },
                 "acquisition_cost": {
-                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                    "description": "New cost in SEK (null to keep current)",
+                    "type": "number",
+                    "description": "New cost in SEK (omit to keep current)",
                 },
                 "weight_grams": {
-                    "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    "description": "New weight in grams (null to keep current)",
+                    "type": "integer",
+                    "description": "New weight in grams (omit to keep current)",
                 },
             },
-            "required": [
-                "product_id",
-                "title",
-                "description",
-                "category",
-                "condition",
-                "materials",
-                "era",
-                "dimensions",
-                "source",
-                "acquisition_cost",
-                "weight_grams",
-            ],
+            "required": ["product_id"],
             "additionalProperties": False,
         },
     },
@@ -676,18 +595,17 @@ TOOLS = [
         "name": "save_product_image",
         "description": "Save an image to a product. Use after create_product to attach photos.",
         "category": "core",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "product_id": {"type": "integer", "description": "Product ID to attach image to"},
                 "image_path": {"type": "string", "description": "File path to the image"},
                 "is_primary": {
-                    "anyOf": [{"type": "boolean"}, {"type": "null"}],
-                    "description": "Set as primary product image (null defaults to false)",
+                    "type": "boolean",
+                    "description": "Set as primary product image (omit defaults to false)",
                 },
             },
-            "required": ["product_id", "image_path", "is_primary"],
+            "required": ["product_id", "image_path"],
             "additionalProperties": False,
         },
     },
@@ -695,20 +613,18 @@ TOOLS = [
         "name": "get_product_images",
         "description": "Hämta och visa produktbilder. Använd för att granska bilder innan godkännande/publicering av annons.",
         "category": "core",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "product_id": {
-                    "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    "description": "Product ID (null if listing_id is given)",
+                    "type": "integer",
+                    "description": "Product ID (provide this or listing_id)",
                 },
                 "listing_id": {
-                    "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    "description": "Listing ID — resolves to product automatically (null if product_id is given)",
+                    "type": "integer",
+                    "description": "Listing ID — resolves to product automatically (provide this or product_id)",
                 },
             },
-            "required": ["product_id", "listing_id"],
             "additionalProperties": False,
         },
     },
@@ -761,33 +677,21 @@ TOOLS = [
         "description": "Poll Tradera for new orders and import them locally. Creates order records and updates product/listing status.",
         "category": "order",
         "strict": True,
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": False,
-        },
+        "input_schema": _EMPTY_SCHEMA,
     },
     {
         "name": "list_orders",
         "description": "List local orders, optionally filtered by status (pending/shipped/delivered/returned).",
         "category": "order",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "status": {
-                    "anyOf": [
-                        {
-                            "type": "string",
-                            "enum": ["pending", "shipped", "delivered", "returned"],
-                        },
-                        {"type": "null"},
-                    ],
-                    "description": "Filter by order status (null to show all)",
+                    "type": "string",
+                    "enum": ["pending", "shipped", "delivered", "returned"],
+                    "description": "Filter by order status (omit to show all)",
                 },
             },
-            "required": ["status"],
             "additionalProperties": False,
         },
     },
@@ -823,17 +727,16 @@ TOOLS = [
         "name": "mark_order_shipped",
         "description": "Mark an order as shipped. Updates local status and notifies Tradera. NEVER use without explicit owner confirmation.",
         "category": "order",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "order_id": {"type": "integer", "description": "Order ID to mark as shipped"},
                 "tracking_number": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Tracking number (null to omit)",
+                    "type": "string",
+                    "description": "Tracking number",
                 },
             },
-            "required": ["order_id", "tracking_number"],
+            "required": ["order_id"],
             "additionalProperties": False,
         },
     },
@@ -841,20 +744,17 @@ TOOLS = [
         "name": "create_shipping_label",
         "description": "Skapa en fraktetikett via PostNord för en order. Kräver att produkten har weight_grams satt.",
         "category": "order",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "order_id": {"type": "integer", "description": "Order ID"},
                 "service_code": {
-                    "anyOf": [
-                        {"type": "string", "enum": ["19", "17", "18"]},
-                        {"type": "null"},
-                    ],
-                    "description": "PostNord service: 19=MyPack Collect, 17=MyPack Home, 18=Postpaket (null defaults to 19)",
+                    "type": "string",
+                    "enum": ["19", "17", "18"],
+                    "description": "PostNord service: 19=MyPack Collect, 17=MyPack Home, 18=Postpaket (standard: 19)",
                 },
             },
-            "required": ["order_id", "service_code"],
+            "required": ["order_id"],
             "additionalProperties": False,
         },
     },
@@ -863,18 +763,12 @@ TOOLS = [
         "description": "Lista Tradera-ordrar som är skickade men saknar omdöme till köparen.",
         "category": "order",
         "strict": True,
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": False,
-        },
+        "input_schema": _EMPTY_SCHEMA,
     },
     {
         "name": "leave_feedback",
         "description": "Lämna omdöme till köparen på en Tradera-order. Lämna ALDRIG omdöme utan ägarens uttryckliga bekräftelse av texten.",
         "category": "order",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
@@ -884,14 +778,12 @@ TOOLS = [
                     "description": "Omdömestext (max 80 tecken)",
                 },
                 "feedback_type": {
-                    "anyOf": [
-                        {"type": "string", "enum": ["Positive", "Negative"]},
-                        {"type": "null"},
-                    ],
-                    "description": "Typ av omdöme (null defaults to Positive)",
+                    "type": "string",
+                    "enum": ["Positive", "Negative"],
+                    "description": "Typ av omdöme (standard: Positive)",
                 },
             },
-            "required": ["order_id", "comment", "feedback_type"],
+            "required": ["order_id", "comment"],
             "additionalProperties": False,
         },
     },
@@ -900,7 +792,6 @@ TOOLS = [
         "name": "create_voucher",
         "description": "Skapa en bokföringsverifikation och spara lokalt. Debet och kredit måste balansera.",
         "category": "accounting",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
@@ -920,15 +811,15 @@ TOOLS = [
                     "description": "Voucher rows (debit/credit per account)",
                 },
                 "order_id": {
-                    "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    "description": "Link to order ID (null to omit)",
+                    "type": "integer",
+                    "description": "Link to order ID",
                 },
                 "transaction_date": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Transaction date ISO format (null defaults to today)",
+                    "type": "string",
+                    "description": "Transaction date ISO format (omit defaults to today)",
                 },
             },
-            "required": ["description", "rows", "order_id", "transaction_date"],
+            "required": ["description", "rows"],
             "additionalProperties": False,
         },
     },
@@ -936,20 +827,18 @@ TOOLS = [
         "name": "list_vouchers",
         "description": "Lista bokföringsverifikationer, valfritt filtrerade efter datumintervall.",
         "category": "accounting",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "from_date": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Startdatum (ISO-format, t.ex. 2026-01-01, null to omit)",
+                    "type": "string",
+                    "description": "Startdatum (ISO-format, t.ex. 2026-01-01)",
                 },
                 "to_date": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Slutdatum (ISO-format, t.ex. 2026-12-31, null to omit)",
+                    "type": "string",
+                    "description": "Slutdatum (ISO-format, t.ex. 2026-12-31)",
                 },
             },
-            "required": ["from_date", "to_date"],
             "additionalProperties": False,
         },
     },
@@ -979,32 +868,29 @@ TOOLS = [
         "name": "create_saved_search",
         "description": "Create a saved search for periodic sourcing. Searches run daily and new finds are reported.",
         "category": "scout",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search query (e.g. 'antik byrå')"},
                 "platform": {
-                    "anyOf": [
-                        {"type": "string", "enum": ["tradera", "blocket", "both"]},
-                        {"type": "null"},
-                    ],
-                    "description": "Which platform(s) to search (null defaults to both)",
+                    "type": "string",
+                    "enum": ["tradera", "blocket", "both"],
+                    "description": "Which platform(s) to search (omit defaults to both)",
                 },
                 "category": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Category filter (Tradera int ID or Blocket category name, null to omit)",
+                    "type": "string",
+                    "description": "Category filter (Tradera int ID or Blocket category name)",
                 },
                 "max_price": {
-                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                    "description": "Maximum price in SEK (null to omit)",
+                    "type": "number",
+                    "description": "Maximum price in SEK",
                 },
                 "region": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Region filter (Blocket only, null to omit)",
+                    "type": "string",
+                    "description": "Region filter (Blocket only)",
                 },
             },
-            "required": ["query", "platform", "category", "max_price", "region"],
+            "required": ["query"],
             "additionalProperties": False,
         },
     },
@@ -1012,53 +898,48 @@ TOOLS = [
         "name": "list_saved_searches",
         "description": "List all saved searches. By default shows only active ones.",
         "category": "scout",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "include_inactive": {
-                    "anyOf": [{"type": "boolean"}, {"type": "null"}],
-                    "description": "Include deactivated searches (null defaults to false)",
+                    "type": "boolean",
+                    "description": "Include deactivated searches (omit defaults to false)",
                 },
             },
-            "required": ["include_inactive"],
             "additionalProperties": False,
         },
     },
     {
         "name": "update_saved_search",
-        "description": "Update a saved search's query, platform, category, max_price, or region.",
+        "description": "Update a saved search. Only include fields to change.",
         "category": "scout",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "search_id": {"type": "integer", "description": "Saved search ID"},
                 "query": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "New search query (null to keep current)",
+                    "type": "string",
+                    "description": "New search query (omit to keep current)",
                 },
                 "platform": {
-                    "anyOf": [
-                        {"type": "string", "enum": ["tradera", "blocket", "both"]},
-                        {"type": "null"},
-                    ],
-                    "description": "New platform filter (null to keep current)",
+                    "type": "string",
+                    "enum": ["tradera", "blocket", "both"],
+                    "description": "New platform filter (omit to keep current)",
                 },
                 "category": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "New category filter (null to keep current)",
+                    "type": "string",
+                    "description": "New category filter (omit to keep current)",
                 },
                 "max_price": {
-                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                    "description": "New max price in SEK (null to keep current)",
+                    "type": "number",
+                    "description": "New max price in SEK (omit to keep current)",
                 },
                 "region": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "New region filter (null to keep current)",
+                    "type": "string",
+                    "description": "New region filter (omit to keep current)",
                 },
             },
-            "required": ["search_id", "query", "platform", "category", "max_price", "region"],
+            "required": ["search_id"],
             "additionalProperties": False,
         },
     },
@@ -1095,28 +976,21 @@ TOOLS = [
         "description": "Run all active saved searches and produce a digest of new finds.",
         "category": "scout",
         "strict": True,
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": False,
-        },
+        "input_schema": _EMPTY_SCHEMA,
     },
     # --- Marketing ---
     {
         "name": "refresh_listing_stats",
         "description": "Hämta aktuell statistik (visningar, bevakare, bud) från Tradera för aktiva annonser och spara en snapshot.",
         "category": "marketing",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "listing_id": {
-                    "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    "description": "Specific listing ID to refresh (null to refresh all active)",
+                    "type": "integer",
+                    "description": "Specific listing ID to refresh (omit to refresh all active)",
                 },
             },
-            "required": ["listing_id"],
             "additionalProperties": False,
         },
     },
@@ -1139,27 +1013,20 @@ TOOLS = [
         "description": "Sammanställ en övergripande marknadsföringsrapport: aktiva annonser, visningar, försäljning, kategorier, konverteringstratt.",
         "category": "marketing",
         "strict": True,
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": False,
-        },
+        "input_schema": _EMPTY_SCHEMA,
     },
     {
         "name": "get_recommendations",
         "description": "Generera åtgärdsförslag för annonser: omlistning, prisjustering, förbättra innehåll, förläng, kategoritips.",
         "category": "marketing",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "listing_id": {
-                    "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    "description": "Specific listing ID (null to show all active+ended)",
+                    "type": "integer",
+                    "description": "Specific listing ID (omit to show all active+ended)",
                 },
             },
-            "required": ["listing_id"],
             "additionalProperties": False,
         },
     },
@@ -1168,66 +1035,37 @@ TOOLS = [
         "name": "business_summary",
         "description": "Affärssammanfattning för en period: intäkter, kostnader, bruttovinst, marginal, antal sålda, lagerstatus, snittid till försäljning.",
         "category": "analytics",
-        "strict": True,
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "period": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Period: YYYY-MM (månad), YYYY-QN (kvartal), YYYY (år). Null för innevarande månad.",
-                },
-            },
-            "required": ["period"],
-            "additionalProperties": False,
-        },
+        "input_schema": _PERIOD_SCHEMA,
     },
     {
         "name": "profitability_report",
         "description": "Lönsamhetsrapport: nettovinst per produkt, aggregerat per kategori och inköpskälla. Topp/botten 5.",
         "category": "analytics",
-        "strict": True,
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "period": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Period: YYYY-MM, YYYY-QN eller YYYY. Null för innevarande månad.",
-                },
-            },
-            "required": ["period"],
-            "additionalProperties": False,
-        },
+        "input_schema": _PERIOD_SCHEMA,
     },
     {
         "name": "inventory_report",
         "description": "Lagerrapport: lagervärde, statusfördelning, åldersanalys (0-7d, 8-14d, 15-30d, 30+d), lista på gamla artiklar.",
         "category": "analytics",
         "strict": True,
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": False,
-        },
+        "input_schema": _EMPTY_SCHEMA,
     },
     {
         "name": "period_comparison",
         "description": "Periodjämförelse: två perioder sida vid sida med skillnader i intäkter, vinst, antal och marginal. Standard: denna månad vs förra.",
         "category": "analytics",
-        "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
                 "period_a": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Första perioden (YYYY-MM, YYYY-QN, YYYY). Null för innevarande månad.",
+                    "type": "string",
+                    "description": "Första perioden (YYYY-MM, YYYY-QN, YYYY). Standard: innevarande månad.",
                 },
                 "period_b": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Andra perioden att jämföra med. Null för föregående månad.",
+                    "type": "string",
+                    "description": "Andra perioden att jämföra med. Standard: föregående månad.",
                 },
             },
-            "required": ["period_a", "period_b"],
             "additionalProperties": False,
         },
     },
@@ -1235,35 +1073,13 @@ TOOLS = [
         "name": "sourcing_analysis",
         "description": "Inköpskanalanalys: ROI per källa (loppis, dödsbo, tradera etc.), antal inköpta/sålda, marginal, snittid till försäljning.",
         "category": "analytics",
-        "strict": True,
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "period": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Period: YYYY-MM, YYYY-QN eller YYYY. Null för innevarande månad.",
-                },
-            },
-            "required": ["period"],
-            "additionalProperties": False,
-        },
+        "input_schema": _PERIOD_SCHEMA,
     },
     {
         "name": "usage_report",
         "description": "Visa API-tokenförbrukning och kostnad per dag/månad. Visar input/output-tokens, cache-effektivitet och kostnad i SEK.",
         "category": "analytics",
-        "strict": True,
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "period": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Period: YYYY-MM, YYYY-QN eller YYYY. Null för innevarande månad.",
-                },
-            },
-            "required": ["period"],
-            "additionalProperties": False,
-        },
+        "input_schema": _PERIOD_SCHEMA,
     },
     # --- Meta ---
     {
