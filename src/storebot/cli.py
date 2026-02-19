@@ -1,12 +1,16 @@
 """CLI commands for Storebot setup and administration."""
 
+import json
 import re
 import sys
 import uuid
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+import anthropic
+
 from storebot.config import Settings
+from storebot.db import init_db
 from storebot.tools.tradera import TraderaClient
 
 
@@ -136,3 +140,112 @@ def authorize_tradera() -> None:
         print(f"  TRADERA_USER_TOKEN={token}")
         if user_id:
             print(f"  TRADERA_USER_ID={user_id}")
+
+
+def generate_category_descriptions(engine, api_key: str, model: str) -> int:
+    """Generate Swedish descriptions for categories missing them.
+
+    Batches categories in groups of 50 and calls Claude to generate
+    one-sentence descriptions. Returns the total count of descriptions
+    generated.
+    """
+    from sqlalchemy.orm import Session
+
+    from storebot.db import TraderaCategory
+
+    with Session(engine) as session:
+        missing = (
+            session.query(TraderaCategory)
+            .filter(TraderaCategory.description.is_(None))
+            .order_by(TraderaCategory.depth, TraderaCategory.name)
+            .all()
+        )
+        if not missing:
+            return 0
+
+        client = anthropic.Anthropic(api_key=api_key)
+        total = 0
+        batch_size = 50
+
+        for i in range(0, len(missing), batch_size):
+            batch = missing[i : i + batch_size]
+            lines = [f'- ID {cat.tradera_id}, Path: "{cat.path}"' for cat in batch]
+
+            prompt = (
+                "For each Tradera category below, write a 1-sentence Swedish description "
+                "explaining what types of products belong there. "
+                'Return ONLY a JSON array: [{"tradera_id": ..., "description": "..."}]\n\n'
+                "Categories:\n" + "\n".join(lines)
+            )
+
+            response = client.messages.create(
+                model=model,
+                max_tokens=4096,
+                messages=[{"role": "user", "content": prompt}],
+            )
+
+            text = ""
+            for block in response.content:
+                if getattr(block, "type", None) == "text":
+                    text = getattr(block, "text", "")
+                    break
+
+            # Extract JSON from the response (may be wrapped in markdown code blocks)
+            text = text.strip()
+            if text.startswith("```"):
+                text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+            try:
+                descriptions = json.loads(text)
+            except json.JSONDecodeError:
+                print(f"  Warning: Failed to parse JSON for batch {i // batch_size + 1}, skipping")
+                continue
+
+            by_id = {d["tradera_id"]: d["description"] for d in descriptions}
+            for cat in batch:
+                desc = by_id.get(cat.tradera_id)
+                if desc:
+                    cat.description = desc
+                    total += 1
+
+            session.commit()
+            print(f"  Batch {i // batch_size + 1}: {len(by_id)} descriptions generated")
+
+    return total
+
+
+def sync_categories() -> None:
+    """Sync Tradera category hierarchy and generate LLM descriptions."""
+    settings = Settings()
+
+    if not settings.tradera_app_id:
+        print("Error: TRADERA_APP_ID is not set in .env")
+        sys.exit(1)
+    if not settings.claude_api_key:
+        print("Error: CLAUDE_API_KEY is not set in .env")
+        sys.exit(1)
+
+    print("Initializing database...")
+    engine = init_db()
+
+    tradera = TraderaClient(
+        app_id=settings.tradera_app_id,
+        app_key=settings.tradera_app_key,
+        sandbox=settings.tradera_sandbox,
+    )
+
+    print("Fetching categories from Tradera API...")
+    try:
+        count = tradera.sync_categories_to_db(engine)
+    except RuntimeError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+    print(f"  Synced {count} categories to database.")
+
+    print("Generating descriptions for categories without one...")
+    desc_model = settings.claude_model_simple or settings.claude_model_compact
+    desc_count = generate_category_descriptions(engine, settings.claude_api_key, desc_model)
+    print(f"  Generated {desc_count} descriptions.")
+
+    print()
+    print(f"Done! {count} categories synced, {desc_count} descriptions generated.")

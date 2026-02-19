@@ -2,7 +2,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from storebot.cli import _parse_redirect_url, _update_env_file, authorize_tradera
+from storebot.cli import (
+    _parse_redirect_url,
+    _update_env_file,
+    authorize_tradera,
+    generate_category_descriptions,
+    sync_categories,
+)
 from storebot.tools.tradera import TraderaClient
 
 
@@ -265,3 +271,124 @@ class TestUpdateEnvFile:
 
         assert env_file.exists()
         assert env_file.read_text() == "KEY=val\n"
+
+
+class TestGenerateCategoryDescriptions:
+    def test_generates_descriptions(self, engine):
+        from datetime import UTC, datetime
+
+        from sqlalchemy.orm import Session
+
+        from storebot.db import TraderaCategory
+
+        with Session(engine) as session:
+            session.add(
+                TraderaCategory(
+                    tradera_id=10,
+                    name="Möbler",
+                    path="Möbler",
+                    depth=0,
+                    synced_at=datetime.now(UTC),
+                )
+            )
+            session.add(
+                TraderaCategory(
+                    tradera_id=20,
+                    name="Soffor",
+                    path="Möbler > Soffor",
+                    depth=1,
+                    synced_at=datetime.now(UTC),
+                )
+            )
+            session.commit()
+
+        mock_response = MagicMock()
+        mock_block = MagicMock()
+        mock_block.type = "text"
+        mock_block.text = '[{"tradera_id": 10, "description": "Alla typer av möbler"}, {"tradera_id": 20, "description": "Soffor och sittmöbler"}]'
+        mock_response.content = [mock_block]
+
+        with patch("storebot.cli.anthropic.Anthropic") as mock_anthropic:
+            mock_client = MagicMock()
+            mock_client.messages.create.return_value = mock_response
+            mock_anthropic.return_value = mock_client
+
+            count = generate_category_descriptions(engine, "test-key", "haiku")
+
+        assert count == 2
+        with Session(engine) as session:
+            cat = session.query(TraderaCategory).filter_by(tradera_id=10).one()
+            assert cat.description == "Alla typer av möbler"
+
+    def test_skips_already_described(self, engine):
+        from datetime import UTC, datetime
+
+        from sqlalchemy.orm import Session
+
+        from storebot.db import TraderaCategory
+
+        with Session(engine) as session:
+            session.add(
+                TraderaCategory(
+                    tradera_id=10,
+                    name="Möbler",
+                    path="Möbler",
+                    depth=0,
+                    description="Already has description",
+                    synced_at=datetime.now(UTC),
+                )
+            )
+            session.commit()
+
+        count = generate_category_descriptions(engine, "test-key", "haiku")
+        assert count == 0
+
+
+class TestSyncCategories:
+    @patch("storebot.cli.Settings")
+    def test_missing_app_id_exits(self, mock_settings_cls):
+        mock_settings_cls.return_value = _mock_settings(tradera_app_id="")
+
+        with pytest.raises(SystemExit) as exc_info:
+            sync_categories()
+        assert exc_info.value.code == 1
+
+    @patch("storebot.cli.Settings")
+    def test_missing_claude_key_exits(self, mock_settings_cls):
+        settings = _mock_settings()
+        settings.claude_api_key = ""
+        mock_settings_cls.return_value = settings
+
+        with pytest.raises(SystemExit) as exc_info:
+            sync_categories()
+        assert exc_info.value.code == 1
+
+    @patch("storebot.cli.generate_category_descriptions")
+    @patch("storebot.cli.TraderaClient")
+    @patch("storebot.cli.init_db")
+    @patch("storebot.cli.Settings")
+    def test_successful_sync(
+        self, mock_settings_cls, mock_init_db, mock_tradera_cls, mock_gen_desc, capsys
+    ):
+        settings = _mock_settings()
+        settings.claude_api_key = "test-key"
+        settings.claude_model_simple = ""
+        settings.claude_model_compact = "claude-haiku-3-5-20241022"
+        mock_settings_cls.return_value = settings
+
+        mock_engine = MagicMock()
+        mock_init_db.return_value = mock_engine
+
+        mock_tradera = MagicMock()
+        mock_tradera.sync_categories_to_db.return_value = 150
+        mock_tradera_cls.return_value = mock_tradera
+
+        mock_gen_desc.return_value = 120
+
+        sync_categories()
+
+        output = capsys.readouterr().out
+        assert "150 categories" in output
+        assert "120 descriptions" in output
+        mock_tradera.sync_categories_to_db.assert_called_once_with(mock_engine)
+        mock_gen_desc.assert_called_once_with(mock_engine, "test-key", "claude-haiku-3-5-20241022")

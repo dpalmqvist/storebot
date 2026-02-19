@@ -8,7 +8,7 @@ import anthropic
 from sqlalchemy.orm import Session
 
 from storebot.config import get_settings
-from storebot.db import ApiUsage
+from storebot.db import ApiUsage, TraderaCategory
 from storebot.tools.accounting import AccountingService
 from storebot.tools.analytics import AnalyticsService
 from storebot.tools.blocket import BlocketClient
@@ -836,7 +836,6 @@ class Agent:
     _DISPATCH = {
         "search_tradera": ("tradera", "search"),
         "get_tradera_item": ("tradera", "get_item"),
-        "get_categories": ("tradera", "get_categories"),
         "get_shipping_options": ("tradera", "get_shipping_options"),
         "get_shipping_types": ("tradera", "get_shipping_types"),
         "get_attribute_definitions": ("tradera", "get_attribute_definitions"),
@@ -902,6 +901,68 @@ class Agent:
         "analytics": "AnalyticsService",
     }
 
+    @staticmethod
+    def _query_categories(session, query: str | None):
+        """Build and execute a TraderaCategory query, returning up to 50 results."""
+        q = session.query(TraderaCategory)
+        if query:
+            pattern = f"%{query}%"
+            q = q.filter(TraderaCategory.name.ilike(pattern) | TraderaCategory.path.ilike(pattern))
+        else:
+            q = q.filter(TraderaCategory.depth == 0)
+        return q.order_by(TraderaCategory.depth, TraderaCategory.name).limit(50).all()
+
+    @staticmethod
+    def _categories_to_result(cats: list) -> dict:
+        """Convert TraderaCategory rows to a validated tool result."""
+        return validate_tool_result(
+            "get_categories",
+            {
+                "categories": [
+                    {
+                        "tradera_id": c.tradera_id,
+                        "name": c.name,
+                        "path": c.path,
+                        "depth": c.depth,
+                        "description": c.description,
+                    }
+                    for c in cats
+                ],
+            },
+        )
+
+    def _execute_get_categories(self, params: dict) -> dict:
+        """Query tradera_categories from DB, falling back to live API + sync."""
+        query = params.get("query")
+        if self.engine:
+            with Session(self.engine) as session:
+                cats = self._query_categories(session, query)
+                if cats:
+                    return self._categories_to_result(cats)
+
+                # DB empty — try live API + sync, then re-query
+                try:
+                    count = self.tradera.sync_categories_to_db(self.engine)
+                    logger.info("Auto-synced %d categories from Tradera API", count)
+                except Exception:
+                    logger.warning("Auto-sync of categories failed", exc_info=True)
+
+                cats = self._query_categories(session, query)
+                if cats:
+                    return self._categories_to_result(cats)
+
+        # No engine or sync failed — fall back to live API (flat)
+        result = self.tradera.get_categories()
+        if query and "categories" in result:
+            q_lower = query.lower()
+            result["categories"] = [
+                c
+                for c in result["categories"]
+                if q_lower in (c.get("name") or "").lower()
+                or q_lower in (c.get("path") or "").lower()
+            ][:50]
+        return validate_tool_result("get_categories", result)
+
     def execute_tool(self, name: str, tool_input: dict) -> dict:
         """Execute a tool by name. Thread-safe: each service method creates its
         own ``Session(self.engine)`` context, so parallel calls from
@@ -923,6 +984,9 @@ class Agent:
             list(cleaned.keys()),
             extra={"tool_name": name},
         )
+
+        if name == "get_categories":
+            return self._execute_get_categories(cleaned)
 
         entry = self._DISPATCH.get(name)
         if entry is None:

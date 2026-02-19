@@ -371,30 +371,75 @@ class TraderaClient:
             logger.exception("Tradera commit_listing failed")
             return {"error": str(e)}
 
+    @staticmethod
+    def _flatten_categories(cats, parent_id=None, parent_path="", depth=0):
+        """Recursively flatten a nested SOAP category tree into a list of dicts."""
+        result = []
+        for cat in cats or []:
+            cat_id = getattr(cat, "Id", None)
+            name = getattr(cat, "Name", None) or ""
+            path = f"{parent_path} > {name}" if parent_path else name
+            result.append(
+                {
+                    "tradera_id": cat_id,
+                    "parent_tradera_id": parent_id,
+                    "name": name,
+                    "path": path,
+                    "depth": depth,
+                }
+            )
+            children = getattr(cat, "Category", None) or []
+            if children:
+                if not hasattr(children, "__iter__"):
+                    children = [children]
+                result.extend(TraderaClient._flatten_categories(children, cat_id, path, depth + 1))
+        return result
+
     @retry_on_transient()
     def _get_categories_api_call(self, headers):
         return self.public_client.service.GetCategories(**headers)
 
     def get_categories(self) -> dict:
-        """Get all Tradera categories."""
+        """Get full Tradera category hierarchy as a flat list with paths."""
         try:
             response = self._get_categories_api_call(self._auth_headers(self.public_client))
 
             raw_cats = self._soap_list(getattr(response, "Categories", None), "Category")
 
             return {
-                "categories": [
-                    {
-                        "id": getattr(cat, "Id", None),
-                        "name": getattr(cat, "Name", None),
-                    }
-                    for cat in raw_cats
-                ],
+                "categories": self._flatten_categories(raw_cats),
             }
 
         except Exception as e:
             logger.exception("Tradera get_categories failed")
             return {"error": str(e)}
+
+    def sync_categories_to_db(self, engine) -> int:
+        """Fetch full category tree and upsert into tradera_categories. Returns count."""
+        from sqlalchemy.orm import Session
+
+        from storebot.db import TraderaCategory
+
+        result = self.get_categories()
+        if "error" in result:
+            raise RuntimeError(result["error"])
+
+        now = datetime.now(UTC)
+        with Session(engine) as session:
+            for cat in result["categories"]:
+                existing = (
+                    session.query(TraderaCategory).filter_by(tradera_id=cat["tradera_id"]).first()
+                )
+                row = existing or TraderaCategory(tradera_id=cat["tradera_id"])
+                row.parent_tradera_id = cat["parent_tradera_id"]
+                row.name = cat["name"]
+                row.path = cat["path"]
+                row.depth = cat["depth"]
+                row.synced_at = now
+                if not existing:
+                    session.add(row)
+            session.commit()
+        return len(result["categories"])
 
     @retry_on_transient()
     def _get_attribute_definitions_api_call(self, category_id, headers):

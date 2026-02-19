@@ -594,9 +594,11 @@ class TestTraderaGetCategories:
         cat1 = MagicMock()
         cat1.Id = 100
         cat1.Name = "Möbler"
+        cat1.Category = None
         cat2 = MagicMock()
         cat2.Id = 200
         cat2.Name = "Inredning"
+        cat2.Category = None
 
         response = MagicMock()
         cats_obj = MagicMock()
@@ -607,8 +609,14 @@ class TestTraderaGetCategories:
         result = client.get_categories()
 
         assert len(result["categories"]) == 2
-        assert result["categories"][0] == {"id": 100, "name": "Möbler"}
-        assert result["categories"][1] == {"id": 200, "name": "Inredning"}
+        assert result["categories"][0] == {
+            "tradera_id": 100,
+            "parent_tradera_id": None,
+            "name": "Möbler",
+            "path": "Möbler",
+            "depth": 0,
+        }
+        assert result["categories"][1]["tradera_id"] == 200
 
     def test_api_error(self, client):
         client._public_client.service.GetCategories.side_effect = Exception("Timeout")
@@ -1109,3 +1117,136 @@ class TestTraderaRetry:
 
         assert "error" in result
         mock_sleep.assert_not_called()
+
+
+class TestFlattenCategories:
+    """Tests for TraderaClient._flatten_categories."""
+
+    def _make_cat(self, id, name, children=None):
+        cat = MagicMock()
+        cat.Id = id
+        cat.Name = name
+        cat.Category = children
+        return cat
+
+    def test_flat_list_from_nested(self):
+        child = self._make_cat(20, "Soffor")
+        parent = self._make_cat(10, "Möbler", children=[child])
+
+        result = TraderaClient._flatten_categories([parent])
+
+        assert len(result) == 2
+        assert result[0] == {
+            "tradera_id": 10,
+            "parent_tradera_id": None,
+            "name": "Möbler",
+            "path": "Möbler",
+            "depth": 0,
+        }
+        assert result[1] == {
+            "tradera_id": 20,
+            "parent_tradera_id": 10,
+            "name": "Soffor",
+            "path": "Möbler > Soffor",
+            "depth": 1,
+        }
+
+    def test_three_levels_deep(self):
+        grandchild = self._make_cat(30, "Fåtöljer")
+        child = self._make_cat(20, "Vardagsrum", children=[grandchild])
+        parent = self._make_cat(10, "Möbler", children=[child])
+
+        result = TraderaClient._flatten_categories([parent])
+
+        assert len(result) == 3
+        assert result[2]["path"] == "Möbler > Vardagsrum > Fåtöljer"
+        assert result[2]["depth"] == 2
+        assert result[2]["parent_tradera_id"] == 20
+
+    def test_empty_input(self):
+        assert TraderaClient._flatten_categories([]) == []
+        assert TraderaClient._flatten_categories(None) == []
+
+    def test_multiple_top_level(self):
+        cat1 = self._make_cat(1, "Möbler")
+        cat2 = self._make_cat(2, "Kläder")
+
+        result = TraderaClient._flatten_categories([cat1, cat2])
+
+        assert len(result) == 2
+        assert result[0]["name"] == "Möbler"
+        assert result[1]["name"] == "Kläder"
+        assert all(r["parent_tradera_id"] is None for r in result)
+
+
+class TestSyncCategoriesToDb:
+    """Tests for TraderaClient.sync_categories_to_db."""
+
+    def test_sync_inserts_categories(self, client, engine):
+        from sqlalchemy.orm import Session
+
+        from storebot.db import TraderaCategory
+
+        child = MagicMock()
+        child.Id = 20
+        child.Name = "Soffor"
+        child.Category = None
+        parent = MagicMock()
+        parent.Id = 10
+        parent.Name = "Möbler"
+        parent.Category = [child]
+
+        response = MagicMock()
+        cats_container = MagicMock()
+        cats_container.Category = [parent]
+        response.Categories = cats_container
+        client._public_client.service.GetCategories.return_value = response
+
+        count = client.sync_categories_to_db(engine)
+
+        assert count == 2
+        with Session(engine) as session:
+            cats = session.query(TraderaCategory).order_by(TraderaCategory.depth).all()
+            assert len(cats) == 2
+            assert cats[0].tradera_id == 10
+            assert cats[0].name == "Möbler"
+            assert cats[1].tradera_id == 20
+            assert cats[1].path == "Möbler > Soffor"
+
+    def test_sync_updates_existing(self, client, engine):
+        from datetime import UTC, datetime
+
+        from sqlalchemy.orm import Session
+
+        from storebot.db import TraderaCategory
+
+        # Insert an existing category
+        with Session(engine) as session:
+            session.add(
+                TraderaCategory(
+                    tradera_id=10,
+                    name="Old Name",
+                    path="Old Name",
+                    depth=0,
+                    synced_at=datetime.now(UTC),
+                )
+            )
+            session.commit()
+
+        parent = MagicMock()
+        parent.Id = 10
+        parent.Name = "New Name"
+        parent.Category = None
+
+        response = MagicMock()
+        cats_container = MagicMock()
+        cats_container.Category = [parent]
+        response.Categories = cats_container
+        client._public_client.service.GetCategories.return_value = response
+
+        count = client.sync_categories_to_db(engine)
+
+        assert count == 1
+        with Session(engine) as session:
+            cat = session.query(TraderaCategory).filter_by(tradera_id=10).one()
+            assert cat.name == "New Name"
