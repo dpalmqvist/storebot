@@ -8,6 +8,7 @@ from storebot.bot.handlers import (
     _alert_admin,
     _check_access,
     _format_listing_dashboard,
+    _init_owner,
     _send_display_images,
     _split_message,
     _validate_credentials,
@@ -467,25 +468,16 @@ class TestOwnerChatId:
         assert result is False
         assert "owner_chat_id" not in context.bot_data
 
-    def test_startup_auto_init_single_allowed_user(self):
-        """Simulates the main() startup path for single-user deployment."""
-        from storebot.bot.handlers import _parse_allowed_chat_ids
-
-        allowed = _parse_allowed_chat_ids("12345")
+    def test_init_owner_single_allowed_user(self):
+        """Single-user deployment: owner_chat_id set at startup."""
+        settings = Settings(telegram_bot_token="x", claude_api_key="x", allowed_chat_ids="12345")
         bot_data = {}
-        bot_data["allowed_chat_ids"] = allowed
-        if len(allowed) == 1:
-            bot_data["owner_chat_id"] = next(iter(allowed))
-
+        _init_owner(bot_data, settings)
         assert bot_data["owner_chat_id"] == 12345
 
-    def test_startup_no_auto_init_multiple_users(self):
-        from storebot.bot.handlers import _parse_allowed_chat_ids
-
-        allowed = _parse_allowed_chat_ids("111,222")
+    def test_init_owner_skips_multiple_users(self):
+        """Multi-user: owner_chat_id deferred to first interaction."""
+        settings = Settings(telegram_bot_token="x", claude_api_key="x", allowed_chat_ids="111,222")
         bot_data = {}
-        bot_data["allowed_chat_ids"] = allowed
-        if len(allowed) == 1:
-            bot_data["owner_chat_id"] = next(iter(allowed))
-
+        _init_owner(bot_data, settings)
         assert "owner_chat_id" not in bot_data

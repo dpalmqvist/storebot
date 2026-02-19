@@ -26,6 +26,22 @@ def _parse_allowed_chat_ids(raw: str) -> set[int]:
     return {int(x) for x in raw.split(",") if x.strip()}
 
 
+def _init_owner(bot_data: dict, settings: Settings) -> None:
+    """Set allowed_chat_ids and eagerly resolve owner_chat_id at startup.
+
+    Single-user: owner_chat_id is set immediately so scheduled jobs work
+    right after restart without waiting for user interaction.
+    Multi-user: owner_chat_id is deferred to first authorized interaction
+    via _check_access().
+    """
+    allowed = _parse_allowed_chat_ids(settings.allowed_chat_ids)
+    bot_data["allowed_chat_ids"] = allowed
+    if len(allowed) == 1:
+        owner_id = next(iter(allowed))
+        bot_data["owner_chat_id"] = owner_id
+        logger.info("Auto-set owner_chat_id=%d from allowed_chat_ids", owner_id)
+
+
 def _is_rate_limited(chat_id: int, settings: Settings) -> bool:
     """Return True if chat_id has exceeded the message rate limit."""
     now = time.monotonic()
@@ -540,12 +556,7 @@ def main() -> None:
     app = Application.builder().token(settings.telegram_bot_token).build()
 
     app.bot_data["settings"] = settings
-    allowed = _parse_allowed_chat_ids(settings.allowed_chat_ids)
-    app.bot_data["allowed_chat_ids"] = allowed
-    if len(allowed) == 1:
-        owner_id = next(iter(allowed))
-        app.bot_data["owner_chat_id"] = owner_id
-        logger.info("Auto-set owner_chat_id=%d from allowed_chat_ids", owner_id)
+    _init_owner(app.bot_data, settings)
     app.bot_data["agent"] = Agent(settings, engine=engine)
     app.bot_data["conversation"] = ConversationService(
         engine=engine,
