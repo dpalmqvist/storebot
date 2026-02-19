@@ -26,6 +26,25 @@ def _parse_allowed_chat_ids(raw: str) -> set[int]:
     return {int(x) for x in raw.split(",") if x.strip()}
 
 
+def _init_owner(bot_data: dict) -> None:
+    """Eagerly resolve owner_chat_id at startup from bot_data["allowed_chat_ids"].
+
+    Single-user: owner_chat_id is set immediately so scheduled jobs work
+    right after restart without waiting for user interaction.
+    Multi-user / dev mode: owner_chat_id is deferred to first authorized
+    interaction via _check_access().
+    """
+    allowed: set[int] = bot_data["allowed_chat_ids"]
+    if len(allowed) == 1:
+        owner_id = next(iter(allowed))
+        bot_data["owner_chat_id"] = owner_id
+        logger.info("Auto-set owner_chat_id=%d from allowed_chat_ids", owner_id)
+    else:
+        logger.info(
+            "owner_chat_id not yet known — scheduled jobs will send after first authorized interaction"
+        )
+
+
 def _is_rate_limited(chat_id: int, settings: Settings) -> bool:
     """Return True if chat_id has exceeded the message rate limit."""
     now = time.monotonic()
@@ -232,13 +251,13 @@ async def _check_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> b
         logger.warning("Rate limit exceeded", extra={"chat_id": str(chat_id)})
         await update.message.reply_text("För många meddelanden. Vänta en stund.")
         return False
+    context.bot_data.setdefault("owner_chat_id", chat_id)
     return True
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _check_access(update, context):
         return
-    context.bot_data["owner_chat_id"] = update.effective_chat.id
     await update.message.reply_text(
         "Hej! Jag är din butiksassistent. Skicka mig foton på produkter eller skriv "
         "vad du behöver hjälp med.\n\n"
@@ -541,6 +560,7 @@ def main() -> None:
 
     app.bot_data["settings"] = settings
     app.bot_data["allowed_chat_ids"] = _parse_allowed_chat_ids(settings.allowed_chat_ids)
+    _init_owner(app.bot_data)
     app.bot_data["agent"] = Agent(settings, engine=engine)
     app.bot_data["conversation"] = ConversationService(
         engine=engine,
