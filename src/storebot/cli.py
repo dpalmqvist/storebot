@@ -201,7 +201,11 @@ def generate_category_descriptions(engine, api_key: str, model: str) -> int:
                 print(f"  Warning: Failed to parse JSON for batch {i // batch_size + 1}, skipping")
                 continue
 
-            by_id = {d["tradera_id"]: d["description"] for d in descriptions}
+            by_id = {
+                d["tradera_id"]: d["description"]
+                for d in descriptions
+                if isinstance(d, dict) and "tradera_id" in d and "description" in d
+            }
             for cat in batch:
                 desc = by_id.get(cat.tradera_id)
                 if desc:

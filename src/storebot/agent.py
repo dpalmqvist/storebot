@@ -940,13 +940,16 @@ class Agent:
                 if cats:
                     return self._categories_to_result(cats)
 
-                # DB empty — try live API + sync, then re-query
-                try:
-                    count = self.tradera.sync_categories_to_db(self.engine)
-                    logger.info("Auto-synced %d categories from Tradera API", count)
-                except Exception:
-                    logger.warning("Auto-sync of categories failed", exc_info=True)
+            # DB empty — try live API + sync, then re-query in a fresh session
+            # (the original session's read transaction won't see rows committed
+            # by sync_categories_to_db's separate session in SQLite WAL mode)
+            try:
+                count = self.tradera.sync_categories_to_db(self.engine)
+                logger.info("Auto-synced %d categories from Tradera API", count)
+            except Exception:
+                logger.warning("Auto-sync of categories failed", exc_info=True)
 
+            with Session(self.engine) as session:
                 cats = self._query_categories(session, query)
                 if cats:
                     return self._categories_to_result(cats)
