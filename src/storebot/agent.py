@@ -912,8 +912,12 @@ class Agent:
         """
         q = session.query(TraderaCategory)
         if query:
-            pattern = f"%{query}%"
-            q = q.filter(TraderaCategory.name.like(pattern) | TraderaCategory.path.like(pattern))
+            safe = query.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+            pattern = f"%{safe}%"
+            q = q.filter(
+                TraderaCategory.name.like(pattern, escape="!")
+                | TraderaCategory.path.like(pattern, escape="!")
+            )
         else:
             q = q.filter(TraderaCategory.depth == 0)
         return q.order_by(TraderaCategory.depth, TraderaCategory.name).limit(50).all()
@@ -945,21 +949,26 @@ class Agent:
                 cats = self._query_categories(session, query)
                 if cats:
                     return self._categories_to_result(cats)
+                # Only auto-sync when the table is truly empty, not when a
+                # specific query just has no matches (avoids wasting API calls
+                # on misspelled searches — Tradera rate limit: 100/day).
+                has_any = session.query(TraderaCategory.id).first() is not None
 
-            # DB empty — try live API + sync, then re-query in a fresh session
-            # (the original session's read transaction won't see rows committed
-            # by sync_categories_to_db's separate session in SQLite WAL mode)
-            logger.info("Category DB empty, syncing from Tradera API...")
-            try:
-                count = self.tradera.sync_categories_to_db(self.engine)
-                logger.info("Auto-synced %d categories from Tradera API", count)
-            except Exception:
-                logger.warning("Auto-sync of categories failed", exc_info=True)
+            if not has_any:
+                # DB empty — sync from API, then re-query in a fresh session
+                # (the original session's read transaction won't see rows
+                # committed by sync's separate session in SQLite WAL mode)
+                logger.info("Category DB empty, syncing from Tradera API...")
+                try:
+                    count = self.tradera.sync_categories_to_db(self.engine)
+                    logger.info("Auto-synced %d categories from Tradera API", count)
+                except Exception:
+                    logger.warning("Auto-sync of categories failed", exc_info=True)
 
-            with Session(self.engine) as session:
-                cats = self._query_categories(session, query)
-                if cats:
-                    return self._categories_to_result(cats)
+                with Session(self.engine) as session:
+                    cats = self._query_categories(session, query)
+                    if cats:
+                        return self._categories_to_result(cats)
 
         # No engine or sync failed — fall back to live API (flat)
         result = self.tradera.get_categories()
