@@ -903,11 +903,17 @@ class Agent:
 
     @staticmethod
     def _query_categories(session, query: str | None):
-        """Build and execute a TraderaCategory query, returning up to 50 results."""
+        """Build and execute a TraderaCategory query, returning up to 50 results.
+
+        Uses case-sensitive LIKE (not ilike) because SQLite's LOWER() only
+        handles ASCII — Swedish Å/Ä/Ö are left unchanged.  Tradera category
+        names have consistent casing from the API, so the agent should pass
+        properly-cased search terms.
+        """
         q = session.query(TraderaCategory)
         if query:
             pattern = f"%{query}%"
-            q = q.filter(TraderaCategory.name.ilike(pattern) | TraderaCategory.path.ilike(pattern))
+            q = q.filter(TraderaCategory.name.like(pattern) | TraderaCategory.path.like(pattern))
         else:
             q = q.filter(TraderaCategory.depth == 0)
         return q.order_by(TraderaCategory.depth, TraderaCategory.name).limit(50).all()
@@ -943,6 +949,7 @@ class Agent:
             # DB empty — try live API + sync, then re-query in a fresh session
             # (the original session's read transaction won't see rows committed
             # by sync_categories_to_db's separate session in SQLite WAL mode)
+            logger.info("Category DB empty, syncing from Tradera API...")
             try:
                 count = self.tradera.sync_categories_to_db(self.engine)
                 logger.info("Auto-synced %d categories from Tradera API", count)
@@ -956,14 +963,17 @@ class Agent:
 
         # No engine or sync failed — fall back to live API (flat)
         result = self.tradera.get_categories()
-        if query and "categories" in result:
-            q_lower = query.lower()
-            result["categories"] = [
-                c
-                for c in result["categories"]
-                if q_lower in (c.get("name") or "").lower()
-                or q_lower in (c.get("path") or "").lower()
-            ][:50]
+        if "categories" in result:
+            if query:
+                result["categories"] = [
+                    c
+                    for c in result["categories"]
+                    if query in (c.get("name") or "") or query in (c.get("path") or "")
+                ][:50]
+            else:
+                result["categories"] = [c for c in result["categories"] if c.get("depth") == 0][
+                    :50
+                ]
         return validate_tool_result("get_categories", result)
 
     def execute_tool(self, name: str, tool_input: dict) -> dict:

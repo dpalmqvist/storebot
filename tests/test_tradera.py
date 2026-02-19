@@ -1178,6 +1178,24 @@ class TestFlattenCategories:
         assert result[1]["name"] == "Kläder"
         assert all(r["parent_tradera_id"] is None for r in result)
 
+    def test_single_child_not_iterable(self):
+        """Zeep may return a single object instead of a list for one child."""
+        child = MagicMock()
+        child.Id = 20
+        child.Name = "Soffor"
+        child.Category = None
+        # Simulate zeep returning a non-iterable single child
+        parent = MagicMock()
+        parent.Id = 10
+        parent.Name = "Möbler"
+        parent.Category = child  # single object, not a list
+
+        result = TraderaClient._flatten_categories([parent])
+
+        assert len(result) == 2
+        assert result[1]["name"] == "Soffor"
+        assert result[1]["parent_tradera_id"] == 10
+
 
 class TestSyncCategoriesToDb:
     """Tests for TraderaClient.sync_categories_to_db."""
@@ -1250,3 +1268,41 @@ class TestSyncCategoriesToDb:
         with Session(engine) as session:
             cat = session.query(TraderaCategory).filter_by(tradera_id=10).one()
             assert cat.name == "New Name"
+
+    def test_sync_preserves_descriptions(self, client, engine):
+        """Re-sync must not overwrite LLM-generated descriptions."""
+        from datetime import UTC, datetime
+
+        from sqlalchemy.orm import Session
+
+        from storebot.db import TraderaCategory
+
+        with Session(engine) as session:
+            session.add(
+                TraderaCategory(
+                    tradera_id=10,
+                    name="Möbler",
+                    path="Möbler",
+                    depth=0,
+                    description="Alla typer av möbler",
+                    synced_at=datetime.now(UTC),
+                )
+            )
+            session.commit()
+
+        parent = MagicMock()
+        parent.Id = 10
+        parent.Name = "Möbler"
+        parent.Category = None
+
+        response = MagicMock()
+        cats_container = MagicMock()
+        cats_container.Category = [parent]
+        response.Categories = cats_container
+        client._public_client.service.GetCategories.return_value = response
+
+        client.sync_categories_to_db(engine)
+
+        with Session(engine) as session:
+            cat = session.query(TraderaCategory).filter_by(tradera_id=10).one()
+            assert cat.description == "Alla typer av möbler"

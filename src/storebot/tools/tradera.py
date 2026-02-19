@@ -392,7 +392,7 @@ class TraderaClient:
             )
             children = getattr(cat, "Category", None) or []
             if children:
-                if not hasattr(children, "__iter__"):
+                if not isinstance(children, list):
                     children = [children]
                 result.extend(TraderaClient._flatten_categories(children, cat_id, path, depth + 1))
         return result
@@ -447,6 +447,8 @@ class TraderaClient:
                 row.path = cat["path"]
                 row.depth = cat["depth"]
                 row.synced_at = now
+                # NB: description is intentionally NOT touched here — it's
+                # populated separately by generate_category_descriptions().
                 if cat["tradera_id"] not in existing_by_id:
                     session.add(row)
             session.commit()
