@@ -26,20 +26,23 @@ def _parse_allowed_chat_ids(raw: str) -> set[int]:
     return {int(x) for x in raw.split(",") if x.strip()}
 
 
-def _init_owner(bot_data: dict, settings: Settings) -> None:
-    """Set allowed_chat_ids and eagerly resolve owner_chat_id at startup.
+def _init_owner(bot_data: dict) -> None:
+    """Eagerly resolve owner_chat_id at startup from bot_data["allowed_chat_ids"].
 
     Single-user: owner_chat_id is set immediately so scheduled jobs work
     right after restart without waiting for user interaction.
-    Multi-user: owner_chat_id is deferred to first authorized interaction
-    via _check_access().
+    Multi-user / dev mode: owner_chat_id is deferred to first authorized
+    interaction via _check_access().
     """
-    allowed = _parse_allowed_chat_ids(settings.allowed_chat_ids)
-    bot_data["allowed_chat_ids"] = allowed
+    allowed: set[int] = bot_data["allowed_chat_ids"]
     if len(allowed) == 1:
         owner_id = next(iter(allowed))
         bot_data["owner_chat_id"] = owner_id
         logger.info("Auto-set owner_chat_id=%d from allowed_chat_ids", owner_id)
+    else:
+        logger.info(
+            "owner_chat_id not yet known — scheduled jobs will send after first authorized interaction"
+        )
 
 
 def _is_rate_limited(chat_id: int, settings: Settings) -> bool:
@@ -556,7 +559,8 @@ def main() -> None:
     app = Application.builder().token(settings.telegram_bot_token).build()
 
     app.bot_data["settings"] = settings
-    _init_owner(app.bot_data, settings)
+    app.bot_data["allowed_chat_ids"] = _parse_allowed_chat_ids(settings.allowed_chat_ids)
+    _init_owner(app.bot_data)
     app.bot_data["agent"] = Agent(settings, engine=engine)
     app.bot_data["conversation"] = ConversationService(
         engine=engine,

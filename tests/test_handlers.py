@@ -456,6 +456,7 @@ class TestOwnerChatId:
 
     @pytest.mark.asyncio
     async def test_check_access_does_not_set_owner_on_denied(self):
+        """Unauthorized user must not become owner."""
         update = MagicMock()
         update.effective_chat.id = 99999
         update.message.reply_text = AsyncMock()
@@ -469,15 +470,22 @@ class TestOwnerChatId:
         assert "owner_chat_id" not in context.bot_data
 
     def test_init_owner_single_allowed_user(self):
-        """Single-user deployment: owner_chat_id set at startup."""
-        settings = Settings(telegram_bot_token="x", claude_api_key="x", allowed_chat_ids="12345")
-        bot_data = {}
-        _init_owner(bot_data, settings)
+        """Single-user deployment: owner_chat_id set eagerly at startup."""
+        bot_data = {"allowed_chat_ids": {12345}}
+        _init_owner(bot_data)
         assert bot_data["owner_chat_id"] == 12345
+        assert bot_data["allowed_chat_ids"] == {12345}
 
     def test_init_owner_skips_multiple_users(self):
-        """Multi-user: owner_chat_id deferred to first interaction."""
-        settings = Settings(telegram_bot_token="x", claude_api_key="x", allowed_chat_ids="111,222")
-        bot_data = {}
-        _init_owner(bot_data, settings)
+        """Multi-user: owner_chat_id deferred to first authorized interaction."""
+        bot_data = {"allowed_chat_ids": {111, 222}}
+        _init_owner(bot_data)
         assert "owner_chat_id" not in bot_data
+        assert bot_data["allowed_chat_ids"] == {111, 222}
+
+    def test_init_owner_empty_allowed_ids(self):
+        """Dev mode (no restriction): owner deferred to first interaction."""
+        bot_data = {"allowed_chat_ids": set()}
+        _init_owner(bot_data)
+        assert "owner_chat_id" not in bot_data
+        assert bot_data["allowed_chat_ids"] == set()
