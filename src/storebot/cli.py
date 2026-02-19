@@ -232,6 +232,9 @@ def sync_categories() -> None:
     if not settings.tradera_app_id:
         print("Error: TRADERA_APP_ID is not set in .env")
         sys.exit(1)
+    if not settings.tradera_app_key:
+        print("Error: TRADERA_APP_KEY is not set in .env")
+        sys.exit(1)
     if not settings.claude_api_key:
         print("Error: CLAUDE_API_KEY is not set in .env")
         sys.exit(1)

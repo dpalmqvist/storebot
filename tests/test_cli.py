@@ -371,6 +371,14 @@ class TestSyncCategories:
         assert exc_info.value.code == 1
 
     @patch("storebot.cli.Settings")
+    def test_missing_app_key_exits(self, mock_settings_cls):
+        mock_settings_cls.return_value = _mock_settings(tradera_app_key="")
+
+        with pytest.raises(SystemExit) as exc_info:
+            sync_categories()
+        assert exc_info.value.code == 1
+
+    @patch("storebot.cli.Settings")
     def test_missing_claude_key_exits(self, mock_settings_cls):
         settings = _mock_settings()
         settings.claude_api_key = ""

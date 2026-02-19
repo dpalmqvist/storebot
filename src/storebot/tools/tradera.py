@@ -377,6 +377,8 @@ class TraderaClient:
         result = []
         for cat in cats or []:
             cat_id = getattr(cat, "Id", None)
+            if cat_id is None:
+                continue
             name = getattr(cat, "Name", None) or ""
             path = f"{parent_path} > {name}" if parent_path else name
             result.append(
@@ -427,13 +429,15 @@ class TraderaClient:
         categories = result["categories"]
         now = datetime.now(UTC)
         with Session(engine) as session:
+            # Chunk the IN() query to stay within SQLite's 999-parameter limit
             incoming_ids = [c["tradera_id"] for c in categories]
-            existing_by_id = {
-                r.tradera_id: r
+            existing_by_id: dict[int, TraderaCategory] = {}
+            for chunk_start in range(0, len(incoming_ids), 900):
+                chunk = incoming_ids[chunk_start : chunk_start + 900]
                 for r in session.query(TraderaCategory).filter(
-                    TraderaCategory.tradera_id.in_(incoming_ids)
-                )
-            }
+                    TraderaCategory.tradera_id.in_(chunk)
+                ):
+                    existing_by_id[r.tradera_id] = r
             for cat in categories:
                 row = existing_by_id.get(cat["tradera_id"]) or TraderaCategory(
                     tradera_id=cat["tradera_id"]
