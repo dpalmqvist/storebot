@@ -418,9 +418,10 @@ class TestDailyListingReportJob:
         context.bot.send_message.assert_not_awaited()
 
 
-class TestCheckAccessSetsOwnerChatId:
+class TestOwnerChatId:
     @pytest.mark.asyncio
-    async def test_sets_owner_chat_id_on_success(self):
+    async def test_check_access_sets_owner_when_unset(self):
+        """Open access (empty allowed_chat_ids) — first user becomes owner."""
         update = MagicMock()
         update.effective_chat.id = 99999
         update.message.reply_text = AsyncMock()
@@ -434,7 +435,26 @@ class TestCheckAccessSetsOwnerChatId:
         assert context.bot_data["owner_chat_id"] == 99999
 
     @pytest.mark.asyncio
-    async def test_does_not_set_owner_on_denied(self):
+    async def test_check_access_does_not_overwrite_existing_owner(self):
+        """Second authorized user must not hijack owner_chat_id."""
+        update = MagicMock()
+        update.effective_chat.id = 22222
+        update.message.reply_text = AsyncMock()
+
+        settings = Settings(telegram_bot_token="x", claude_api_key="x")
+        context = MagicMock()
+        context.bot_data = {
+            "settings": settings,
+            "allowed_chat_ids": set(),
+            "owner_chat_id": 11111,
+        }
+
+        result = await _check_access(update, context)
+        assert result is True
+        assert context.bot_data["owner_chat_id"] == 11111
+
+    @pytest.mark.asyncio
+    async def test_check_access_does_not_set_owner_on_denied(self):
         update = MagicMock()
         update.effective_chat.id = 99999
         update.message.reply_text = AsyncMock()
@@ -446,3 +466,26 @@ class TestCheckAccessSetsOwnerChatId:
         result = await _check_access(update, context)
         assert result is False
         assert "owner_chat_id" not in context.bot_data
+
+    def test_startup_auto_init_single_allowed_user(self):
+        """Simulates the main() startup path for single-user deployment."""
+        from storebot.bot.handlers import _parse_allowed_chat_ids
+
+        allowed = _parse_allowed_chat_ids("12345")
+        bot_data = {}
+        bot_data["allowed_chat_ids"] = allowed
+        if len(allowed) == 1:
+            bot_data["owner_chat_id"] = next(iter(allowed))
+
+        assert bot_data["owner_chat_id"] == 12345
+
+    def test_startup_no_auto_init_multiple_users(self):
+        from storebot.bot.handlers import _parse_allowed_chat_ids
+
+        allowed = _parse_allowed_chat_ids("111,222")
+        bot_data = {}
+        bot_data["allowed_chat_ids"] = allowed
+        if len(allowed) == 1:
+            bot_data["owner_chat_id"] = next(iter(allowed))
+
+        assert "owner_chat_id" not in bot_data

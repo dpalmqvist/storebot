@@ -232,7 +232,7 @@ async def _check_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> b
         logger.warning("Rate limit exceeded", extra={"chat_id": str(chat_id)})
         await update.message.reply_text("För många meddelanden. Vänta en stund.")
         return False
-    context.bot_data["owner_chat_id"] = chat_id
+    context.bot_data.setdefault("owner_chat_id", chat_id)
     return True
 
 
