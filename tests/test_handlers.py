@@ -6,6 +6,7 @@ import pytest
 from storebot.bot.handlers import (
     TELEGRAM_MAX_MESSAGE_LENGTH,
     _alert_admin,
+    _check_access,
     _format_listing_dashboard,
     _send_display_images,
     _split_message,
@@ -415,3 +416,33 @@ class TestDailyListingReportJob:
         await daily_listing_report_job(context)
 
         context.bot.send_message.assert_not_awaited()
+
+
+class TestCheckAccessSetsOwnerChatId:
+    @pytest.mark.asyncio
+    async def test_sets_owner_chat_id_on_success(self):
+        update = MagicMock()
+        update.effective_chat.id = 99999
+        update.message.reply_text = AsyncMock()
+
+        settings = Settings(telegram_bot_token="x", claude_api_key="x")
+        context = MagicMock()
+        context.bot_data = {"settings": settings, "allowed_chat_ids": set()}
+
+        result = await _check_access(update, context)
+        assert result is True
+        assert context.bot_data["owner_chat_id"] == 99999
+
+    @pytest.mark.asyncio
+    async def test_does_not_set_owner_on_denied(self):
+        update = MagicMock()
+        update.effective_chat.id = 99999
+        update.message.reply_text = AsyncMock()
+
+        settings = Settings(telegram_bot_token="x", claude_api_key="x")
+        context = MagicMock()
+        context.bot_data = {"settings": settings, "allowed_chat_ids": {11111}}
+
+        result = await _check_access(update, context)
+        assert result is False
+        assert "owner_chat_id" not in context.bot_data

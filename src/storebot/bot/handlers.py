@@ -232,13 +232,13 @@ async def _check_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> b
         logger.warning("Rate limit exceeded", extra={"chat_id": str(chat_id)})
         await update.message.reply_text("För många meddelanden. Vänta en stund.")
         return False
+    context.bot_data["owner_chat_id"] = chat_id
     return True
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _check_access(update, context):
         return
-    context.bot_data["owner_chat_id"] = update.effective_chat.id
     await update.message.reply_text(
         "Hej! Jag är din butiksassistent. Skicka mig foton på produkter eller skriv "
         "vad du behöver hjälp med.\n\n"
@@ -540,7 +540,12 @@ def main() -> None:
     app = Application.builder().token(settings.telegram_bot_token).build()
 
     app.bot_data["settings"] = settings
-    app.bot_data["allowed_chat_ids"] = _parse_allowed_chat_ids(settings.allowed_chat_ids)
+    allowed = _parse_allowed_chat_ids(settings.allowed_chat_ids)
+    app.bot_data["allowed_chat_ids"] = allowed
+    if len(allowed) == 1:
+        owner_id = next(iter(allowed))
+        app.bot_data["owner_chat_id"] = owner_id
+        logger.info("Auto-set owner_chat_id=%d from allowed_chat_ids", owner_id)
     app.bot_data["agent"] = Agent(settings, engine=engine)
     app.bot_data["conversation"] = ConversationService(
         engine=engine,
