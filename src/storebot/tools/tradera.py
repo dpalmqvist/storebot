@@ -424,22 +424,29 @@ class TraderaClient:
         if "error" in result:
             raise RuntimeError(result["error"])
 
+        categories = result["categories"]
         now = datetime.now(UTC)
         with Session(engine) as session:
-            for cat in result["categories"]:
-                existing = (
-                    session.query(TraderaCategory).filter_by(tradera_id=cat["tradera_id"]).first()
+            incoming_ids = [c["tradera_id"] for c in categories]
+            existing_by_id = {
+                r.tradera_id: r
+                for r in session.query(TraderaCategory).filter(
+                    TraderaCategory.tradera_id.in_(incoming_ids)
                 )
-                row = existing or TraderaCategory(tradera_id=cat["tradera_id"])
+            }
+            for cat in categories:
+                row = existing_by_id.get(cat["tradera_id"]) or TraderaCategory(
+                    tradera_id=cat["tradera_id"]
+                )
                 row.parent_tradera_id = cat["parent_tradera_id"]
                 row.name = cat["name"]
                 row.path = cat["path"]
                 row.depth = cat["depth"]
                 row.synced_at = now
-                if not existing:
+                if cat["tradera_id"] not in existing_by_id:
                     session.add(row)
             session.commit()
-        return len(result["categories"])
+        return len(categories)
 
     @retry_on_transient()
     def _get_attribute_definitions_api_call(self, category_id, headers):

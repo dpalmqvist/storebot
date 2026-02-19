@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from storebot.cli import (
+    _extract_json_array,
     _parse_redirect_url,
     _update_env_file,
     authorize_tradera,
@@ -271,6 +272,22 @@ class TestUpdateEnvFile:
 
         assert env_file.exists()
         assert env_file.read_text() == "KEY=val\n"
+
+
+class TestExtractJsonArray:
+    def test_plain_json(self):
+        assert _extract_json_array('[{"id": 1}]') == '[{"id": 1}]'
+
+    def test_markdown_code_block(self):
+        text = '```json\n[{"id": 1}]\n```'
+        assert _extract_json_array(text) == '[{"id": 1}]'
+
+    def test_prose_prefix(self):
+        text = 'Here is the JSON:\n[{"id": 1}]'
+        assert _extract_json_array(text) == '[{"id": 1}]'
+
+    def test_no_array(self):
+        assert _extract_json_array("no json here") == "no json here"
 
 
 class TestGenerateCategoryDescriptions:

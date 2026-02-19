@@ -142,6 +142,16 @@ def authorize_tradera() -> None:
             print(f"  TRADERA_USER_ID={user_id}")
 
 
+def _extract_json_array(text: str) -> str:
+    """Extract a JSON array from LLM output that may contain prose or markdown."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    # If the model prefixed prose before the array, extract just the array
+    match = re.search(r"\[.*\]", text, re.DOTALL)
+    return match.group(0) if match else text
+
+
 def generate_category_descriptions(engine, api_key: str, model: str) -> int:
     """Generate Swedish descriptions for categories missing them.
 
@@ -153,7 +163,7 @@ def generate_category_descriptions(engine, api_key: str, model: str) -> int:
 
     from storebot.db import TraderaCategory
 
-    with Session(engine) as session:
+    with Session(engine, expire_on_commit=False) as session:
         missing = (
             session.query(TraderaCategory)
             .filter(TraderaCategory.description.is_(None))
@@ -190,10 +200,7 @@ def generate_category_descriptions(engine, api_key: str, model: str) -> int:
                     text = getattr(block, "text", "")
                     break
 
-            # Extract JSON from the response (may be wrapped in markdown code blocks)
-            text = text.strip()
-            if text.startswith("```"):
-                text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            text = _extract_json_array(text)
 
             try:
                 descriptions = json.loads(text)
@@ -247,7 +254,11 @@ def sync_categories() -> None:
     print(f"  Synced {count} categories to database.")
 
     print("Generating descriptions for categories without one...")
-    desc_model = settings.claude_model_simple or settings.claude_model_compact
+    desc_model = (
+        settings.claude_model_simple
+        or settings.claude_model_compact
+        or "claude-haiku-4-5-20251001"
+    )
     desc_count = generate_category_descriptions(engine, settings.claude_api_key, desc_model)
     print(f"  Generated {desc_count} descriptions.")
 
