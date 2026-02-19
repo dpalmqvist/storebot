@@ -130,10 +130,18 @@ TOOLS = [
     },
     {
         "name": "get_categories",
-        "description": "Get all Tradera categories. Use to find the right category ID for a listing.",
+        "description": "Sök i Traderas kategorihierarki (DB-backad). Returnerar kategorier med fullständig sökväg (t.ex. Möbler > Vardagsrum > Soffor) och beskrivningar. Utan query returneras toppkategorierna. Synkas från API med storebot-sync-categories.",
         "category": "listing",
-        "strict": True,
-        "input_schema": _EMPTY_SCHEMA,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Sökord för att filtrera kategorier på namn eller sökväg (t.ex. 'möbler', 'antik')",
+                },
+            },
+            "additionalProperties": False,
+        },
     },
     {
         "name": "get_shipping_options",

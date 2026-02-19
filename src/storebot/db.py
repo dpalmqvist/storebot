@@ -225,6 +225,19 @@ class VoucherRow(Base):
     voucher: Mapped["Voucher"] = relationship(back_populates="rows")
 
 
+class TraderaCategory(Base):
+    __tablename__ = "tradera_categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tradera_id: Mapped[int] = mapped_column(Integer, unique=True, index=True)
+    parent_tradera_id: Mapped[int | None] = mapped_column(Integer)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    path: Mapped[str] = mapped_column(String, nullable=False)
+    depth: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    synced_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
 class ApiUsage(Base):
     __tablename__ = "api_usage"
 

@@ -1,6 +1,13 @@
 import sqlalchemy as sa
 
-from storebot.db import Order, PlatformListing, Product, ProductImage, create_engine
+from storebot.db import (
+    Order,
+    PlatformListing,
+    Product,
+    ProductImage,
+    TraderaCategory,
+    create_engine,
+)
 
 
 def test_tables_created(engine):
@@ -20,6 +27,7 @@ def test_tables_created(engine):
         "conversation_messages",
         "saved_searches",
         "seen_items",
+        "tradera_categories",
     ]
     for table in expected:
         assert table in tables, f"Missing table: {table}"
@@ -146,3 +154,27 @@ def test_foreign_keys_enabled(tmp_path):
     with engine.connect() as conn:
         result = conn.exec_driver_sql("PRAGMA foreign_keys").scalar()
         assert result == 1
+
+
+def test_tradera_category_model(session):
+    """TraderaCategory stores category hierarchy fields."""
+    from datetime import UTC, datetime
+
+    cat = TraderaCategory(
+        tradera_id=344,
+        parent_tradera_id=100,
+        name="Soffor & fåtöljer",
+        path="Möbler > Vardagsrum > Soffor & fåtöljer",
+        depth=2,
+        description="Soffor, fåtöljer och sittmöbler för vardagsrum",
+        synced_at=datetime.now(UTC),
+    )
+    session.add(cat)
+    session.commit()
+
+    result = session.query(TraderaCategory).filter_by(tradera_id=344).one()
+    assert result.name == "Soffor & fåtöljer"
+    assert result.path == "Möbler > Vardagsrum > Soffor & fåtöljer"
+    assert result.depth == 2
+    assert result.parent_tradera_id == 100
+    assert result.description is not None
