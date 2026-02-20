@@ -92,7 +92,9 @@ class TestPriceCheck:
 
         service.price_check("stol", category="344")
 
-        tradera.search.assert_called_once_with(query="stol", category=344, search_in_description=True)
+        tradera.search.assert_called_once_with(
+            query="stol", category=344, search_in_description=True
+        )
 
     def test_category_passed_to_blocket_as_string(self, service, tradera, blocket):
         tradera.search.return_value = {"total": 0, "items": []}
