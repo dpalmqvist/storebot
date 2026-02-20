@@ -160,12 +160,17 @@ class TraderaClient:
                 "SearchWords": query,
                 "SearchInDescription": search_in_description,
                 "CategoryId": category or 0,
+                "CountyId": 0,  # 0 = nationwide (all counties)
+                "PriceMinimum": None,
+                "PriceMaximum": int(max_price) if max_price is not None else None,
+                "BidsMinimum": None,
+                "BidsMaximum": None,
+                "OnlyAuctionsWithBuyNow": False,
+                "OnlyItemsWithThumbnail": False,
                 "PageNumber": page,
                 "ItemsPerPage": items_per_page,
                 "OrderBy": "Relevance",
             }
-            if max_price is not None:
-                params["PriceMaximum"] = int(max_price)
 
             response = self._search_api_call(params, self._auth_headers(self.search_client))
 

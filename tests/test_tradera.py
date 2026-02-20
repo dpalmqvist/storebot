@@ -101,7 +101,13 @@ class TestTraderaSearch:
         assert req["SearchWords"] == "stol"
         assert req["SearchInDescription"] is False
         assert req["CategoryId"] == 344
+        assert req["CountyId"] == 0
+        assert req["PriceMinimum"] is None
         assert req["PriceMaximum"] == 500
+        assert req["BidsMinimum"] is None
+        assert req["BidsMaximum"] is None
+        assert req["OnlyAuctionsWithBuyNow"] is False
+        assert req["OnlyItemsWithThumbnail"] is False
         assert req["PageNumber"] == 2
         assert req["ItemsPerPage"] == 25
 
@@ -114,8 +120,14 @@ class TestTraderaSearch:
         call_kwargs = client.search_client.service.SearchAdvanced.call_args
         req = call_kwargs.kwargs["request"]
         assert req["CategoryId"] == 0
+        assert req["CountyId"] == 0
         assert req["SearchInDescription"] is False
-        assert "PriceMaximum" not in req
+        assert req["PriceMinimum"] is None
+        assert req["PriceMaximum"] is None
+        assert req["BidsMinimum"] is None
+        assert req["BidsMaximum"] is None
+        assert req["OnlyAuctionsWithBuyNow"] is False
+        assert req["OnlyItemsWithThumbnail"] is False
 
     def test_search_in_description(self, client):
         response = _make_response()
