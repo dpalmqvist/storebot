@@ -1113,9 +1113,9 @@ class TestTraderaRetry:
 class TestFlattenCategories:
     """Tests for TraderaClient._flatten_categories."""
 
-    def _make_cat(self, id, name, children=None):
+    def _make_cat(self, cat_id, name, children=None):
         cat = MagicMock()
-        cat.Id = id
+        cat.Id = cat_id
         cat.Name = name
         cat.Category = children if children is not None else []
         return cat
@@ -1193,6 +1193,16 @@ class TestFlattenCategories:
         assert result[2]["name"] == "Bord"
         assert result[1]["parent_tradera_id"] == 10
         assert result[2]["parent_tradera_id"] == 10
+
+    def test_category_none_treated_as_no_children(self):
+        """Category=None (zeep leaf node) is treated as no children."""
+        parent = self._make_cat(10, "Möbler", children=None)
+        parent.Category = None  # override _make_cat's [] default
+
+        result = TraderaClient._flatten_categories([parent])
+
+        assert len(result) == 1
+        assert result[0]["tradera_id"] == 10
 
 
 class TestSyncCategoriesToDb:
