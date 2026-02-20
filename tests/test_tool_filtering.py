@@ -26,7 +26,7 @@ def engine():
 def _make_agent(engine):
     settings = MagicMock()
     settings.claude_api_key = "test"
-    settings.claude_model = "claude-sonnet-4-5-20250929"
+    settings.claude_model = "claude-sonnet-4-6"
     settings.claude_model_simple = ""
     settings.claude_thinking_budget = 0
     settings.tradera_app_id = "1"
@@ -195,7 +195,7 @@ class TestRequestTools:
         resp1.stop_reason = "tool_use"
         resp1.content = [request_block]
         resp1.usage = usage
-        resp1.model = "claude-sonnet-4-5-20250929"
+        resp1.model = "claude-sonnet-4-6"
 
         # Second response: end_turn
         text_block = MagicMock()
@@ -206,7 +206,7 @@ class TestRequestTools:
         resp2.stop_reason = "end_turn"
         resp2.content = [text_block]
         resp2.usage = usage
-        resp2.model = "claude-sonnet-4-5-20250929"
+        resp2.model = "claude-sonnet-4-6"
 
         call_args_list = []
 
@@ -250,7 +250,7 @@ class TestRequestTools:
         resp1.stop_reason = "tool_use"
         resp1.content = [request_block]
         resp1.usage = usage
-        resp1.model = "claude-sonnet-4-5-20250929"
+        resp1.model = "claude-sonnet-4-6"
 
         text_block = MagicMock()
         text_block.type = "text"
@@ -260,7 +260,7 @@ class TestRequestTools:
         resp2.stop_reason = "end_turn"
         resp2.content = [text_block]
         resp2.usage = usage
-        resp2.model = "claude-sonnet-4-5-20250929"
+        resp2.model = "claude-sonnet-4-6"
 
         agent._call_api = MagicMock(side_effect=[resp1, resp2])
 
@@ -298,7 +298,7 @@ class TestRequestTools:
         resp.stop_reason = "end_turn"
         resp.content = [text_block]
         resp.usage = usage
-        resp.model = "claude-sonnet-4-5-20250929"
+        resp.model = "claude-sonnet-4-6"
 
         call_args_list = []
 
@@ -351,7 +351,7 @@ class TestRequestTools:
         resp1.stop_reason = "tool_use"
         resp1.content = [request_block, search_block]
         resp1.usage = usage
-        resp1.model = "claude-sonnet-4-5-20250929"
+        resp1.model = "claude-sonnet-4-6"
 
         text_block = MagicMock()
         text_block.type = "text"
@@ -361,7 +361,7 @@ class TestRequestTools:
         resp2.stop_reason = "end_turn"
         resp2.content = [text_block]
         resp2.usage = usage
-        resp2.model = "claude-sonnet-4-5-20250929"
+        resp2.model = "claude-sonnet-4-6"
 
         agent._call_api = MagicMock(side_effect=[resp1, resp2])
         agent.execute_tool = MagicMock(return_value={"count": 0, "products": []})
@@ -422,7 +422,7 @@ class TestRequestTools:
         resp1.stop_reason = "tool_use"
         resp1.content = [request_block]
         resp1.usage = usage
-        resp1.model = "claude-sonnet-4-5-20250929"
+        resp1.model = "claude-sonnet-4-6"
 
         text_block = MagicMock()
         text_block.type = "text"
@@ -432,7 +432,7 @@ class TestRequestTools:
         resp2.stop_reason = "end_turn"
         resp2.content = [text_block]
         resp2.usage = usage
-        resp2.model = "claude-sonnet-4-5-20250929"
+        resp2.model = "claude-sonnet-4-6"
 
         agent._call_api = MagicMock(side_effect=[resp1, resp2])
 
@@ -476,7 +476,7 @@ class TestRequestTools:
         resp1.stop_reason = "tool_use"
         resp1.content = [search_block, request_block]
         resp1.usage = usage
-        resp1.model = "claude-sonnet-4-5-20250929"
+        resp1.model = "claude-sonnet-4-6"
 
         text_block = MagicMock()
         text_block.type = "text"
@@ -486,7 +486,7 @@ class TestRequestTools:
         resp2.stop_reason = "end_turn"
         resp2.content = [text_block]
         resp2.usage = usage
-        resp2.model = "claude-sonnet-4-5-20250929"
+        resp2.model = "claude-sonnet-4-6"
 
         agent._call_api = MagicMock(side_effect=[resp1, resp2])
         agent.execute_tool = MagicMock(return_value={"count": 0, "products": []})

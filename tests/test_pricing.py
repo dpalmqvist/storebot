@@ -92,7 +92,9 @@ class TestPriceCheck:
 
         service.price_check("stol", category="344")
 
-        tradera.search.assert_called_once_with(query="stol", category=344)
+        tradera.search.assert_called_once_with(
+            query="stol", category=344, search_in_description=True
+        )
 
     def test_category_passed_to_blocket_as_string(self, service, tradera, blocket):
         tradera.search.return_value = {"total": 0, "items": []}
@@ -109,7 +111,7 @@ class TestPriceCheck:
         service.price_check("stol", category="not-a-number")
 
         # Tradera should be called without category since it can't convert
-        tradera.search.assert_called_once_with(query="stol")
+        tradera.search.assert_called_once_with(query="stol", search_in_description=True)
         # Blocket gets it as-is
         blocket.search.assert_called_once_with(query="stol", category="not-a-number")
 

@@ -43,6 +43,12 @@ _REFLECTION_PROMPT = (
 
 # Pricing per 1M tokens (USD) — Decimal for precision
 _MODEL_PRICING = {
+    "claude-sonnet-4-6": {
+        "input": Decimal("3.0"),
+        "output": Decimal("15.0"),
+        "cache_write": Decimal("3.75"),
+        "cache_read": Decimal("0.30"),
+    },
     "claude-sonnet-4-5-20250929": {
         "input": Decimal("3.0"),
         "output": Decimal("15.0"),
@@ -88,7 +94,7 @@ def _estimate_cost_sek(
     cache_read: int,
 ) -> Decimal:
     """Estimate cost in SEK based on model pricing. Falls back to Sonnet pricing."""
-    pricing = _MODEL_PRICING.get(model, _MODEL_PRICING["claude-sonnet-4-5-20250929"])
+    pricing = _MODEL_PRICING.get(model, _MODEL_PRICING["claude-sonnet-4-6"])
     cost_usd = (
         Decimal(input_tokens) * pricing["input"]
         + Decimal(output_tokens) * pricing["output"]
