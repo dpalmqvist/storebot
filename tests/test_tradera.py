@@ -101,7 +101,13 @@ class TestTraderaSearch:
         assert req["SearchWords"] == "stol"
         assert req["SearchInDescription"] is False
         assert req["CategoryId"] == 344
+        assert req["CountyId"] == 0
+        assert req["PriceMinimum"] is None
         assert req["PriceMaximum"] == 500
+        assert req["BidsMinimum"] is None
+        assert req["BidsMaximum"] is None
+        assert req["OnlyAuctionsWithBuyNow"] is False
+        assert req["OnlyItemsWithThumbnail"] is False
         assert req["PageNumber"] == 2
         assert req["ItemsPerPage"] == 25
 
