@@ -72,7 +72,7 @@ class PricingService:
 
     def _search_tradera(self, query: str, category: str | None) -> dict:
         try:
-            kwargs: dict = {"query": query}
+            kwargs: dict = {"query": query, "search_in_description": True}
             if category is not None:
                 try:
                     kwargs["category"] = int(category)

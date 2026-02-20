@@ -153,10 +153,12 @@ class TraderaClient:
         max_price: float | None = None,
         page: int = 1,
         items_per_page: int = 50,
+        search_in_description: bool = False,
     ) -> dict:
         try:
             params = {
                 "SearchWords": query,
+                "SearchInDescription": search_in_description,
                 "CategoryId": category or 0,
                 "PageNumber": page,
                 "ItemsPerPage": items_per_page,
