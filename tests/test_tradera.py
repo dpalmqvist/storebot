@@ -1110,7 +1110,13 @@ class TestFlattenCategories:
     """Tests for TraderaClient._flatten_categories."""
 
     def test_flat_list_from_nested(self):
-        cats = [{"Id": 10, "Name": "Möbler", "Category": [{"Id": 20, "Name": "Soffor", "Category": []}]}]
+        cats = [
+            {
+                "Id": 10,
+                "Name": "Möbler",
+                "Category": [{"Id": 20, "Name": "Soffor", "Category": []}],
+            }
+        ]
 
         result = TraderaClient._flatten_categories(cats)
 
