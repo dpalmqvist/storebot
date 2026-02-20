@@ -20,16 +20,16 @@ See [installation.md](installation.md) for full configuration reference.
 
 ```
 src/storebot/
-  agent.py             Claude API tool loop (45 tools, vision support)
+  agent.py             Claude API tool loop (57 tools, vision support)
   config.py            Pydantic Settings from .env
-  db.py                SQLAlchemy 2.0 models (SQLite, 12 tables)
+  db.py                SQLAlchemy 2.0 models (SQLite, 14 tables)
   cli.py               Tradera authorization CLI
   retry.py             Retry decorator with exponential backoff
   logging_config.py    JSON/human-readable logging config
   bot/
     handlers.py        Telegram bot entry point (7 commands, photo handling, scheduled jobs)
   tools/
-    definitions.py     Tool schemas for Claude API (45 tool definitions)
+    definitions.py     Tool schemas for Claude API (57 tool definitions)
     tradera.py         Tradera SOAP API (search, create, upload, orders, shipping)
     blocket.py         Blocket unofficial REST API (price research)
     accounting.py      Local voucher storage + PDF export (BAS-kontoplan)
@@ -69,7 +69,7 @@ User (Telegram) → handlers.py → agent.py → Claude API
 The agent loop in `agent.py` works as follows:
 
 1. Receives a user message (text and/or images) with conversation history
-2. Sends to Claude API with the system prompt and 45 tool definitions
+2. Sends to Claude API with the system prompt and 57 tool definitions
 3. Claude responds with either text or tool-use requests
 4. For each tool use request, the agent dispatches to the appropriate service method
 5. Tool results are sent back to Claude for further processing
@@ -126,7 +126,7 @@ Key conventions:
 
 ### Tables
 
-`products`, `product_images`, `platform_listings`, `listing_snapshots`, `orders`, `vouchers`, `voucher_rows`, `agent_actions`, `notifications`, `conversation_messages`, `saved_searches`, `seen_items`
+`products`, `product_images`, `platform_listings`, `listing_snapshots`, `orders`, `vouchers`, `voucher_rows`, `agent_actions`, `notifications`, `conversation_messages`, `saved_searches`, `seen_items`, `tradera_categories`, `api_usage`
 
 ### Alembic Migrations
 
@@ -207,12 +207,12 @@ pytest -v
 
 ### Test Modules
 
-18 test modules covering all core functionality:
+26 test modules covering all core functionality:
 
 | Module | Coverage |
 |--------|----------|
 | `test_db.py` | SQLAlchemy models, relationships, constraints |
-| `test_tradera.py` | SOAP client, search, orders, listing creation |
+| `test_tradera.py` | SOAP client, search, orders, listing creation, category hierarchy |
 | `test_blocket.py` | REST client, search, ad details |
 | `test_pricing.py` | Price check, statistics calculation |
 | `test_listing.py` | Draft workflow, product management, publishing |
@@ -221,14 +221,22 @@ pytest -v
 | `test_accounting.py` | Voucher creation, PDF export, balance validation |
 | `test_conversation.py` | History persistence, timeout, clear |
 | `test_scout.py` | Saved searches, dedup, digest |
-| `test_marketing.py` | Stats refresh, analysis, recommendations |
+| `test_marketing.py` | Stats refresh, analysis, recommendations, listing dashboard |
 | `test_analytics.py` | Business summary, profitability, inventory, comparisons |
 | `test_postnord.py` | REST client, address parsing, label creation |
-| `test_cli.py` | Tradera authorization flow |
+| `test_cli.py` | Tradera authorization flow, category sync CLI |
 | `test_retry.py` | Retry decorator, backoff behavior |
 | `test_logging_config.py` | JSON/human formatter, file handler |
-| `test_handlers.py` | Telegram command handlers, access control |
+| `test_handlers.py` | Telegram command handlers, access control, scheduled jobs |
 | `test_log_viewer.py` | Audit log TUI data queries, filtering, sorting |
+| `test_compaction.py` | Context compaction, history summarization |
+| `test_model_routing.py` | Simple/complex model routing logic |
+| `test_parallel.py` | Parallel tool execution via ThreadPoolExecutor |
+| `test_reflection.py` | Self-critique reflection on high-stakes tool results |
+| `test_schemas.py` | Pydantic tool-result validation |
+| `test_thinking.py` | Extended thinking block handling |
+| `test_tool_filtering.py` | Dynamic tool category filtering |
+| `test_usage.py` | API token/cost tracking |
 
 ### Writing New Tests
 
