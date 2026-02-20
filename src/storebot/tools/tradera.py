@@ -401,11 +401,10 @@ class TraderaClient:
     def get_categories(self) -> dict:
         """Get full Tradera category hierarchy as a flat list with paths."""
         try:
+            # GetCategories returns a plain list of dicts directly — unlike other
+            # endpoints that wrap their result in a zeep response object.
             response = self._get_categories_api_call(self._auth_headers(self.public_client))
-
-            return {
-                "categories": self._flatten_categories(response),
-            }
+            return {"categories": self._flatten_categories(response)}
 
         except Exception as e:
             logger.exception("Tradera get_categories failed")
