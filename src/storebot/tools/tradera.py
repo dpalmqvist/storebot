@@ -391,10 +391,9 @@ class TraderaClient:
                 }
             )
             children = getattr(cat, "Category", None) or []
-            if children:
-                if not isinstance(children, list):
-                    children = [children]
-                result.extend(TraderaClient._flatten_categories(children, cat_id, path, depth + 1))
+            if not isinstance(children, list):
+                children = [children]
+            result.extend(TraderaClient._flatten_categories(children, cat_id, path, depth + 1))
         return result
 
     @retry_on_transient()
@@ -406,7 +405,7 @@ class TraderaClient:
         try:
             response = self._get_categories_api_call(self._auth_headers(self.public_client))
 
-            raw_cats = self._soap_list(getattr(response, "Categories", None), "Category")
+            raw_cats = self._soap_list(response, "Category")
 
             return {
                 "categories": self._flatten_categories(raw_cats),
