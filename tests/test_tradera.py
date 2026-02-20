@@ -601,9 +601,7 @@ class TestTraderaGetCategories:
         cat2.Category = None
 
         response = MagicMock()
-        cats_obj = MagicMock()
-        cats_obj.Category = [cat1, cat2]
-        response.Categories = cats_obj
+        response.Category = [cat1, cat2]
         client._public_client.service.GetCategories.return_value = response
 
         result = client.get_categories()
@@ -627,9 +625,7 @@ class TestTraderaGetCategories:
 
     def test_empty_categories(self, client):
         response = MagicMock()
-        cats_obj = MagicMock()
-        cats_obj.Category = []
-        response.Categories = cats_obj
+        response.Category = []
         client._public_client.service.GetCategories.return_value = response
 
         result = client.get_categories()
@@ -1215,9 +1211,7 @@ class TestSyncCategoriesToDb:
         parent.Category = [child]
 
         response = MagicMock()
-        cats_container = MagicMock()
-        cats_container.Category = [parent]
-        response.Categories = cats_container
+        response.Category = [parent]
         client._public_client.service.GetCategories.return_value = response
 
         count = client.sync_categories_to_db(engine)
@@ -1257,9 +1251,7 @@ class TestSyncCategoriesToDb:
         parent.Category = None
 
         response = MagicMock()
-        cats_container = MagicMock()
-        cats_container.Category = [parent]
-        response.Categories = cats_container
+        response.Category = [parent]
         client._public_client.service.GetCategories.return_value = response
 
         count = client.sync_categories_to_db(engine)
@@ -1296,9 +1288,7 @@ class TestSyncCategoriesToDb:
         parent.Category = None
 
         response = MagicMock()
-        cats_container = MagicMock()
-        cats_container.Category = [parent]
-        response.Categories = cats_container
+        response.Category = [parent]
         client._public_client.service.GetCategories.return_value = response
 
         client.sync_categories_to_db(engine)
