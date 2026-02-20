@@ -1180,6 +1180,20 @@ class TestFlattenCategories:
         assert result[1]["name"] == "Soffor"
         assert result[1]["parent_tradera_id"] == 10
 
+    def test_multiple_children_stay_as_list(self):
+        """A plain list of children must not be re-wrapped by the isinstance guard."""
+        child1 = self._make_cat(21, "Soffor")
+        child2 = self._make_cat(22, "Bord")
+        parent = self._make_cat(10, "Möbler", children=[child1, child2])
+
+        result = TraderaClient._flatten_categories([parent])
+
+        assert len(result) == 3
+        assert result[1]["name"] == "Soffor"
+        assert result[2]["name"] == "Bord"
+        assert result[1]["parent_tradera_id"] == 10
+        assert result[2]["parent_tradera_id"] == 10
+
 
 class TestSyncCategoriesToDb:
     """Tests for TraderaClient.sync_categories_to_db."""
