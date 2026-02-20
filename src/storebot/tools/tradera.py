@@ -373,13 +373,13 @@ class TraderaClient:
 
     @staticmethod
     def _flatten_categories(cats, parent_id=None, parent_path="", depth=0):
-        """Recursively flatten a nested SOAP category tree into a list of dicts."""
+        """Recursively flatten a nested category tree (list of dicts) into a flat list."""
         result = []
         for cat in cats or []:
-            cat_id = getattr(cat, "Id", None)
+            cat_id = cat.get("Id")
             if cat_id is None:
                 continue
-            name = getattr(cat, "Name", None) or ""
+            name = cat.get("Name") or ""
             path = f"{parent_path} > {name}" if parent_path else name
             result.append(
                 {
@@ -390,9 +390,7 @@ class TraderaClient:
                     "depth": depth,
                 }
             )
-            children = getattr(cat, "Category", None) or []
-            if not isinstance(children, list):
-                children = [children]
+            children = cat.get("Category") or []
             result.extend(TraderaClient._flatten_categories(children, cat_id, path, depth + 1))
         return result
 
@@ -403,13 +401,10 @@ class TraderaClient:
     def get_categories(self) -> dict:
         """Get full Tradera category hierarchy as a flat list with paths."""
         try:
+            # GetCategories returns a plain list of dicts directly — unlike other
+            # endpoints that wrap their result in a zeep response object.
             response = self._get_categories_api_call(self._auth_headers(self.public_client))
-
-            raw_cats = self._soap_list(response, "Category")
-
-            return {
-                "categories": self._flatten_categories(raw_cats),
-            }
+            return {"categories": self._flatten_categories(response)}
 
         except Exception as e:
             logger.exception("Tradera get_categories failed")

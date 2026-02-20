@@ -591,17 +591,10 @@ class TestCommitListing:
 
 class TestTraderaGetCategories:
     def test_success(self, client):
-        cat1 = MagicMock()
-        cat1.Id = 100
-        cat1.Name = "Möbler"
-        cat1.Category = None
-        cat2 = MagicMock()
-        cat2.Id = 200
-        cat2.Name = "Inredning"
-        cat2.Category = None
-
-        response = MagicMock()
-        response.Category = [cat1, cat2]
+        response = [
+            {"Id": 100, "Name": "Möbler", "Category": []},
+            {"Id": 200, "Name": "Inredning", "Category": []},
+        ]
         client._public_client.service.GetCategories.return_value = response
 
         result = client.get_categories()
@@ -624,9 +617,7 @@ class TestTraderaGetCategories:
         assert result["error"] == "Timeout"
 
     def test_empty_categories(self, client):
-        response = MagicMock()
-        response.Category = []
-        client._public_client.service.GetCategories.return_value = response
+        client._public_client.service.GetCategories.return_value = []
 
         result = client.get_categories()
 
@@ -1118,18 +1109,16 @@ class TestTraderaRetry:
 class TestFlattenCategories:
     """Tests for TraderaClient._flatten_categories."""
 
-    def _make_cat(self, id, name, children=None):
-        cat = MagicMock()
-        cat.Id = id
-        cat.Name = name
-        cat.Category = children
-        return cat
-
     def test_flat_list_from_nested(self):
-        child = self._make_cat(20, "Soffor")
-        parent = self._make_cat(10, "Möbler", children=[child])
+        cats = [
+            {
+                "Id": 10,
+                "Name": "Möbler",
+                "Category": [{"Id": 20, "Name": "Soffor", "Category": []}],
+            }
+        ]
 
-        result = TraderaClient._flatten_categories([parent])
+        result = TraderaClient._flatten_categories(cats)
 
         assert len(result) == 2
         assert result[0] == {
@@ -1148,11 +1137,21 @@ class TestFlattenCategories:
         }
 
     def test_three_levels_deep(self):
-        grandchild = self._make_cat(30, "Fåtöljer")
-        child = self._make_cat(20, "Vardagsrum", children=[grandchild])
-        parent = self._make_cat(10, "Möbler", children=[child])
+        cats = [
+            {
+                "Id": 10,
+                "Name": "Möbler",
+                "Category": [
+                    {
+                        "Id": 20,
+                        "Name": "Vardagsrum",
+                        "Category": [{"Id": 30, "Name": "Fåtöljer", "Category": []}],
+                    }
+                ],
+            }
+        ]
 
-        result = TraderaClient._flatten_categories([parent])
+        result = TraderaClient._flatten_categories(cats)
 
         assert len(result) == 3
         assert result[2]["path"] == "Möbler > Vardagsrum > Fåtöljer"
@@ -1164,33 +1163,17 @@ class TestFlattenCategories:
         assert TraderaClient._flatten_categories(None) == []
 
     def test_multiple_top_level(self):
-        cat1 = self._make_cat(1, "Möbler")
-        cat2 = self._make_cat(2, "Kläder")
+        cats = [
+            {"Id": 1, "Name": "Möbler", "Category": []},
+            {"Id": 2, "Name": "Kläder", "Category": []},
+        ]
 
-        result = TraderaClient._flatten_categories([cat1, cat2])
+        result = TraderaClient._flatten_categories(cats)
 
         assert len(result) == 2
         assert result[0]["name"] == "Möbler"
         assert result[1]["name"] == "Kläder"
         assert all(r["parent_tradera_id"] is None for r in result)
-
-    def test_single_child_not_iterable(self):
-        """Zeep may return a single object instead of a list for one child."""
-        child = MagicMock()
-        child.Id = 20
-        child.Name = "Soffor"
-        child.Category = None
-        # Simulate zeep returning a non-iterable single child
-        parent = MagicMock()
-        parent.Id = 10
-        parent.Name = "Möbler"
-        parent.Category = child  # single object, not a list
-
-        result = TraderaClient._flatten_categories([parent])
-
-        assert len(result) == 2
-        assert result[1]["name"] == "Soffor"
-        assert result[1]["parent_tradera_id"] == 10
 
 
 class TestSyncCategoriesToDb:
@@ -1201,17 +1184,13 @@ class TestSyncCategoriesToDb:
 
         from storebot.db import TraderaCategory
 
-        child = MagicMock()
-        child.Id = 20
-        child.Name = "Soffor"
-        child.Category = None
-        parent = MagicMock()
-        parent.Id = 10
-        parent.Name = "Möbler"
-        parent.Category = [child]
-
-        response = MagicMock()
-        response.Category = [parent]
+        response = [
+            {
+                "Id": 10,
+                "Name": "Möbler",
+                "Category": [{"Id": 20, "Name": "Soffor", "Category": []}],
+            }
+        ]
         client._public_client.service.GetCategories.return_value = response
 
         count = client.sync_categories_to_db(engine)
@@ -1245,13 +1224,7 @@ class TestSyncCategoriesToDb:
             )
             session.commit()
 
-        parent = MagicMock()
-        parent.Id = 10
-        parent.Name = "New Name"
-        parent.Category = None
-
-        response = MagicMock()
-        response.Category = [parent]
+        response = [{"Id": 10, "Name": "New Name", "Category": []}]
         client._public_client.service.GetCategories.return_value = response
 
         count = client.sync_categories_to_db(engine)
@@ -1282,13 +1255,7 @@ class TestSyncCategoriesToDb:
             )
             session.commit()
 
-        parent = MagicMock()
-        parent.Id = 10
-        parent.Name = "Möbler"
-        parent.Category = None
-
-        response = MagicMock()
-        response.Category = [parent]
+        response = [{"Id": 10, "Name": "Möbler", "Category": []}]
         client._public_client.service.GetCategories.return_value = response
 
         client.sync_categories_to_db(engine)
