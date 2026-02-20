@@ -21,7 +21,7 @@ def engine():
 def _make_settings(**overrides):
     settings = MagicMock()
     settings.claude_api_key = "test"
-    settings.claude_model = "claude-sonnet-4-5-20250929"
+    settings.claude_model = "claude-sonnet-4-6"
     settings.claude_max_tokens = 16000
     settings.claude_thinking_budget = 0
     settings.tradera_app_id = "1"

@@ -20,7 +20,7 @@ def engine():
 def _make_settings(**overrides):
     settings = MagicMock()
     settings.claude_api_key = "test"
-    settings.claude_model = "claude-sonnet-4-5-20250929"
+    settings.claude_model = "claude-sonnet-4-6"
     settings.claude_model_simple = ""
     settings.claude_max_tokens = 16000
     settings.claude_thinking_budget = 0
@@ -57,7 +57,7 @@ def _make_response(stop_reason="end_turn", text="Hej!", tool_blocks=None, model=
         cache_creation_input_tokens=0,
         cache_read_input_tokens=0,
     )
-    resp.model = model or "claude-sonnet-4-5-20250929"
+    resp.model = model or "claude-sonnet-4-6"
     return resp
 
 
@@ -72,7 +72,7 @@ class TestSelectModel:
         settings = _make_settings(claude_model_simple="")
         agent = Agent(settings=settings, engine=engine)
         result = agent._select_model({"core"}, has_images=False)
-        assert result == "claude-sonnet-4-5-20250929"
+        assert result == "claude-sonnet-4-6"
 
     def test_simple_model_for_core_only(self, engine):
         """{"core"}, no images → simple model."""
@@ -86,35 +86,35 @@ class TestSelectModel:
         settings = _make_settings(claude_model_simple="claude-haiku-4-5-20251001")
         agent = Agent(settings=settings, engine=engine)
         result = agent._select_model({"core", "listing"}, has_images=False)
-        assert result == "claude-sonnet-4-5-20250929"
+        assert result == "claude-sonnet-4-6"
 
     def test_complex_model_for_order(self, engine):
         """{"core", "order"} → claude_model."""
         settings = _make_settings(claude_model_simple="claude-haiku-4-5-20251001")
         agent = Agent(settings=settings, engine=engine)
         result = agent._select_model({"core", "order"}, has_images=False)
-        assert result == "claude-sonnet-4-5-20250929"
+        assert result == "claude-sonnet-4-6"
 
     def test_complex_model_for_accounting(self, engine):
         """{"core", "accounting"} → claude_model."""
         settings = _make_settings(claude_model_simple="claude-haiku-4-5-20251001")
         agent = Agent(settings=settings, engine=engine)
         result = agent._select_model({"core", "accounting"}, has_images=False)
-        assert result == "claude-sonnet-4-5-20250929"
+        assert result == "claude-sonnet-4-6"
 
     def test_complex_model_for_analytics(self, engine):
         """{"core", "analytics"} → claude_model."""
         settings = _make_settings(claude_model_simple="claude-haiku-4-5-20251001")
         agent = Agent(settings=settings, engine=engine)
         result = agent._select_model({"core", "analytics"}, has_images=False)
-        assert result == "claude-sonnet-4-5-20250929"
+        assert result == "claude-sonnet-4-6"
 
     def test_complex_model_when_images_present(self, engine):
         """Images → claude_model regardless of categories."""
         settings = _make_settings(claude_model_simple="claude-haiku-4-5-20251001")
         agent = Agent(settings=settings, engine=engine)
         result = agent._select_model({"core"}, has_images=True)
-        assert result == "claude-sonnet-4-5-20250929"
+        assert result == "claude-sonnet-4-6"
 
     def test_complex_model_when_thinking_enabled(self, engine):
         """Budget >= 1024 → claude_model."""
@@ -124,7 +124,7 @@ class TestSelectModel:
         )
         agent = Agent(settings=settings, engine=engine)
         result = agent._select_model({"core"}, has_images=False)
-        assert result == "claude-sonnet-4-5-20250929"
+        assert result == "claude-sonnet-4-6"
 
     def test_simple_model_for_research_only(self, engine):
         """{"core", "research"} → simple model."""
@@ -152,7 +152,7 @@ class TestSelectModel:
         settings = _make_settings(claude_model_simple="claude-haiku-4-5-20251001")
         agent = Agent(settings=settings, engine=engine)
         result = agent._select_model({"core", "research", "listing"}, has_images=False)
-        assert result == "claude-sonnet-4-5-20250929"
+        assert result == "claude-sonnet-4-6"
 
 
 # ---------------------------------------------------------------------------
@@ -177,13 +177,13 @@ class TestModelRoutingIntegration:
         """'annons' keyword triggers listing category → complex model."""
         settings = _make_settings(claude_model_simple="claude-haiku-4-5-20251001")
         agent = Agent(settings=settings, engine=engine)
-        response = _make_response(model="claude-sonnet-4-5-20250929")
+        response = _make_response(model="claude-sonnet-4-6")
         agent._call_api = MagicMock(return_value=response)
 
         agent.handle_message("skapa en annons för stolen", chat_id="test")
 
         call_kwargs = agent._call_api.call_args
-        assert call_kwargs[1]["model"] == "claude-sonnet-4-5-20250929"
+        assert call_kwargs[1]["model"] == "claude-sonnet-4-6"
 
     def test_tool_loop_uses_same_model(self, engine):
         """Both _call_api calls in a tool loop use the same model."""
@@ -280,7 +280,7 @@ class TestModelRoutingBackwardCompat:
         agent.handle_message("hej", chat_id="test")
 
         call_kwargs = agent._call_api.call_args
-        assert call_kwargs[1]["model"] == "claude-sonnet-4-5-20250929"
+        assert call_kwargs[1]["model"] == "claude-sonnet-4-6"
 
 
 # ---------------------------------------------------------------------------

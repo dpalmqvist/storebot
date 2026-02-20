@@ -31,7 +31,7 @@ class TestApiUsageModel:
             session.add(
                 ApiUsage(
                     chat_id="123",
-                    model="claude-sonnet-4-5-20250929",
+                    model="claude-sonnet-4-6",
                     input_tokens=1000,
                     output_tokens=500,
                     cache_creation_input_tokens=200,
@@ -84,7 +84,7 @@ class TestApiUsageModel:
 class TestEstimateCostSek:
     def test_known_model(self):
         cost = _estimate_cost_sek(
-            model="claude-sonnet-4-5-20250929",
+            model="claude-sonnet-4-6",
             input_tokens=1_000_000,
             output_tokens=100_000,
             cache_creation=0,
@@ -95,7 +95,7 @@ class TestEstimateCostSek:
 
     def test_cache_pricing(self):
         cost = _estimate_cost_sek(
-            model="claude-sonnet-4-5-20250929",
+            model="claude-sonnet-4-6",
             input_tokens=0,
             output_tokens=0,
             cache_creation=1_000_000,
@@ -116,11 +116,11 @@ class TestEstimateCostSek:
         assert cost == Decimal("31.5000")
 
     def test_zero_tokens(self):
-        cost = _estimate_cost_sek("claude-sonnet-4-5-20250929", 0, 0, 0, 0)
+        cost = _estimate_cost_sek("claude-sonnet-4-6", 0, 0, 0, 0)
         assert cost == Decimal("0.0000")
 
     def test_returns_decimal(self):
-        cost = _estimate_cost_sek("claude-sonnet-4-5-20250929", 1000, 500, 0, 0)
+        cost = _estimate_cost_sek("claude-sonnet-4-6", 1000, 500, 0, 0)
         assert isinstance(cost, Decimal)
 
     def test_haiku_model(self):
@@ -142,7 +142,7 @@ class TestStoreUsage:
     def test_stores_usage_row(self, engine):
         settings = MagicMock()
         settings.claude_api_key = "test"
-        settings.claude_model = "claude-sonnet-4-5-20250929"
+        settings.claude_model = "claude-sonnet-4-6"
         settings.tradera_app_id = "1"
         settings.tradera_app_key = "k"
         settings.tradera_sandbox = True
@@ -154,7 +154,7 @@ class TestStoreUsage:
         agent = Agent(settings=settings, engine=engine)
         agent._store_usage(
             chat_id="456",
-            model="claude-sonnet-4-5-20250929",
+            model="claude-sonnet-4-6",
             input_tokens=5000,
             output_tokens=2000,
             cache_creation=100,
@@ -215,7 +215,7 @@ class TestHandleMessageAccumulation:
         """Verify that token counts from multiple _call_api calls are summed."""
         settings = MagicMock()
         settings.claude_api_key = "test"
-        settings.claude_model = "claude-sonnet-4-5-20250929"
+        settings.claude_model = "claude-sonnet-4-6"
         settings.claude_model_simple = ""
         settings.claude_thinking_budget = 0
         settings.tradera_app_id = "1"
@@ -245,7 +245,7 @@ class TestHandleMessageAccumulation:
         response1.stop_reason = "tool_use"
         response1.content = [tool_block]
         response1.usage = usage1
-        response1.model = "claude-sonnet-4-5-20250929"
+        response1.model = "claude-sonnet-4-6"
 
         usage2 = MagicMock()
         usage2.input_tokens = 1500
@@ -261,7 +261,7 @@ class TestHandleMessageAccumulation:
         response2.stop_reason = "end_turn"
         response2.content = [text_block]
         response2.usage = usage2
-        response2.model = "claude-sonnet-4-5-20250929"
+        response2.model = "claude-sonnet-4-6"
 
         agent._call_api = MagicMock(side_effect=[response1, response2])
         agent.execute_tool = MagicMock(return_value={"results": [{"id": 1}], "total_count": 1})
@@ -278,7 +278,7 @@ class TestHandleMessageAccumulation:
             assert row.cache_creation_input_tokens == 50
             assert row.cache_read_input_tokens == 1850  # 900 + 950
             assert row.tool_calls == 1
-            assert row.model == "claude-sonnet-4-5-20250929"
+            assert row.model == "claude-sonnet-4-6"
 
     def test_stores_response_model_not_settings(self, engine):
         """Verify that the actual response model is stored, not the settings alias."""
@@ -311,7 +311,7 @@ class TestHandleMessageAccumulation:
         response.stop_reason = "end_turn"
         response.content = [text_block]
         response.usage = usage
-        response.model = "claude-sonnet-4-5-20250929"  # concrete model from API
+        response.model = "claude-sonnet-4-6"  # concrete model from API
 
         agent._call_api = MagicMock(return_value=response)
 
@@ -319,7 +319,7 @@ class TestHandleMessageAccumulation:
 
         with Session(engine) as session:
             row = session.query(ApiUsage).first()
-            assert row.model == "claude-sonnet-4-5-20250929"  # not "claude-sonnet-latest"
+            assert row.model == "claude-sonnet-4-6"  # not "claude-sonnet-latest"
 
 
 # --- usage_report ---
@@ -327,7 +327,7 @@ class TestHandleMessageAccumulation:
 
 def _insert_usage(engine, chat_id="123", created_at=None, **kwargs):
     defaults = {
-        "model": "claude-sonnet-4-5-20250929",
+        "model": "claude-sonnet-4-6",
         "input_tokens": 1000,
         "output_tokens": 500,
         "cache_creation_input_tokens": 0,

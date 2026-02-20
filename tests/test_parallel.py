@@ -20,7 +20,7 @@ def engine():
 def _make_agent(engine):
     settings = MagicMock()
     settings.claude_api_key = "test"
-    settings.claude_model = "claude-sonnet-4-5-20250929"
+    settings.claude_model = "claude-sonnet-4-6"
     settings.claude_model_simple = ""
     settings.claude_thinking_budget = 0
     settings.tradera_app_id = "1"
@@ -57,7 +57,7 @@ def _make_text_response(text="Klart."):
     response.stop_reason = "end_turn"
     response.content = [text_block]
     response.usage = usage
-    response.model = "claude-sonnet-4-5-20250929"
+    response.model = "claude-sonnet-4-6"
     return response
 
 
@@ -72,7 +72,7 @@ def _make_tool_response(tool_blocks):
     response.stop_reason = "tool_use"
     response.content = tool_blocks
     response.usage = usage
-    response.model = "claude-sonnet-4-5-20250929"
+    response.model = "claude-sonnet-4-6"
     return response
 
 

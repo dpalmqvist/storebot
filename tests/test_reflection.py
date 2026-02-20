@@ -19,7 +19,7 @@ def engine():
 def _make_settings(**overrides):
     settings = MagicMock()
     settings.claude_api_key = "test"
-    settings.claude_model = "claude-sonnet-4-5-20250929"
+    settings.claude_model = "claude-sonnet-4-6"
     settings.claude_max_tokens = 16000
     settings.claude_thinking_budget = 0
     settings.tradera_app_id = "1"
@@ -81,7 +81,7 @@ class TestReflectionTools:
                 cache_creation_input_tokens=0,
                 cache_read_input_tokens=0,
             )
-            response2.model = "claude-sonnet-4-5-20250929"
+            response2.model = "claude-sonnet-4-6"
 
             agent._call_api = MagicMock(side_effect=[response1, response2])
             agent.execute_tool = MagicMock(return_value={"status": "ok", "data": "test"})
@@ -131,7 +131,7 @@ class TestReflectionTools:
             cache_creation_input_tokens=0,
             cache_read_input_tokens=0,
         )
-        response2.model = "claude-sonnet-4-5-20250929"
+        response2.model = "claude-sonnet-4-6"
 
         agent._call_api = MagicMock(side_effect=[response1, response2])
         agent.execute_tool = MagicMock(return_value={"results": [], "total_count": 0})
@@ -178,7 +178,7 @@ class TestReflectionTools:
             cache_creation_input_tokens=0,
             cache_read_input_tokens=0,
         )
-        response2.model = "claude-sonnet-4-5-20250929"
+        response2.model = "claude-sonnet-4-6"
 
         agent._call_api = MagicMock(side_effect=[response1, response2])
         agent.execute_tool = MagicMock(return_value={"error": "Product not found"})
@@ -226,7 +226,7 @@ class TestReflectionTools:
             cache_creation_input_tokens=0,
             cache_read_input_tokens=0,
         )
-        response2.model = "claude-sonnet-4-5-20250929"
+        response2.model = "claude-sonnet-4-6"
 
         agent._call_api = MagicMock(side_effect=[response1, response2])
         agent.execute_tool = MagicMock(

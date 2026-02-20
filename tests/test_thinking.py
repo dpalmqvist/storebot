@@ -20,7 +20,7 @@ def engine():
 def _make_settings(**overrides):
     settings = MagicMock()
     settings.claude_api_key = "test"
-    settings.claude_model = "claude-sonnet-4-5-20250929"
+    settings.claude_model = "claude-sonnet-4-6"
     settings.claude_max_tokens = 16000
     settings.claude_thinking_budget = 0
     settings.tradera_app_id = "1"
@@ -54,7 +54,7 @@ class TestThinkingConfig:
                 cache_creation_input_tokens=0,
                 cache_read_input_tokens=0,
             )
-            mock_response.model = "claude-sonnet-4-5-20250929"
+            mock_response.model = "claude-sonnet-4-6"
             mock_create.return_value = mock_response
 
             agent.handle_message("hej", chat_id="test")
@@ -77,7 +77,7 @@ class TestThinkingConfig:
                 cache_creation_input_tokens=0,
                 cache_read_input_tokens=0,
             )
-            mock_response.model = "claude-sonnet-4-5-20250929"
+            mock_response.model = "claude-sonnet-4-6"
             mock_create.return_value = mock_response
 
             agent.handle_message("hej", chat_id="test")
@@ -103,7 +103,7 @@ class TestThinkingConfig:
                 cache_creation_input_tokens=0,
                 cache_read_input_tokens=0,
             )
-            mock_response.model = "claude-sonnet-4-5-20250929"
+            mock_response.model = "claude-sonnet-4-6"
             mock_create.return_value = mock_response
 
             agent.handle_message("hej", chat_id="test")
@@ -126,7 +126,7 @@ class TestThinkingConfig:
                 cache_creation_input_tokens=0,
                 cache_read_input_tokens=0,
             )
-            mock_response.model = "claude-sonnet-4-5-20250929"
+            mock_response.model = "claude-sonnet-4-6"
             mock_create.return_value = mock_response
 
             agent.handle_message("hej", chat_id="test")
@@ -158,7 +158,7 @@ class TestThinkingBlocks:
             cache_creation_input_tokens=0,
             cache_read_input_tokens=0,
         )
-        response.model = "claude-sonnet-4-5-20250929"
+        response.model = "claude-sonnet-4-6"
 
         agent._call_api = MagicMock(return_value=response)
         result = agent.handle_message("hej", chat_id="test")
@@ -204,7 +204,7 @@ class TestThinkingBlocks:
             cache_creation_input_tokens=0,
             cache_read_input_tokens=0,
         )
-        response2.model = "claude-sonnet-4-5-20250929"
+        response2.model = "claude-sonnet-4-6"
 
         agent._call_api = MagicMock(side_effect=[response1, response2])
         agent.execute_tool = MagicMock(return_value={"results": [], "total_count": 0})
