@@ -1,0 +1,227 @@
+"""Tests for storebot.bot.formatting — HTML escaping, Markdown→HTML, and message splitting."""
+
+from storebot.bot.formatting import (
+    TELEGRAM_MAX_MESSAGE_LENGTH,
+    html_escape,
+    markdown_to_telegram_html,
+    split_html_message,
+)
+
+
+class TestHtmlEscape:
+    def test_escapes_angle_brackets(self):
+        assert html_escape("<script>alert('xss')</script>") == (
+            "&lt;script&gt;alert('xss')&lt;/script&gt;"
+        )
+
+    def test_escapes_ampersand(self):
+        assert html_escape("foo & bar") == "foo &amp; bar"
+
+    def test_preserves_swedish_chars(self):
+        assert html_escape("åäö ÅÄÖ") == "åäö ÅÄÖ"
+
+    def test_preserves_newlines_and_emojis(self):
+        text = "Hej!\n🎉 Bra jobbat"
+        assert html_escape(text) == text
+
+    def test_empty_string(self):
+        assert html_escape("") == ""
+
+
+class TestMarkdownToTelegramHtml:
+    def test_bold(self):
+        assert "**fet text**" not in markdown_to_telegram_html("**fet text**")
+        assert "<b>fet text</b>" in markdown_to_telegram_html("**fet text**")
+
+    def test_italic_star(self):
+        assert "<i>kursiv</i>" in markdown_to_telegram_html("*kursiv*")
+
+    def test_italic_underscore(self):
+        assert "<i>kursiv</i>" in markdown_to_telegram_html("_kursiv_")
+
+    def test_inline_code(self):
+        result = markdown_to_telegram_html("Kör `storebot` nu")
+        assert "<code>storebot</code>" in result
+
+    def test_fenced_code_block(self):
+        md = "Före\n```python\ndef foo():\n    pass\n```\nEfter"
+        result = markdown_to_telegram_html(md)
+        assert "<pre>" in result
+        assert "</pre>" in result
+        assert "def foo():" in result
+
+    def test_code_block_content_html_escaped(self):
+        md = "```\n<div>test</div>\n```"
+        result = markdown_to_telegram_html(md)
+        assert "&lt;div&gt;" in result
+        assert "<div>" not in result
+
+    def test_code_block_not_markdown_processed(self):
+        md = "```\n**not bold** _not italic_\n```"
+        result = markdown_to_telegram_html(md)
+        assert "<b>" not in result
+        assert "<i>" not in result
+        assert "**not bold**" in result
+
+    def test_inline_code_html_escaped(self):
+        result = markdown_to_telegram_html("Kör `a < b`")
+        assert "<code>a &lt; b</code>" in result
+
+    def test_link(self):
+        result = markdown_to_telegram_html("[Tradera](https://tradera.com)")
+        assert '<a href="https://tradera.com">Tradera</a>' in result
+
+    def test_header(self):
+        result = markdown_to_telegram_html("# Rubrik")
+        assert "<b>Rubrik</b>" in result
+
+    def test_header_levels(self):
+        for level in range(1, 7):
+            hashes = "#" * level
+            result = markdown_to_telegram_html(f"{hashes} Rubrik {level}")
+            assert f"<b>Rubrik {level}</b>" in result
+
+    def test_blockquote(self):
+        result = markdown_to_telegram_html("> Citat här")
+        assert "<blockquote>Citat här</blockquote>" in result
+
+    def test_strikethrough(self):
+        result = markdown_to_telegram_html("~~struken~~")
+        assert "<s>struken</s>" in result
+
+    def test_mixed_formatting(self):
+        md = "**Titel**: *beskrivning* med `kod`"
+        result = markdown_to_telegram_html(md)
+        assert "<b>Titel</b>" in result
+        assert "<i>beskrivning</i>" in result
+        assert "<code>kod</code>" in result
+
+    def test_html_entities_escaped_in_text(self):
+        result = markdown_to_telegram_html("Pris: 100 < 200 & moms > 25%")
+        assert "&lt;" in result
+        assert "&amp;" in result
+        assert "&gt;" in result
+
+    def test_plain_text_only_escaping(self):
+        text = "Ingen markdown här, bara vanlig text."
+        result = markdown_to_telegram_html(text)
+        assert result == text
+
+    def test_swedish_text_preserved(self):
+        text = "Ångström & Björk — två fina möbler"
+        result = markdown_to_telegram_html(text)
+        assert "Ångström" in result
+        assert "&amp;" in result
+
+    def test_bullet_list_preserved(self):
+        md = "Saker:\n- Stol\n- Bord\n- Lampa"
+        result = markdown_to_telegram_html(md)
+        assert "- Stol" in result
+        assert "- Bord" in result
+        assert "- Lampa" in result
+
+    def test_numbered_list_preserved(self):
+        md = "Steg:\n1. Första\n2. Andra\n3. Tredje"
+        result = markdown_to_telegram_html(md)
+        assert "1. Första" in result
+        assert "2. Andra" in result
+
+    def test_multi_paragraph_preserved(self):
+        md = "Första stycket.\n\nAndra stycket."
+        result = markdown_to_telegram_html(md)
+        assert "\n\n" in result
+
+
+class TestSplitHtmlMessage:
+    def test_short_message_as_is(self):
+        result = split_html_message("Hej!")
+        assert result == ["Hej!"]
+
+    def test_exact_limit_not_split(self):
+        text = "x" * TELEGRAM_MAX_MESSAGE_LENGTH
+        result = split_html_message(text)
+        assert result == [text]
+
+    def test_over_limit_splits(self):
+        text = "x" * (TELEGRAM_MAX_MESSAGE_LENGTH + 1)
+        result = split_html_message(text)
+        assert len(result) >= 2
+        assert result[0].startswith("(1/")
+
+    def test_headers_format(self):
+        text = "x" * (TELEGRAM_MAX_MESSAGE_LENGTH * 2)
+        result = split_html_message(text)
+        total = len(result)
+        for i, part in enumerate(result):
+            assert part.startswith(f"({i + 1}/{total})\n")
+
+    def test_splits_at_paragraph_boundary(self):
+        half = TELEGRAM_MAX_MESSAGE_LENGTH // 2
+        text = "a" * half + "\n\n" + "b" * half
+        result = split_html_message(text)
+        assert len(result) == 2
+        assert result[0].endswith("a" * half)
+
+    def test_splits_at_line_boundary(self):
+        half = TELEGRAM_MAX_MESSAGE_LENGTH // 2
+        text = "a" * half + "\n" + "b" * half
+        result = split_html_message(text)
+        assert len(result) == 2
+        assert result[0].endswith("a" * half)
+
+    def test_splits_at_word_boundary(self):
+        word = "word "
+        text = word * (TELEGRAM_MAX_MESSAGE_LENGTH // len(word) + 100)
+        result = split_html_message(text)
+        assert len(result) >= 2
+        content = result[0].split("\n", 1)[1]
+        assert content.endswith("word")
+
+    def test_dense_text_hard_cut(self):
+        text = "x" * (TELEGRAM_MAX_MESSAGE_LENGTH * 3)
+        result = split_html_message(text)
+        assert len(result) >= 3
+        for part in result:
+            assert len(part) <= TELEGRAM_MAX_MESSAGE_LENGTH
+
+    def test_no_content_lost(self):
+        text = "Hello world! " * 500
+        result = split_html_message(text)
+        content = " ".join(part.split("\n", 1)[1] for part in result)
+        assert content.split() == text.split()
+
+    def test_empty_string(self):
+        assert split_html_message("") == [""]
+
+    def test_closes_open_bold_tag(self):
+        # Build text where a <b>...</b> spans the split boundary
+        half = TELEGRAM_MAX_MESSAGE_LENGTH // 2
+        text = "<b>" + "x" * half + " " + "y" * half + "</b>"
+        result = split_html_message(text)
+        assert len(result) >= 2
+        # First chunk should have closing </b>
+        first_content = result[0].split("\n", 1)[1]
+        assert first_content.endswith("</b>")
+        # Second chunk should reopen <b>
+        second_content = result[1].split("\n", 1)[1]
+        assert second_content.startswith("<b>")
+
+    def test_closes_nested_tags(self):
+        half = TELEGRAM_MAX_MESSAGE_LENGTH // 2
+        text = "<b><i>" + "x" * half + " " + "y" * half + "</i></b>"
+        result = split_html_message(text)
+        assert len(result) >= 2
+        first_content = result[0].split("\n", 1)[1]
+        # Should close inner tag first, then outer
+        assert "</i></b>" in first_content
+        second_content = result[1].split("\n", 1)[1]
+        # Should reopen outer first, then inner
+        assert second_content.startswith("<b><i>")
+
+    def test_preserves_a_href_on_reopen(self):
+        half = TELEGRAM_MAX_MESSAGE_LENGTH // 2
+        text = '<a href="https://example.com">' + "x" * half + " " + "y" * half + "</a>"
+        result = split_html_message(text)
+        assert len(result) >= 2
+        second_content = result[1].split("\n", 1)[1]
+        assert '<a href="https://example.com">' in second_content

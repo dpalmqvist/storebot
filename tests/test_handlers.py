@@ -2,90 +2,22 @@ import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import telegram.error
 
 from storebot import __version__
 from storebot.bot.handlers import (
-    TELEGRAM_MAX_MESSAGE_LENGTH,
     _alert_admin,
     _check_access,
     _format_listing_dashboard,
     _init_owner,
+    _reply,
+    _send,
     _send_display_images,
-    _split_message,
     _validate_credentials,
     daily_listing_report_job,
     new_conversation,
 )
 from storebot.config import Settings
-
-
-class TestSplitMessage:
-    def test_short_message_returned_as_is(self):
-        result = _split_message("Hello")
-        assert result == ["Hello"]
-
-    def test_exact_limit_not_split(self):
-        text = "x" * TELEGRAM_MAX_MESSAGE_LENGTH
-        result = _split_message(text)
-        assert result == [text]
-
-    def test_over_limit_splits_into_multiple(self):
-        text = "x" * (TELEGRAM_MAX_MESSAGE_LENGTH + 1)
-        result = _split_message(text)
-        assert len(result) >= 2
-        assert result[0].startswith("(1/")
-        assert result[1].startswith("(2/")
-
-    def test_splits_at_paragraph_boundary(self):
-        half = TELEGRAM_MAX_MESSAGE_LENGTH // 2
-        text = "a" * half + "\n\n" + "b" * half
-        result = _split_message(text)
-        assert len(result) == 2
-        assert result[0].endswith("a" * half)
-        assert "b" * half in result[1]
-
-    def test_splits_at_line_boundary(self):
-        half = TELEGRAM_MAX_MESSAGE_LENGTH // 2
-        text = "a" * half + "\n" + "b" * half
-        result = _split_message(text)
-        assert len(result) == 2
-        assert result[0].endswith("a" * half)
-
-    def test_splits_at_word_boundary(self):
-        # No newlines — should split at space
-        word = "word "
-        text = word * (TELEGRAM_MAX_MESSAGE_LENGTH // len(word) + 100)
-        result = _split_message(text)
-        assert len(result) >= 2
-        # First chunk content (after header) should end at a word boundary
-        content = result[0].split("\n", 1)[1]
-        assert content.endswith("word")
-
-    def test_dense_text_without_breaks(self):
-        # No spaces, newlines, or paragraphs — must hard-cut
-        text = "x" * (TELEGRAM_MAX_MESSAGE_LENGTH * 3)
-        result = _split_message(text)
-        assert len(result) >= 3
-        for part in result:
-            assert len(part) <= TELEGRAM_MAX_MESSAGE_LENGTH
-
-    def test_headers_format(self):
-        text = "x" * (TELEGRAM_MAX_MESSAGE_LENGTH * 2)
-        result = _split_message(text)
-        total = len(result)
-        for i, part in enumerate(result):
-            assert part.startswith(f"({i + 1}/{total})\n")
-
-    def test_no_content_lost(self):
-        text = "Hello world! " * 500
-        result = _split_message(text)
-        # Strip headers and rejoin
-        content = " ".join(part.split("\n", 1)[1] for part in result)
-        # All words from the original should appear in the reassembled content
-        assert content.split() == text.split()
-
-    def test_empty_string(self):
-        assert _split_message("") == [""]
 
 
 class TestValidateCredentials:
@@ -192,7 +124,11 @@ class TestAlertAdmin:
 
         await _alert_admin(context, "Test alert")
 
-        context.bot.send_message.assert_awaited_once_with(chat_id=12345, text="Test alert")
+        context.bot.send_message.assert_awaited_once()
+        call_kwargs = context.bot.send_message.call_args.kwargs
+        assert call_kwargs["chat_id"] == 12345
+        assert call_kwargs["text"] == "Test alert"
+        assert call_kwargs["parse_mode"] == "HTML"
 
     @pytest.mark.asyncio
     async def test_does_nothing_when_no_chat_id(self):
@@ -370,8 +306,9 @@ class TestDailyListingReportJob:
         marketing.refresh_listing_stats.assert_called_once()
         marketing.get_listing_dashboard.assert_called_once()
         context.bot.send_message.assert_awaited_once()
-        sent_text = context.bot.send_message.call_args.kwargs["text"]
-        assert "Daglig annonsrapport" in sent_text
+        call_kwargs = context.bot.send_message.call_args.kwargs
+        assert "Daglig annonsrapport" in call_kwargs["text"]
+        assert call_kwargs["parse_mode"] == "HTML"
 
     @pytest.mark.asyncio
     async def test_skips_when_no_listings(self):
@@ -497,3 +434,53 @@ class TestNewConversation:
         reply = update.message.reply_text.call_args[0][0]
         assert "Konversationen är nollställd" in reply
         assert f"Storebot v{__version__}" in reply
+
+
+class TestReplyAndSend:
+    @pytest.mark.asyncio
+    async def test_reply_sends_with_html_parse_mode(self):
+        update = MagicMock()
+        update.message.reply_text = AsyncMock()
+
+        await _reply(update, "Hello")
+
+        update.message.reply_text.assert_awaited_once_with("Hello", parse_mode="HTML")
+
+    @pytest.mark.asyncio
+    async def test_reply_falls_back_on_bad_request(self):
+        update = MagicMock()
+        update.message.reply_text = AsyncMock(
+            side_effect=[telegram.error.BadRequest("parse error"), None]
+        )
+
+        await _reply(update, "Hello")
+
+        assert update.message.reply_text.await_count == 2
+        # Second call should have no parse_mode
+        second_call = update.message.reply_text.call_args_list[1]
+        assert second_call == (("Hello",),)
+
+    @pytest.mark.asyncio
+    async def test_send_sends_with_html_parse_mode(self):
+        context = MagicMock()
+        context.bot.send_message = AsyncMock()
+
+        await _send(context, 12345, "Hello")
+
+        context.bot.send_message.assert_awaited_once_with(
+            chat_id=12345, text="Hello", parse_mode="HTML"
+        )
+
+    @pytest.mark.asyncio
+    async def test_send_falls_back_on_bad_request(self):
+        context = MagicMock()
+        context.bot.send_message = AsyncMock(
+            side_effect=[telegram.error.BadRequest("parse error"), None]
+        )
+
+        await _send(context, 12345, "Hello")
+
+        assert context.bot.send_message.await_count == 2
+        # Second call should have no parse_mode
+        second_call = context.bot.send_message.call_args_list[1]
+        assert second_call == ((), {"chat_id": 12345, "text": "Hello"})
