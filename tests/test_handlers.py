@@ -93,7 +93,6 @@ class TestValidateCredentials:
             claude_api_key="key",
             tradera_app_id="tid",
             tradera_app_key="tkey",
-            blocket_bearer_token="btoken",
             postnord_api_key="pkey",
         )
         with caplog.at_level(logging.DEBUG):
@@ -129,18 +128,6 @@ class TestValidateCredentials:
 
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert any("Tradera" in r.message for r in warnings)
-
-    def test_missing_blocket_logs_warning(self, caplog):
-        settings = Settings(
-            telegram_bot_token="tok",
-            claude_api_key="key",
-            blocket_bearer_token="",
-        )
-        with caplog.at_level(logging.DEBUG):
-            _validate_credentials(settings)
-
-        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-        assert any("Blocket" in r.message for r in warnings)
 
     def test_missing_postnord_logs_warning(self, caplog):
         settings = Settings(

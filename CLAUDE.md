@@ -8,12 +8,12 @@ Storebot is an AI-powered agent system for managing a Swedish country shop ("Lan
 
 ## Tech Stack
 
-- **Language:** Python 3.10+
+- **Language:** Python 3.11+
 - **LLM:** Claude API (direct integration, no LangChain)
 - **Database:** SQLite + sqlite-vec (single-user, simple deployment)
 - **Accounting:** Local SQLite vouchers + PDF export (double-entry bookkeeping, BAS-kontoplan)
 - **Chat interface:** Telegram via `python-telegram-bot` v20+
-- **Marketplace APIs:** Tradera (SOAP via `zeep`), Blocket (unofficial REST via `blocket-api`)
+- **Marketplace APIs:** Tradera (SOAP via `zeep`), Blocket (unofficial REST, no auth needed)
 - **Deployment:** Native systemd on Raspberry Pi 5
 
 ## Architecture
@@ -64,7 +64,7 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 ## External API Notes
 
 - **Tradera:** SOAP/XML API, rate limit 100 calls/24h (extendable via apiadmin@tradera.com). Sandbox via `sandbox=1`. Register at Tradera Developer Program. Request restricted API access (RestrictedService, OrderService) by emailing apiadmin@tradera.com. **No messaging/Q&A support** — the SOAP API has no methods for reading or answering buyer questions. Customer communication will require email integration.
-- **Blocket:** Unofficial, read-only. Bearer token extracted from browser session (expires, needs manual renewal).
+- **Blocket:** Unofficial, read-only. No authentication needed. Search uses REST API, ad details use HTML scraping with hydration data extraction.
 - **PostNord:** REST API for shipping labels. Sandbox: `atapi2.postnord.com`, production: `api2.postnord.com`. API key as query parameter. Service codes: `19` (MyPack Collect), `17` (MyPack Home), `18` (Postpaket).
 
 ## Swedish Business Context
@@ -81,7 +81,7 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **Database layer** — SQLAlchemy 2.0 models for all core tables (`products`, `product_images`, `platform_listings`, `orders`, `vouchers`, `voucher_rows`, `agent_actions`, `notifications`, `conversation_messages`). Foreign keys, JSON columns.
 - **Alembic migrations** — Versioned schema migrations with SQLite batch mode. Auto-runs on bot startup via `init_db()`. Falls back to `create_all()` when `alembic.ini` absent (tests). For existing databases: `alembic stamp head`.
 - **Tradera search** — SOAP via zeep, `SearchAdvanced` with category/price filters, result parsing (bids, buy-now, images). `get_orders`, `get_item` for order/item details.
-- **Blocket integration** — Unofficial REST API, read-only. `search` for price research/sourcing, `get_ad` for full ad details (description, images, seller, parameters). Agent tools: `search_blocket`, `get_blocket_ad`.
+- **Blocket integration** — Unofficial REST API, read-only, no auth needed. `search` for price research/sourcing (with price filters and sort enums), `get_ad` for full ad details via HTML scraping. Agent tools: `search_blocket`, `get_blocket_ad`. Enums: `Category`, `SubCategory`, `Location`, `SortOrder`.
 - **Pricing Agent** — `PricingService.price_check()` searches both Tradera + Blocket, computes stats (min/max/mean/median), suggests price range via quartiles, logs `AgentAction`.
 - **Listing Agent** — `ListingService` with full draft workflow: `create_draft`, `list_drafts`, `get_draft`, `update_draft`, `approve_draft`, `revise_draft`, `reject_draft`, `search_products`, `relist_product` (copies ended/sold listings to new draft), `cancel_listing` (local cancellation with Tradera caveat). All with validation and `AgentAction` audit logging.
 - **Product management** — `create_product` (with all optional fields: condition, materials, era, dimensions, source, acquisition_cost, weight_grams), `get_product` (full detail lookup with image/listing counts), `save_product_image` (with is_primary logic), and `delete_product_image` (with automatic primary promotion).
@@ -102,7 +102,7 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **Tradera authorization CLI** — `storebot-authorize-tradera` command for obtaining user tokens via consent flow. `TraderaClient.fetch_token()` calls `PublicService.FetchToken`. Saves credentials to `.env`.
 - **PostNord shipping labels** — `PostNordClient` REST client: `create_shipment()`, `get_label()`, `save_label()`. `Address` dataclass for sender/recipient, `parse_buyer_address()` for parsing Swedish addresses. Sandbox/production URL switching. Integrated into `OrderService.create_shipping_label()` with validation (weight, address), PDF label storage, tracking number persistence, and `AgentAction` audit trail.
 - **Resilience & observability** — Retry decorator with exponential backoff on transient errors (Tradera SOAP, Blocket REST, PostNord REST), structured JSON logging (`LOG_JSON` toggle), startup credential validation, admin alerts on scheduled job failures. SQLite WAL mode + busy timeout. Systemd restart limits, backup integrity checks with gzip compression.
-- **Tests** — 799 tests across 26 modules covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, analytics, postnord, CLI, retry, logging, handlers, log_viewer, compaction, model_routing, parallel, reflection, schemas, thinking, tool_filtering, and usage.
+- **Tests** — 802 tests across 26 modules covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, analytics, postnord, CLI, retry, logging, handlers, log_viewer, compaction, model_routing, parallel, reflection, schemas, thinking, tool_filtering, and usage.
 
 ### Not started
 

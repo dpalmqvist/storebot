@@ -34,7 +34,6 @@ def _make_agent(engine):
     settings.tradera_sandbox = True
     settings.tradera_user_id = None
     settings.tradera_user_token = None
-    settings.blocket_bearer_token = None
     settings.postnord_api_key = None
     return Agent(settings=settings, engine=engine)
 

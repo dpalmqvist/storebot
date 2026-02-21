@@ -11,7 +11,7 @@ Code quality (maintainability, robustness, usability)
 - Data integrity: voucher numbers are derived from count (race condition risk) in [`src/storebot/tools/accounting.py`](../src/storebot/tools/accounting.py); marketing report N+1 querying in [`src/storebot/tools/marketing.py`](../src/storebot/tools/marketing.py); unmatched orders are dropped (manual reconciliation needed) in [`src/storebot/tools/order.py`](../src/storebot/tools/order.py).
 
 Tests, CI, and usability
-- CI triggers only on PRs to main; no push builds. `claude-review` fails on missing secrets; CI only on Python 3.13 despite requiring 3.10+ (see [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)).
+- CI triggers only on PRs to main; no push builds. `claude-review` fails on missing secrets; CI only on Python 3.13 despite requiring 3.11+ (see [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)).
 - Tests have potential flakiness: time-based assertions in [`tests/test_marketing.py`](../tests/test_marketing.py); filesystem writes to `data/photos` in [`tests/test_conversation.py`](../tests/test_conversation.py); compression-size ordering in [`tests/test_image.py`](../tests/test_image.py). Coverage gaps in handler flows and schema coverage in [`tests/test_handlers.py`](../tests/test_handlers.py) and [`tests/test_db.py`](../tests/test_db.py).
 
 Top recommendations (prioritized)

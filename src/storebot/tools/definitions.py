@@ -182,7 +182,7 @@ TOOLS = [
     # --- Blocket ---
     {
         "name": "search_blocket",
-        "description": "Search Blocket for items. Read-only, useful for price research and sourcing opportunities.",
+        "description": "Search Blocket for items. Read-only, useful for price research and sourcing opportunities. No auth needed.",
         "category": "research",
         "input_schema": {
             "type": "object",
@@ -190,11 +190,31 @@ TOOLS = [
                 "query": {"type": "string", "description": "Search query"},
                 "category": {
                     "type": "string",
-                    "description": "Category filter (omit to skip)",
+                    "description": "Category ID, e.g. '0.78' (Möbler & Inredning), '0.76' (Konst & Antikt)",
                 },
                 "region": {
                     "type": "string",
-                    "description": "Region filter (omit to skip)",
+                    "description": "Region ID, e.g. '0.300001' (Stockholm), '0.300012' (Skåne)",
+                },
+                "price_from": {
+                    "type": "integer",
+                    "description": "Minimum price filter in SEK",
+                },
+                "price_to": {
+                    "type": "integer",
+                    "description": "Maximum price filter in SEK",
+                },
+                "sort": {
+                    "type": "string",
+                    "description": "Sort order (omit defaults to PUBLISHED_DESC)",
+                    # Keep in sync with SortOrder enum in tools/blocket.py
+                    "enum": [
+                        "RELEVANCE",
+                        "PRICE_DESC",
+                        "PRICE_ASC",
+                        "PUBLISHED_DESC",
+                        "PUBLISHED_ASC",
+                    ],
                 },
             },
             "required": ["query"],
@@ -203,7 +223,7 @@ TOOLS = [
     },
     {
         "name": "get_blocket_ad",
-        "description": "Get full details of a single Blocket ad including description, all images, seller info, and item parameters. Useful for deeper research on a specific item found via search.",
+        "description": "Get full details of a single Blocket ad including description, all images, and item parameters. Uses HTML scraping, no auth needed.",
         "category": "research",
         "strict": True,
         "input_schema": {

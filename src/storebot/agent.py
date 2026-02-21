@@ -371,11 +371,7 @@ class Agent:
             user_id=self.settings.tradera_user_id,
             user_token=self.settings.tradera_user_token,
         )
-        self.blocket = (
-            BlocketClient(bearer_token=self.settings.blocket_bearer_token)
-            if self.settings.blocket_bearer_token
-            else None
-        )
+        self.blocket = BlocketClient()
         self.accounting = (
             AccountingService(
                 engine=self.engine,
