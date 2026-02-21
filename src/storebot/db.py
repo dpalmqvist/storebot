@@ -267,15 +267,19 @@ def _configure_sqlite(dbapi_connection, connection_record):
 
 
 def _load_sqlite_vec(dbapi_connection, connection_record):
+    enabled = False
     try:
         import sqlite_vec
 
         dbapi_connection.enable_load_extension(True)
+        enabled = True
         sqlite_vec.load(dbapi_connection)
-        dbapi_connection.enable_load_extension(False)
         logger.debug("sqlite_vec extension loaded")
     except Exception as e:
         logger.debug("sqlite_vec not loaded (optional): %s", e)
+    finally:
+        if enabled:
+            dbapi_connection.enable_load_extension(False)
 
 
 def _secure_db_file(database_path: str) -> None:
