@@ -189,8 +189,9 @@ def _extract_hydration_data(html: str) -> dict | None:
         return None
     try:
         raw = match.group(1)
-        decoded = raw.encode("utf-8").decode("unicode_escape")
-        data = json.loads(decoded.encode("latin1").decode("utf-8"))
+        # Use json.loads to unescape — handles both raw UTF-8 and \uXXXX escapes
+        inner_json = json.loads('"' + raw + '"')
+        data = json.loads(inner_json)
         return data["loaderData"]["item-recommerce"]["itemData"]
     except Exception:
         logger.debug("Failed to parse hydration data", exc_info=True)
@@ -215,7 +216,7 @@ def _parse_hydration_item(data: dict, ad_id: str) -> dict:
         "images": [img.get("uri", "") for img in images if img.get("uri")],
         "location": location.get("postalName", ""),
         "category": category.get("value", ""),
-        "seller": {"name": "", "id": ""},
+        "seller": {"name": "", "id": ""},  # not available in hydration JSON
         "parameters": {e.get("label", ""): e.get("value", "") for e in extras if e.get("label")},
         "published": meta.get("edited"),
     }

@@ -93,7 +93,7 @@ def _make_ad_html(item_data):
             }
         }
     }
-    json_str = json.dumps(hydration, ensure_ascii=False)
+    json_str = json.dumps(hydration)  # ensure_ascii=True matches JSON.stringify behavior
     escaped = json_str.replace("\\", "\\\\").replace('"', '\\"')
     return f'<html><script>window.__staticRouterHydrationData = JSON.parse("{escaped}")</script></html>'
 
@@ -469,6 +469,22 @@ class TestHydrationParser:
         html = '<html><script>window.__staticRouterHydrationData = JSON.parse("not-valid-json")</script></html>'
         result = _extract_hydration_data(html)
         assert result is None
+
+    def test_extract_hydration_data_with_unicode_escapes(self):
+        """Validate decoding when JS has \\uXXXX-escaped Swedish characters."""
+        item_data = _make_hydration_data(
+            title="Antikt bord från 1800-tal",
+            description="Vackert skåp med dörr",
+        )
+        html = _make_ad_html(item_data)
+        # Verify the HTML actually contains \uXXXX escapes (not raw UTF-8)
+        assert "\\u00e5" in html  # å
+
+        result = _extract_hydration_data(html)
+
+        assert result is not None
+        assert result["title"] == "Antikt bord från 1800-tal"
+        assert result["description"] == "Vackert skåp med dörr"
 
     def test_parse_hydration_item_maps_fields(self):
         data = _make_hydration_data()

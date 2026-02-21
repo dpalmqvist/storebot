@@ -207,6 +207,7 @@ TOOLS = [
                 "sort": {
                     "type": "string",
                     "description": "Sort order (omit defaults to PUBLISHED_DESC)",
+                    # Keep in sync with SortOrder enum in tools/blocket.py
                     "enum": [
                         "RELEVANCE",
                         "PRICE_DESC",
