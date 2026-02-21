@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from storebot import __version__
 from storebot.bot.handlers import (
     TELEGRAM_MAX_MESSAGE_LENGTH,
     _alert_admin,
@@ -13,6 +14,7 @@ from storebot.bot.handlers import (
     _split_message,
     _validate_credentials,
     daily_listing_report_job,
+    new_conversation,
 )
 from storebot.config import Settings
 
@@ -476,3 +478,21 @@ class TestOwnerChatId:
         _init_owner(bot_data)
         assert "owner_chat_id" not in bot_data
         assert bot_data["allowed_chat_ids"] == set()
+
+
+class TestNewConversation:
+    @pytest.mark.asyncio
+    async def test_shows_version(self):
+        update = MagicMock()
+        update.effective_chat.id = 12345
+        update.message.reply_text = AsyncMock()
+        conversation = MagicMock()
+        context = MagicMock()
+        context.bot_data = {
+            "settings": Settings(telegram_bot_token="x", claude_api_key="x"),
+            "allowed_chat_ids": set(),
+            "conversation": conversation,
+        }
+        await new_conversation(update, context)
+        reply = update.message.reply_text.call_args[0][0]
+        assert f"Storebot v{__version__}" in reply

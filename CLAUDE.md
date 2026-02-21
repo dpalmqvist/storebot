@@ -102,6 +102,7 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **Tradera authorization CLI** — `storebot-authorize-tradera` command for obtaining user tokens via consent flow. `TraderaClient.fetch_token()` calls `PublicService.FetchToken`. Saves credentials to `.env`.
 - **PostNord shipping labels** — `PostNordClient` REST client: `create_shipment()`, `get_label()`, `save_label()`. `Address` dataclass for sender/recipient, `parse_buyer_address()` for parsing Swedish addresses. Sandbox/production URL switching. Integrated into `OrderService.create_shipping_label()` with validation (weight, address), PDF label storage, tracking number persistence, and `AgentAction` audit trail.
 - **Resilience & observability** — Retry decorator with exponential backoff on transient errors (Tradera SOAP, Blocket REST, PostNord REST), structured JSON logging (`LOG_JSON` toggle), startup credential validation, admin alerts on scheduled job failures. SQLite WAL mode + busy timeout. Systemd restart limits, backup integrity checks with gzip compression.
+- **Semantic versioning** — Conventional commits with `python-semantic-release`. Version in `src/storebot/__init__.py` (single source of truth), automatic bumps via GitHub Actions on merge to main. Pre-commit hook validates commit message format.
 - **Tests** — 802 tests across 26 modules covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, analytics, postnord, CLI, retry, logging, handlers, log_viewer, compaction, model_routing, parallel, reflection, schemas, thinking, tool_filtering, and usage.
 
 ### Not started
@@ -150,6 +151,27 @@ Before pushing to GitHub, always run and verify:
 3. `pytest` — all unit tests must pass
 
 Do NOT push if any of these fail. Fix issues first.
+
+## Commit Message Convention
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org/) for automatic semantic versioning. All commit messages **must** follow this format:
+
+```
+<type>(<optional scope>): <description>
+```
+
+**Types that trigger version bumps:**
+
+| Type | Version bump | Example |
+|------|-------------|---------|
+| `fix:` | Patch (0.1.0 → 0.1.1) | `fix: handle null price in Blocket parser` |
+| `perf:` | Patch | `perf: cache Tradera category lookups` |
+| `feat:` | Minor (0.1.0 → 0.2.0) | `feat: add social media cross-posting` |
+| `feat!:` or `BREAKING CHANGE:` in body | Major (0.1.0 → 1.0.0) | `feat!: redesign tool interface` |
+
+**Types that do NOT trigger bumps:** `docs:`, `style:`, `refactor:`, `test:`, `build:`, `ci:`, `chore:`
+
+Versioning is managed by `python-semantic-release`. On merge to `main`, GitHub Actions automatically bumps the version in `src/storebot/__init__.py`, creates a git tag, and updates `CHANGELOG.md`.
 
 ## Commands
 
