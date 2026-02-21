@@ -865,6 +865,17 @@ class TestGetShippingOptions:
         call_kwargs = client._public_client.service.GetShippingOptions.call_args.kwargs
         assert call_kwargs["request"] == {"FromCountryCodes": ["NO"]}
 
+    def test_includes_authorization_header(self, client):
+        """GetShippingOptions requires AuthorizationHeader per WSDL."""
+        response = MagicMock()
+        response.ProductsPerWeightSpan = None
+        client._public_client.service.GetShippingOptions.return_value = response
+
+        client.get_shipping_options()
+
+        call_kwargs = client._public_client.service.GetShippingOptions.call_args.kwargs
+        assert len(call_kwargs["_soapheaders"]) == 3
+
     def test_decimal_values_are_json_serializable(self, client):
         """Regression: zeep returns Decimal for numeric WSDL fields."""
         pkg = MagicMock()
@@ -1049,7 +1060,7 @@ class TestCreateListingShipping:
 
 class TestTraderaLeaveFeedback:
     def test_success(self, client):
-        client._restricted_client.service.LeaveOrderFeedbackToBuyer.return_value = True
+        client._restricted_client.service.LeaveOrderFeedbackToBuyer.return_value = None
 
         result = client.leave_feedback(order_number=42, comment="Snabb betalning, tack!")
 
@@ -1086,14 +1097,6 @@ class TestTraderaLeaveFeedback:
         assert "error" in result
         assert "Invalid feedback type" in result["error"]
         client._restricted_client.service.LeaveOrderFeedbackToBuyer.assert_not_called()
-
-    def test_api_returns_false(self, client):
-        client._restricted_client.service.LeaveOrderFeedbackToBuyer.return_value = False
-
-        result = client.leave_feedback(order_number=42, comment="Tack!")
-
-        assert "error" in result
-        assert "rejected" in result["error"]
 
     def test_api_error(self, client):
         client._restricted_client.service.LeaveOrderFeedbackToBuyer.side_effect = Exception(
