@@ -1060,7 +1060,7 @@ class TestCreateListingShipping:
 
 class TestTraderaLeaveFeedback:
     def test_success(self, client):
-        client._restricted_client.service.LeaveOrderFeedbackToBuyer.return_value = True
+        client._restricted_client.service.LeaveOrderFeedbackToBuyer.return_value = None
 
         result = client.leave_feedback(order_number=42, comment="Snabb betalning, tack!")
 
