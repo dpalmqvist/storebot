@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -19,6 +20,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from storebot.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -270,8 +273,9 @@ def _load_sqlite_vec(dbapi_connection, connection_record):
         dbapi_connection.enable_load_extension(True)
         sqlite_vec.load(dbapi_connection)
         dbapi_connection.enable_load_extension(False)
-    except Exception:
-        pass
+        logger.debug("sqlite_vec extension loaded")
+    except Exception as e:
+        logger.debug("sqlite_vec not loaded (optional): %s", e)
 
 
 def _secure_db_file(database_path: str) -> None:
