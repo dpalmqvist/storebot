@@ -49,7 +49,7 @@ See [Installation & Setup](docs/installation.md) for full configuration and serv
 
 Phase 1 (MVP) and Phase 2 are complete. Phase 3 is partially done — Scout Agent, Marketing Agent, and Analytics are implemented (MCP wrappers and social media cross-posting remain). See [CLAUDE.md](CLAUDE.md) for full implementation status and build phases.
 
-**Tech stack:** Python 3.10+, Claude API (direct, no LangChain), SQLite, Telegram, Tradera SOAP, PostNord REST, Pillow, SQLAlchemy 2.0, Alembic.
+**Tech stack:** Python 3.11+, Claude API (direct, no LangChain), SQLite, Telegram, Tradera SOAP, PostNord REST, Pillow, SQLAlchemy 2.0, Alembic.
 
 ## License
 

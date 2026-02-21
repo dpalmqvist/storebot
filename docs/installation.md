@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Python 3.10+** (developed and tested with 3.13)
+- **Python 3.11+** (developed and tested with 3.13)
 - **[uv](https://docs.astral.sh/uv/)** package manager
 - **sqlite3** CLI tool (`sudo apt install sqlite3` on Debian/Ubuntu) — required by the backup script
 - API keys for the services below

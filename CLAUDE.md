@@ -8,7 +8,7 @@ Storebot is an AI-powered agent system for managing a Swedish country shop ("Lan
 
 ## Tech Stack
 
-- **Language:** Python 3.10+
+- **Language:** Python 3.11+
 - **LLM:** Claude API (direct integration, no LangChain)
 - **Database:** SQLite + sqlite-vec (single-user, simple deployment)
 - **Accounting:** Local SQLite vouchers + PDF export (double-entry bookkeeping, BAS-kontoplan)
