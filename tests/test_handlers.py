@@ -495,4 +495,5 @@ class TestNewConversation:
         }
         await new_conversation(update, context)
         reply = update.message.reply_text.call_args[0][0]
+        assert "Konversationen är nollställd" in reply
         assert f"Storebot v{__version__}" in reply

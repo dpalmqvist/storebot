@@ -126,6 +126,7 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 uv venv --python 3.13
 source .venv/bin/activate
 uv pip install -e ".[dev]"
+pre-commit install  # activates commit-msg hook for conventional commits
 cp .env.example .env  # fill in API keys
 ```
 
