@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "storebot"
-version = "0.1.0"
+dynamic = ["version"]
 description = "AI-powered agent for managing a Swedish country shop"
 requires-python = ">=3.11"
 dependencies = [
@@ -27,6 +27,7 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "ruff",
+    "pre-commit",
 ]
 
 [project.scripts]
@@ -34,6 +35,9 @@ storebot = "storebot.bot.handlers:main"
 storebot-authorize-tradera = "storebot.cli:authorize_tradera"
 storebot-logs = "storebot.tui.log_viewer:main"
 storebot-sync-categories = "storebot.cli:sync_categories"
+
+[tool.hatch.version]
+path = "src/storebot/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/storebot"]
@@ -44,3 +48,19 @@ target-version = "py310"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.semantic_release]
+version_variables = ["src/storebot/__init__.py:__version__"]
+version_toml = []
+branch = "main"
+build_command = ""
+commit_message = "chore(release): v{version}"
+tag_format = "v{version}"
+
+[tool.semantic_release.changelog]
+changelog_file = "CHANGELOG.md"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = ["feat", "fix", "perf", "refactor", "docs", "style", "test", "build", "ci", "chore"]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]

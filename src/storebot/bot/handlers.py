@@ -7,6 +7,7 @@ from pathlib import Path
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
+from storebot import __version__
 from storebot.agent import Agent
 from storebot.config import Settings, get_settings
 from storebot.db import init_db
@@ -297,7 +298,9 @@ async def new_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     conversation: ConversationService = context.bot_data["conversation"]
     chat_id = str(update.effective_chat.id)
     conversation.clear_history(chat_id)
-    await update.message.reply_text("Konversationen är nollställd. Vad kan jag hjälpa dig med?")
+    await update.message.reply_text(
+        f"Konversationen är nollställd. Vad kan jag hjälpa dig med?\n\nStorebot v{__version__}"
+    )
 
 
 async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

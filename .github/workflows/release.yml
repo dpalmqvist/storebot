@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # NOTE: If branch protection requires PR reviews on main,
+          # replace with a fine-grained PAT stored as secrets.SEMANTIC_RELEASE_TOKEN
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - run: uv python install 3.13
+
+      - run: uv sync --extra dev
+
+      - run: uv run ruff check src/ tests/
+
+      - run: uv run pytest tests/
+
+      - run: uv pip install "python-semantic-release>=9,<10"
+
+      - name: Semantic Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: semantic-release version --commit --tag --push --changelog
