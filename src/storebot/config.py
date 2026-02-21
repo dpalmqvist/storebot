@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     tradera_user_id: str = ""
     tradera_user_token: str = ""
 
-    # Blocket (unofficial, bearer token from browser session)
+    # Blocket (deprecated — no longer needed, kept for backward compatibility)
     blocket_bearer_token: str = ""
 
     # PostNord (shipping labels)

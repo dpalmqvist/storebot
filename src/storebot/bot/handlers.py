@@ -225,8 +225,6 @@ def _validate_credentials(settings: Settings) -> None:
 
     if not settings.tradera_app_id or not settings.tradera_app_key:
         logger.warning("Tradera credentials missing — Tradera features disabled")
-    if not settings.blocket_bearer_token:
-        logger.warning("Blocket bearer token missing — Blocket search disabled")
     if not settings.postnord_api_key:
         logger.warning("PostNord API key missing — shipping labels disabled")
 

@@ -227,17 +227,6 @@ Failures in scheduled jobs (order polling, scout digest, marketing refresh, week
 4. Verify `CLAUDE_API_KEY` is valid and has billing
 5. Restart: `sudo systemctl restart storebot`
 
-### Blocket Token Expired
-
-The Blocket bearer token expires periodically. Symptoms: Blocket searches return errors or empty results.
-
-1. Log in to Blocket in your browser
-2. Extract a fresh token from DevTools (see [installation](installation.md#blocket))
-3. Update `BLOCKET_BEARER_TOKEN` in `.env`
-4. Restart the service
-
-The bot functions without Blocket — only Blocket price research is affected.
-
 ### Tradera Rate Limits
 
 Tradera allows 100 API calls per 24 hours by default. If you hit the limit:
@@ -263,7 +252,6 @@ The bot validates credentials on startup and logs warnings for missing ones:
 - `TELEGRAM_BOT_TOKEN` — **Error**: Bot cannot start
 - `CLAUDE_API_KEY` — **Error**: Agent will not work
 - `TRADERA_APP_ID`/`TRADERA_APP_KEY` — **Warning**: Tradera features disabled
-- `BLOCKET_BEARER_TOKEN` — **Warning**: Blocket search disabled
 - `POSTNORD_API_KEY` — **Warning**: Shipping labels disabled
 
 ## Update Procedure

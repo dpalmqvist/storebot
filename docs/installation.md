@@ -54,8 +54,6 @@ These are set automatically by the `storebot-authorize-tradera` CLI command (see
 | `CLAUDE_MODEL` | `claude-sonnet-4-5-20250929` | Claude model for the agent loop |
 | **Tradera** | | |
 | `TRADERA_SANDBOX` | `true` | Use Tradera sandbox environment |
-| **Blocket** | | |
-| `BLOCKET_BEARER_TOKEN` | *(empty)* | Bearer token for Blocket price research |
 | **PostNord** | | |
 | `POSTNORD_API_KEY` | *(empty)* | PostNord API key for shipping labels |
 | `POSTNORD_SANDBOX` | `true` | Use PostNord sandbox (`atapi2.postnord.com` instead of `api2.postnord.com`) |
@@ -154,13 +152,7 @@ This will:
 
 Blocket has no official public API. Storebot uses an unofficial REST endpoint for **read-only** price research.
 
-1. Log in to Blocket in your browser
-2. Open DevTools (F12) > Network tab
-3. Search for something on Blocket and find a request to `blocket.se/recommerce/forsale/search/api/search`
-4. Copy the `Authorization: Bearer <token>` header value
-5. Set `BLOCKET_BEARER_TOKEN` in `.env`
-
-**Note:** The token expires periodically and must be manually renewed. The bot works without it but Blocket price research will be unavailable.
+**No configuration needed.** Blocket search works out of the box — no API key or bearer token required. Ad details are retrieved via HTML scraping.
 
 ### PostNord
 
