@@ -521,7 +521,7 @@ class TraderaClient:
         try:
             request = {"FromCountryCodes": [from_country]}
             response = self._get_shipping_options_api_call(
-                request, self._auth_headers(self.public_client)
+                request, self._auth_headers(self.public_client, include_authorization=True)
             )
 
             spans = getattr(response, "ProductsPerWeightSpan", None)
@@ -819,26 +819,18 @@ class TraderaClient:
             }
 
         try:
-            result = self._leave_feedback_api_call(
+            self._leave_feedback_api_call(
                 order_number,
                 comment,
                 feedback_type,
                 self._auth_headers(self.restricted_client, include_authorization=True),
             )
-
-            if result is False:
-                return {
-                    "error": "Tradera rejected the feedback (may already be submitted)",
-                    "order_number": order_number,
-                }
-
             return {
                 "success": True,
                 "order_number": order_number,
                 "comment": comment,
                 "feedback_type": feedback_type,
             }
-
         except Exception as e:
             logger.exception("Tradera leave_feedback failed")
             return {"error": str(e)}
