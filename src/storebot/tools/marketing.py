@@ -169,8 +169,13 @@ class MarketingService:
             )
 
             # Bulk-load orders for sold listings
-            sold_product_ids = [lst.product_id for lst in sold_listings]
-            orders = session.query(Order).filter(Order.product_id.in_(sold_product_ids)).all()
+            sold_product_ids = list({lst.product_id for lst in sold_listings})
+            orders = (
+                session.query(Order)
+                .filter(Order.product_id.in_(sold_product_ids))
+                .order_by(Order.id)
+                .all()
+            )
             order_by_product = {o.product_id: o for o in orders}
 
             total_revenue = 0.0
@@ -247,7 +252,11 @@ class MarketingService:
         """Generate rules-based recommendations for listings."""
         with Session(self.engine) as session:
             if listing_id is not None:
-                listing = session.get(PlatformListing, listing_id)
+                listing = session.get(
+                    PlatformListing,
+                    listing_id,
+                    options=[selectinload(PlatformListing.product)],
+                )
                 listings = [listing] if listing else []
             else:
                 listings = (
@@ -261,11 +270,12 @@ class MarketingService:
 
             # Bulk-load latest snapshot per listing
             listing_ids = [lst.id for lst in listings]
-            latest_snapshots = self._bulk_latest_snapshots(session, listing_ids)
+            snaps_by_listing = self._bulk_recent_snapshots(session, listing_ids)
 
             recommendations = []
             for listing in listings:
-                snapshot = latest_snapshots.get(listing.id)
+                snaps = snaps_by_listing.get(listing.id, [])
+                snapshot = snaps[0] if snaps else None
                 recommendations.extend(
                     self._evaluate_listing(listing, category_avg_views, snapshot)
                 )
@@ -291,7 +301,6 @@ class MarketingService:
         with Session(self.engine) as session:
             active = (
                 session.query(PlatformListing)
-                .options(selectinload(PlatformListing.snapshots))
                 .filter(
                     PlatformListing.status == "active",
                     PlatformListing.platform == "tradera",
@@ -299,10 +308,12 @@ class MarketingService:
                 .all()
             )
 
+            active_ids = [lst.id for lst in active]
+            snaps_by_listing = self._bulk_recent_snapshots(session, active_ids, limit=3)
+
             listings = []
             for listing in active:
-                sorted_snaps = sorted(listing.snapshots, key=lambda s: s.snapshot_at, reverse=True)
-                snapshots = sorted_snaps[:3]
+                snapshots = snaps_by_listing.get(listing.id, [])
 
                 latest = snapshots[0] if snapshots else None
                 previous = snapshots[1] if len(snapshots) >= 2 else None
@@ -461,25 +472,37 @@ class MarketingService:
         return {cat: sum(views) / len(views) for cat, views in category_views.items()}
 
     @staticmethod
-    def _bulk_latest_snapshots(
-        session: Session, listing_ids: list[int]
-    ) -> dict[int, ListingSnapshot]:
-        """Load the most recent snapshot per listing in a single query."""
+    def _bulk_recent_snapshots(
+        session: Session, listing_ids: list[int], limit: int = 1
+    ) -> dict[int, list[ListingSnapshot]]:
+        """Load the N most recent snapshots per listing in a single query."""
         if not listing_ids:
             return {}
         subq = (
             session.query(
-                ListingSnapshot.listing_id,
-                func.max(ListingSnapshot.id).label("max_id"),
+                ListingSnapshot.id,
+                func.row_number()
+                .over(
+                    partition_by=ListingSnapshot.listing_id,
+                    order_by=ListingSnapshot.snapshot_at.desc(),
+                )
+                .label("rn"),
             )
             .filter(ListingSnapshot.listing_id.in_(listing_ids))
-            .group_by(ListingSnapshot.listing_id)
             .subquery()
         )
         snapshots = (
-            session.query(ListingSnapshot).join(subq, ListingSnapshot.id == subq.c.max_id).all()
+            session.query(ListingSnapshot)
+            .join(subq, ListingSnapshot.id == subq.c.id)
+            .filter(subq.c.rn <= limit)
+            .all()
         )
-        return {s.listing_id: s for s in snapshots}
+        result: dict[int, list[ListingSnapshot]] = {}
+        for s in snapshots:
+            result.setdefault(s.listing_id, []).append(s)
+        for snaps in result.values():
+            snaps.sort(key=lambda s: s.snapshot_at, reverse=True)
+        return result
 
     def _evaluate_listing(
         self,
