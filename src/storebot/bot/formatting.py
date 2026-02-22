@@ -102,40 +102,38 @@ def split_html_message(text: str, max_length: int = TELEGRAM_MAX_MESSAGE_LENGTH)
 
     estimated_parts = len(text) // max_length + 1
     header_len = len(f"({estimated_parts}/{estimated_parts})\n")
-    chunk_size = max_length - header_len
 
-    chunks: list[str] = []
-    remaining = text
+    def _do_split(chunk_size: int) -> list[str]:
+        chunks: list[str] = []
+        rest = text
+        while rest:
+            if len(rest) <= chunk_size:
+                chunks.append(rest)
+                break
 
-    while remaining:
-        if len(remaining) <= chunk_size:
-            chunks.append(remaining)
-            break
+            split_at = rest.rfind("\n\n", 0, chunk_size)
+            if split_at < chunk_size // 2:
+                split_at = rest.rfind("\n", 0, chunk_size)
+            if split_at < chunk_size // 2:
+                split_at = rest.rfind(" ", 0, chunk_size)
+            if split_at < chunk_size // 2:
+                split_at = chunk_size
 
-        # Find best split point
-        split_at = remaining.rfind("\n\n", 0, chunk_size)
-        if split_at < chunk_size // 2:
-            split_at = remaining.rfind("\n", 0, chunk_size)
-        if split_at < chunk_size // 2:
-            split_at = remaining.rfind(" ", 0, chunk_size)
-        if split_at < chunk_size // 2:
-            split_at = chunk_size
+            chunk = rest[:split_at]
+            rest = rest[split_at:].lstrip("\n")
 
-        chunk = remaining[:split_at]
-        remaining = remaining[split_at:].lstrip("\n")
+            open_tags = _get_open_tags(chunk)
+            if open_tags:
+                chunk += _close_tags(open_tags)
+                rest = "".join(open_tags) + rest
 
-        open_tags = _get_open_tags(chunk)
-        if open_tags:
-            chunk += _close_tags(open_tags)
-            remaining = "".join(open_tags) + remaining
+            chunks.append(chunk)
+        return chunks
 
-        chunks.append(chunk)
-
-    # Re-check after splitting — if header length changed, redo
+    chunks = _do_split(max_length - header_len)
     actual_header_len = len(f"({len(chunks)}/{len(chunks)})\n")
     if actual_header_len > header_len:
-        # Recursively split with corrected size
-        return split_html_message(text, max_length)
+        chunks = _do_split(max_length - actual_header_len)
 
     total = len(chunks)
     return [f"({i + 1}/{total})\n{chunk}" for i, chunk in enumerate(chunks)]

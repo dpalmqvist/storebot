@@ -218,6 +218,14 @@ class TestSplitHtmlMessage:
         # Should reopen outer first, then inner
         assert second_content.startswith("<b><i>")
 
+    def test_header_length_correction_at_digit_boundary(self):
+        # Text that produces ~10 chunks — header goes from "(9/9)\n" to "(10/10)\n"
+        text = "x" * 35950
+        result = split_html_message(text)
+        assert len(result) >= 10
+        for part in result:
+            assert len(part) <= TELEGRAM_MAX_MESSAGE_LENGTH
+
     def test_preserves_a_href_on_reopen(self):
         half = TELEGRAM_MAX_MESSAGE_LENGTH // 2
         text = '<a href="https://example.com">' + "x" * half + " " + "y" * half + "</a>"
