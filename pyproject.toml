@@ -57,6 +57,8 @@ omit = ["*/__init__.py"]
 branch = true
 
 [tool.coverage.report]
+# 100% line coverage; 99% combined with branch coverage (49 partial branches
+# from loop exits and multi-condition guards remain uncovered).
 fail_under = 99
 exclude_lines = [
     "pragma: no cover",

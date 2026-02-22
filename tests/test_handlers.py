@@ -545,8 +545,10 @@ class TestIsRateLimited:
         )
         chat_id = 99990002
         _rate_limit_buckets[chat_id] = [time.monotonic(), time.monotonic()]
-        assert _is_rate_limited(chat_id, settings) is True
-        _rate_limit_buckets.pop(chat_id, None)
+        try:
+            assert _is_rate_limited(chat_id, settings) is True
+        finally:
+            _rate_limit_buckets.pop(chat_id, None)
 
 
 # ---------------------------------------------------------------------------
@@ -580,10 +582,12 @@ class TestCheckAccessRateLimited:
         context = MagicMock()
         context.bot_data = {"settings": settings, "allowed_chat_ids": set()}
 
-        result = await _check_access(update, context)
-        assert result is False
-        assert "För många meddelanden" in update.message.reply_text.call_args[0][0]
-        _rate_limit_buckets.pop(99990003, None)
+        try:
+            result = await _check_access(update, context)
+            assert result is False
+            assert "För många meddelanden" in update.message.reply_text.call_args[0][0]
+        finally:
+            _rate_limit_buckets.pop(99990003, None)
 
 
 # ---------------------------------------------------------------------------

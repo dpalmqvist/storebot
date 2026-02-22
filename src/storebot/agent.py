@@ -750,8 +750,6 @@ class Agent:
             return messages
 
         old = messages[:-keep]
-        if not old:
-            return messages  # pragma: no cover
         recent = messages[-keep:]
 
         # Build text representation for summarization, and collect tool

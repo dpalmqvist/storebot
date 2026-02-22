@@ -480,11 +480,12 @@ class TestExecuteToolServiceNotInDb:
         """Cover line 1026: service_attr not in _DB_SERVICES."""
         settings = _make_settings()
         agent = Agent(settings=settings, engine=engine)
-        # Force a dispatch entry with a non-existent service
         agent._DISPATCH["fake_tool"] = ("fake_service", "method")
-        result = agent.execute_tool("fake_tool", {})
-        assert "not available" in result["error"]
-        del agent._DISPATCH["fake_tool"]
+        try:
+            result = agent.execute_tool("fake_tool", {})
+            assert "not available" in result["error"]
+        finally:
+            agent._DISPATCH.pop("fake_tool", None)
 
 
 class TestDebugLogFilteredTools:
