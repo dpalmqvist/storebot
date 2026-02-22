@@ -815,3 +815,33 @@ class TestGetListingDashboard:
         result = service.get_listing_dashboard()
 
         assert result["totals"]["active_count"] == 0
+
+
+class TestListingCategoryFallback:
+    def test_no_product_returns_unknown(self, engine):
+        from storebot.tools.marketing import _listing_category
+
+        listing = MagicMock()
+        listing.product = None
+        assert _listing_category(listing) == "Okänd"
+
+    def test_no_category_returns_unknown(self, engine):
+        from storebot.tools.marketing import _listing_category
+
+        listing = MagicMock()
+        listing.product = MagicMock()
+        listing.product.category = None
+        assert _listing_category(listing) == "Okänd"
+
+
+class TestFetchTraderaStatsException:
+    def test_none_client_returns_none(self, engine):
+        service = MarketingService(engine=engine, tradera=None)
+        result = service._fetch_tradera_stats("123")
+        assert result is None
+
+    def test_exception_returns_none(self, engine, mock_tradera):
+        mock_tradera.get_item.side_effect = Exception("Connection reset")
+        service = MarketingService(engine=engine, tradera=mock_tradera)
+        result = service._fetch_tradera_stats("123")
+        assert result is None

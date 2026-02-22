@@ -296,3 +296,13 @@ class TestAgentActionLogging:
             # Should still return valid result despite logging failure
             assert result["tradera"]["count"] == 1
             assert result["product_id"] == 42
+
+
+class TestPriceCheckNoBlocket:
+    def test_blocket_none(self, tradera):
+        service = PricingService(tradera=tradera, blocket=None)
+        tradera.search.return_value = {"total": 1, "items": _tradera_items()[:1]}
+
+        result = service.price_check("stol")
+        assert result["blocket"]["count"] == 0
+        assert "error" in result["blocket"]

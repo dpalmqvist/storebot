@@ -2127,3 +2127,106 @@ class TestImagePathValidation:
         service.delete_product_image(image_id)
         # File outside image dir should NOT be deleted
         assert outside_file.exists()
+
+
+class TestValidateImagePathOutsideDir:
+    def test_path_outside_allowed_dir(self, tmp_path):
+        base = tmp_path / "images"
+        base.mkdir()
+        result = _validate_image_path("/etc/passwd", str(base))
+        assert result is not None
+        assert "outside" in result
+
+    def test_invalid_path_returns_error(self, tmp_path):
+        result = _validate_image_path("\x00invalid", str(tmp_path))
+        assert result is not None
+        assert "Invalid path" in result
+
+
+class TestDeleteProductImageOSError:
+    def test_unlink_os_error(self, engine, tmp_path):
+        image_dir = tmp_path / "images"
+        image_dir.mkdir()
+        service = ListingService(engine=engine, image_dir=str(image_dir))
+
+        with Session(engine) as session:
+            p = Product(title="Test", status="draft")
+            session.add(p)
+            session.flush()
+            img_path = str(image_dir / "photo.jpg")
+            img = ProductImage(product_id=p.id, file_path=img_path)
+            session.add(img)
+            session.commit()
+            image_id = img.id
+
+        with patch("storebot.tools.listing.Path.unlink", side_effect=OSError("disk error")):
+            result = service.delete_product_image(image_id)
+            assert "error" not in result
+            assert result["image_id"] == image_id
+
+
+class TestFormatDraftPreviewEdgeCases:
+    def test_auction_with_buy_it_now(self):
+        from storebot.tools.listing import _format_draft_preview
+
+        listing = MagicMock()
+        listing.product_id = 1
+        listing.listing_title = "Test"
+        listing.listing_description = "Desc"
+        listing.listing_type = "auction"
+        listing.platform = "tradera"
+        listing.start_price = 100
+        listing.buy_it_now_price = 500
+        listing.duration_days = 7
+        listing.tradera_category_id = 344
+        listing.details = {}
+
+        product = MagicMock()
+        product.title = "Stol"
+
+        result = _format_draft_preview(listing, product)
+        assert "Köp nu-pris: 500 kr" in result
+
+    def test_shipping_options_in_details(self):
+        from storebot.tools.listing import _format_draft_preview
+
+        listing = MagicMock()
+        listing.product_id = 1
+        listing.listing_title = "Test"
+        listing.listing_description = "Desc"
+        listing.listing_type = "buy_it_now"
+        listing.platform = "tradera"
+        listing.start_price = None
+        listing.buy_it_now_price = 200
+        listing.duration_days = 7
+        listing.tradera_category_id = None
+        listing.details = {
+            "shipping_options": [
+                {"name": "PostNord", "cost": 49},
+                {"name": "Schenker", "cost": 99},
+            ]
+        }
+
+        result = _format_draft_preview(listing, None)
+        assert "2 st" in result
+        assert "PostNord" in result
+        assert "49 kr" in result
+
+    def test_shipping_condition_in_details(self):
+        from storebot.tools.listing import _format_draft_preview
+
+        listing = MagicMock()
+        listing.product_id = 1
+        listing.listing_title = "Test"
+        listing.listing_description = "Desc"
+        listing.listing_type = "buy_it_now"
+        listing.platform = "tradera"
+        listing.start_price = None
+        listing.buy_it_now_price = 200
+        listing.duration_days = 7
+        listing.tradera_category_id = None
+        listing.details = {"shipping_condition": "Köparen betalar frakt"}
+
+        result = _format_draft_preview(listing, None)
+        assert "Leveransvillkor" in result
+        assert "Köparen betalar frakt" in result

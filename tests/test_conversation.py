@@ -439,3 +439,53 @@ def test_extract_uses_last_marker():
     ]
     paths = _extract_image_paths(content)
     assert paths == [legit_path]
+
+
+def test_validate_image_paths_outside_dir():
+    """Cover _validate_image_paths rejection of path outside allowed dir (lines 93-94)."""
+    result = _validate_image_paths(["/etc/shadow"])
+    assert result is None
+
+
+def test_validate_image_paths_oserror():
+    """Cover _validate_image_paths OSError branch (lines 95-96)."""
+    result = _validate_image_paths(["\x00invalid"])
+    assert result is None
+
+
+def test_reconstruct_more_placeholders_than_paths():
+    """Cover _reconstruct_image_blocks with more placeholders than paths (line 126)."""
+    from storebot.tools.conversation import _reconstruct_image_blocks, IMAGE_PLACEHOLDER_TYPE
+
+    content = [
+        {"type": IMAGE_PLACEHOLDER_TYPE},
+        {"type": IMAGE_PLACEHOLDER_TYPE},
+    ]
+    result = _reconstruct_image_blocks(content, ["/valid/img.jpg"])
+    # First placeholder gets the image, second gets fallback text
+    assert result[1] == {"type": "text", "text": "[Bild saknas]"}
+
+
+def test_reconstruct_none_image_paths():
+    """Cover _reconstruct_image_blocks with None image_paths (line 116)."""
+    from storebot.tools.conversation import _reconstruct_image_blocks
+
+    content = [{"type": "text", "text": "hello"}]
+    result = _reconstruct_image_blocks(content, None)
+    assert result == content
+
+
+def test_load_history_truncation(engine):
+    """Cover load_history max_content_bytes truncation (lines 215-220)."""
+    svc = ConversationService(engine, max_messages=100, max_content_bytes=100)
+
+    # Save messages with enough content to exceed 100 bytes
+    messages = [
+        {"role": "user", "content": "A" * 60},
+        {"role": "assistant", "content": "B" * 60},
+    ]
+    svc.save_messages("chat1", messages)
+
+    loaded = svc.load_history("chat1")
+    # Should have truncated — only the most recent message should survive
+    assert len(loaded) < len(messages)

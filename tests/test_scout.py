@@ -436,3 +436,47 @@ class TestFormatDigest:
 
         assert "kr" not in digest
         assert "Sak" in digest
+
+
+class TestRunPlatformSearchEdgeCases:
+    def test_none_client_returns_empty(self, service, engine):
+        search = MagicMock()
+        search.query = "test"
+        result = service._run_platform_search(None, "tradera", search)
+        assert result == []
+
+    def test_non_integer_category(self, service, mock_tradera):
+        search = MagicMock()
+        search.query = "test"
+        search.category = "not-a-number"
+        search.max_price = None
+        mock_tradera.search.return_value = {"items": []}
+
+        service._run_platform_search(mock_tradera, "tradera", search)
+        # Should still call search, just without category
+        mock_tradera.search.assert_called_once()
+
+    def test_unexpected_exception_returns_empty(self, service, mock_tradera):
+        search = MagicMock()
+        search.query = "test"
+        search.category = None
+        search.max_price = None
+        mock_tradera.search.side_effect = RuntimeError("Unexpected")
+
+        result = service._run_platform_search(mock_tradera, "tradera", search)
+        assert result == []
+
+
+class TestFormatDigestSkipsZeroCount:
+    def test_zero_count_skipped(self, service):
+        results = [
+            {"query": "empty", "count": 0, "new_items": []},
+            {
+                "query": "found",
+                "count": 1,
+                "new_items": [{"platform": "tradera", "title": "Sak", "price": 100, "url": ""}],
+            },
+        ]
+        digest = service._format_digest(results)
+        assert "empty" not in digest
+        assert "found" in digest

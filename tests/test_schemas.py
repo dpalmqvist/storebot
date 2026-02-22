@@ -125,3 +125,10 @@ class TestValidateToolResult:
     def test_non_dict_passthrough(self):
         result = validate_tool_result("search_tradera", "not a dict")
         assert result == "not a dict"
+
+    def test_malformed_error_result(self, caplog):
+        data = {"error": 12345}  # error must be str — triggers validation failure
+        with caplog.at_level(logging.WARNING):
+            result = validate_tool_result("search_tradera", data)
+        assert result is data
+        assert "ErrorResult validation failed" in caplog.text

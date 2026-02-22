@@ -910,3 +910,78 @@ class TestGetOrderIncludesFeedback:
 
         assert "feedback_left_at" in result
         assert result["feedback_left_at"] is None
+
+
+class TestCreateSaleVoucherAccountingError:
+    def test_accounting_error_returned(self, engine, mock_tradera, tmp_path):
+        accounting = MagicMock()
+        accounting.create_voucher.return_value = {"error": "Debit/credit mismatch"}
+        service = OrderService(engine=engine, tradera=mock_tradera, accounting=accounting)
+
+        product_id = _create_product(engine)
+        order_id = _create_order(engine, product_id, sale_price=500.0)
+
+        result = service.create_sale_voucher(order_id)
+        assert "error" in result
+        assert "Debit/credit mismatch" in result["error"]
+
+
+class TestMarkShippedTraderaException:
+    def test_tradera_exception_handled(self, service, engine, mock_tradera):
+        product_id = _create_product(engine)
+        order_id = _create_order(engine, product_id)
+
+        mock_tradera.mark_order_shipped.side_effect = Exception("SOAP fault")
+
+        result = service.mark_shipped(order_id, tracking_number="SE123")
+        assert result["status"] == "shipped"
+        assert result["tradera_status"] == "notification_failed"
+
+
+class TestCreateShippingLabelParseError:
+    def test_unparseable_address(self, engine, mock_tradera, tmp_path):
+        postnord = MagicMock()
+        accounting = AccountingService(engine=engine, export_path=str(tmp_path / "vouchers"))
+        service = OrderService(
+            engine=engine,
+            tradera=mock_tradera,
+            accounting=accounting,
+            postnord=postnord,
+            label_export_path=str(tmp_path / "labels"),
+        )
+
+        product_id = _create_product(engine)
+        # Set weight on product
+        with Session(engine) as session:
+            product = session.get(Product, product_id)
+            product.weight_grams = 1000
+            session.commit()
+
+        order_id = _create_order(
+            engine,
+            product_id,
+            buyer_address="BadAddress",  # unparseable — only one part
+        )
+
+        result = service.create_shipping_label(order_id)
+        assert "error" in result
+        assert "Kunde inte tolka" in result["error"]
+
+
+class TestGetLabelDataFallback:
+    def test_get_label_api_error(self, engine, mock_tradera, tmp_path):
+        from storebot.tools.postnord import PostNordError
+
+        postnord = MagicMock()
+        postnord.get_label.side_effect = PostNordError("Not found", status_code=404)
+        accounting = AccountingService(engine=engine, export_path=str(tmp_path / "vouchers"))
+        service = OrderService(
+            engine=engine,
+            tradera=mock_tradera,
+            accounting=accounting,
+            postnord=postnord,
+            label_export_path=str(tmp_path / "labels"),
+        )
+
+        result = service._get_label_data({"shipment_id": "SH-001", "label_base64": ""})
+        assert result is None
