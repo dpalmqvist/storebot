@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Storebot is an AI-powered agent system for managing a Swedish country shop ("Lantshop") that sells renovated furniture, décor, curiosities, antiques, and crops. The owner interacts with the system primarily through a Telegram bot. Planned launch: November 2026.
+Storebot is an AI-powered agent system for selling goods on Swedish marketplaces. The owner interacts with the system through a Telegram bot backed by Claude. It handles the full lifecycle: sourcing, pricing, listing, order management, shipping, and bookkeeping.
 
 ## Tech Stack
 
@@ -105,20 +105,13 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **Semantic versioning** — Conventional commits with `python-semantic-release`. Version in `src/storebot/__init__.py` (single source of truth), automatic bumps via GitHub Actions on merge to main. Pre-commit hook validates commit message format.
 - **Tests** — 857 tests across 27 modules covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, analytics, postnord, CLI, retry, logging, handlers, formatting, log_viewer, compaction, model_routing, parallel, reflection, schemas, thinking, tool_filtering, and usage.
 
-### Not started
+### Roadmap
 
-- MCP server wrappers for tool modules
 - sqlite-vec embeddings for semantic product search
-- Social media cross-posting
-- Customer message handling (requires email/IMAP — Tradera API has no messaging support)
-- Crop management, custom webshop, wishlist matching
-
-## Build Phases
-
-1. **Phase 1 (MVP):** SQLite schema + SQLAlchemy ORM, Tradera/Blocket search tools, Pricing Agent, Listing Agent — **DONE**
-2. **Phase 2:** Telegram bot, Order Agent, local voucher/PDF export — **DONE**
-3. **Phase 3:** Scout Agent (scheduled) — **DONE**, Marketing Agent — **DONE**, Analytics — **DONE**, MCP server wrappers, social media cross-posting
-4. **Phase 4:** Crop management, custom webshop, wishlist matching
+- MCP server wrappers for tool modules
+- Social media cross-posting (Instagram, Facebook Marketplace)
+- Customer message handling (email/IMAP — Tradera API has no messaging support)
+- Custom webshop, wishlist matching
 
 ## Development Setup
 

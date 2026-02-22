@@ -1,8 +1,8 @@
 # Storebot
 
-**Your AI-powered business partner for selling on Swedish marketplaces.**
+**Your AI-powered business partner for selling on Tradera.**
 
-Storebot is an autonomous agent system that handles the entire lifecycle of buying and selling goods online — from sourcing and pricing to listing, order management, shipping, and bookkeeping. You interact with it through Telegram, and it takes care of the rest.
+Storebot is an autonomous agent system that handles the entire lifecycle of selling goods on [Tradera](https://www.tradera.com) — from sourcing and pricing to listing, order management, shipping, and bookkeeping. It also searches Blocket for market research and sourcing leads, but all selling happens through Tradera. You interact with it through Telegram, and it takes care of the rest.
 
 Whether you sell vintage furniture, electronics, clothing, collectibles, or anything in between — Storebot manages the tedious parts so you can focus on finding great items.
 
@@ -15,7 +15,7 @@ Whether you sell vintage furniture, electronics, clothing, collectibles, or anyt
 | Capability | What happens |
 |---|---|
 | **Product Listing** | Vision-based item description, Swedish title/description generation, Tradera category selection, image optimization and upload |
-| **Pricing Intelligence** | Cross-platform price research on Tradera and Blocket, statistical analysis (min/max/mean/median), quartile-based price suggestions |
+| **Pricing Intelligence** | Cross-platform price research on Tradera and Blocket (read-only), statistical analysis (min/max/mean/median), quartile-based price suggestions |
 | **Order Management** | Automatic Tradera order polling, inventory updates, PostNord shipping label generation, shipment tracking |
 | **Bookkeeping** | Double-entry vouchers following BAS-kontoplan, automatic VAT calculation, PDF export for your accountant |
 | **Sourcing (Scout)** | Saved searches with daily digest notifications, deduplication of already-seen items, find deals before anyone else |
@@ -30,8 +30,8 @@ You (Telegram)
   ▼
 Claude API ─── tool use + vision ─── Agent Loop
   │
-  ├── Tradera (SOAP)      search, list, sell, categories
-  ├── Blocket (REST)       price research, sourcing
+  ├── Tradera (SOAP)      search, list, sell, ship, categories
+  ├── Blocket (REST)       price research, sourcing (read-only)
   ├── Accounting           vouchers, VAT, PDF export
   ├── Scout                saved searches, daily digests
   ├── Marketing            performance tracking, recommendations
@@ -67,6 +67,13 @@ SQLite ── single file, zero maintenance
 
 Beyond commands, Storebot understands natural language in Swedish and English. Send text, photos, or voice your requests — the agent figures out which tools to use.
 
+## Prerequisites
+
+- **Tradera API access** — Register at the [Tradera Developer Program](https://api.tradera.com) and contact Tradera (`apiadmin@tradera.com`) to enable API access for your account. This is required for all listing and selling functionality. You will also need to request access to the `RestrictedService` and `OrderService` for full write operations.
+- **Claude API key** — For the AI agent ([console.anthropic.com](https://console.anthropic.com))
+- **Telegram Bot Token** — Create a bot via [@BotFather](https://t.me/BotFather)
+- **PostNord API key** (optional) — For shipping label generation
+
 ## Quick Start
 
 ```bash
@@ -77,7 +84,7 @@ cp .env.example .env   # fill in API keys
 storebot               # start the bot
 ```
 
-You'll need API keys for Claude, Telegram, and Tradera. See the [Installation Guide](docs/installation.md) for the full setup walkthrough.
+See the [Installation Guide](docs/installation.md) for the full setup walkthrough.
 
 ## Tech Stack
 
@@ -87,7 +94,7 @@ You'll need API keys for Claude, Telegram, and Tradera. See the [Installation Gu
 | LLM | Claude API (direct tool use, no framework overhead) |
 | Database | SQLite + sqlite-vec (zero-maintenance, single-file) |
 | Chat | Telegram via python-telegram-bot v20+ |
-| Marketplaces | Tradera (SOAP/zeep), Blocket (REST) |
+| Marketplace | Tradera (SOAP/zeep) — selling; Blocket (REST) — research only |
 | Shipping | PostNord REST API |
 | ORM | SQLAlchemy 2.0 + Alembic migrations |
 | Accounting | Local double-entry bookkeeping, PDF via ReportLab |
