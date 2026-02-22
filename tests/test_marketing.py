@@ -418,6 +418,45 @@ class TestGetPerformanceReport:
         assert result["funnel"]["with_bids"] == 1
         assert result["funnel"]["sold"] == 0
 
+    def test_bulk_loading_multiple_sold_listings(self, service, engine):
+        """Verify bulk-loaded orders and eager-loaded products work across multiple sold listings."""
+        pid1 = _create_product(engine, title="Stol", category="möbler", acquisition_cost=50.0)
+        pid2 = _create_product(engine, title="Bord", category="möbler", acquisition_cost=200.0)
+        pid3 = _create_product(engine, title="Lampa", category="inredning", acquisition_cost=30.0)
+        now = datetime.now(UTC)
+        _create_listing(
+            engine,
+            pid1,
+            status="sold",
+            external_id="1",
+            listed_at=now - timedelta(days=5),
+            ends_at=now,
+        )
+        _create_listing(
+            engine,
+            pid2,
+            status="sold",
+            external_id="2",
+            listed_at=now - timedelta(days=10),
+            ends_at=now,
+        )
+        lid3 = _create_listing(
+            engine, pid3, status="active", views=40, watchers=3, external_id="3"
+        )
+        _create_order(engine, pid1, sale_price=150.0)
+        _create_order(engine, pid2, sale_price=800.0)
+        _create_snapshot(engine, lid3, bids=1)
+
+        result = service.get_performance_report()
+
+        assert result["sales"]["count"] == 2
+        assert result["sales"]["total_revenue"] == 950.0
+        assert result["sales"]["total_profit"] == 700.0  # (150-50) + (800-200)
+        assert result["categories"]["möbler"]["count"] == 2
+        assert result["categories"]["möbler"]["sold"] == 2
+        assert result["categories"]["inredning"]["count"] == 1
+        assert result["funnel"]["with_bids"] == 1
+
     def test_logs_agent_action(self, service, engine):
         service.get_performance_report()
 
@@ -737,6 +776,36 @@ class TestGetListingDashboard:
             actions = session.query(AgentAction).filter_by(action_type="listing_dashboard").all()
             assert len(actions) == 1
             assert actions[0].agent_name == "marketing"
+
+    @patch("storebot.tools.marketing.naive_now", return_value=FIXED_NOW)
+    def test_only_uses_three_most_recent_snapshots(self, _mock_now, service, engine):
+        """Old snapshots beyond the 3 most recent must not affect deltas."""
+        pid = _create_product(engine)
+        lid = _create_listing(engine, pid, views=90, watchers=12)
+        now = datetime.now(UTC)
+        # Old snapshot (should be ignored)
+        _create_snapshot(
+            engine, lid, views=10, watchers=1, bids=0, snapshot_at=now - timedelta(days=4)
+        )
+        # 3 most recent
+        _create_snapshot(
+            engine, lid, views=50, watchers=5, bids=1, snapshot_at=now - timedelta(days=2)
+        )
+        _create_snapshot(
+            engine, lid, views=70, watchers=8, bids=2, snapshot_at=now - timedelta(days=1)
+        )
+        _create_snapshot(
+            engine, lid, views=90, watchers=12, bids=3, current_price=600.0, snapshot_at=now
+        )
+
+        result = service.get_listing_dashboard()
+
+        lst = result["listings"][0]
+        assert lst["views"] == 90
+        assert lst["views_delta"] == 20  # 90-70, not affected by old snapshot
+        assert lst["bids"] == 3
+        assert lst["bids_delta"] == 1  # 3-2
+        assert lst["watchers_delta"] == 4  # 12-8
 
     @patch("storebot.tools.marketing.naive_now", return_value=FIXED_NOW)
     def test_excludes_non_tradera(self, _mock_now, service, engine):
