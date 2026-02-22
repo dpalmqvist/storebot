@@ -13,9 +13,11 @@ _ITALIC_UNDER_RE = re.compile(r"(?<!\w)_(.+?)_(?!\w)")
 _STRIKE_RE = re.compile(r"~~(.+?)~~")
 _LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 _HEADER_RE = re.compile(r"^#{1,6}\s+(.+)$", re.MULTILINE)
+# Applied after html_escape(), so > has already become &gt; at this point
 _BLOCKQUOTE_RE = re.compile(r"^&gt;\s?(.+)$", re.MULTILINE)
 _OPEN_TAG_RE = re.compile(r"<(b|i|s|code|pre|blockquote|a)(?:\s[^>]*)?>")
 _CLOSE_TAG_RE = re.compile(r"</(b|i|s|code|pre|blockquote|a)>")
+_TAG_NAME_RE = re.compile(r"<(\w+)")
 
 
 def html_escape(text: str) -> str:
@@ -53,7 +55,12 @@ def markdown_to_telegram_html(text: str) -> str:
     text = _ITALIC_STAR_RE.sub(r"<i>\1</i>", text)
     text = _ITALIC_UNDER_RE.sub(r"<i>\1</i>", text)
     text = _STRIKE_RE.sub(r"<s>\1</s>", text)
-    text = _LINK_RE.sub(r'<a href="\2">\1</a>', text)
+
+    def _link_sub(m: re.Match) -> str:
+        url = m.group(2).replace('"', "&quot;")
+        return f'<a href="{url}">{m.group(1)}</a>'
+
+    text = _LINK_RE.sub(_link_sub, text)
     text = _HEADER_RE.sub(r"<b>\1</b>", text)
     text = _BLOCKQUOTE_RE.sub(r"<blockquote>\1</blockquote>", text)
 
@@ -85,7 +92,12 @@ def _get_open_tags(text: str) -> list[str]:
 
 def _close_tags(tags: list[str]) -> str:
     """Generate closing tags in reverse order for a list of open tags."""
-    return "".join(f"</{tag.split()[0].strip('<').rstrip('>')}>" for tag in reversed(tags))
+    parts = []
+    for tag in reversed(tags):
+        m = _TAG_NAME_RE.match(tag)
+        if m:
+            parts.append(f"</{m.group(1)}>")
+    return "".join(parts)
 
 
 def split_html_message(text: str, max_length: int = TELEGRAM_MAX_MESSAGE_LENGTH) -> list[str]:
@@ -103,21 +115,26 @@ def split_html_message(text: str, max_length: int = TELEGRAM_MAX_MESSAGE_LENGTH)
     estimated_parts = len(text) // max_length + 1
     header_len = len(f"({estimated_parts}/{estimated_parts})\n")
 
+    # Max closing-tag overhead: </b></i></s></code></pre></blockquote></a> = 43 chars
+    tag_reserve = 50
+
     def _do_split(chunk_size: int) -> list[str]:
         chunks: list[str] = []
         rest = text
+        # Leave room for closing tags that may be appended at boundaries
+        split_limit = chunk_size - tag_reserve
         while rest:
             if len(rest) <= chunk_size:
                 chunks.append(rest)
                 break
 
-            split_at = rest.rfind("\n\n", 0, chunk_size)
-            if split_at < chunk_size // 2:
-                split_at = rest.rfind("\n", 0, chunk_size)
-            if split_at < chunk_size // 2:
-                split_at = rest.rfind(" ", 0, chunk_size)
-            if split_at < chunk_size // 2:
-                split_at = chunk_size
+            split_at = rest.rfind("\n\n", 0, split_limit)
+            if split_at < split_limit // 2:
+                split_at = rest.rfind("\n", 0, split_limit)
+            if split_at < split_limit // 2:
+                split_at = rest.rfind(" ", 0, split_limit)
+            if split_at < split_limit // 2:
+                split_at = split_limit
 
             chunk = rest[:split_at]
             rest = rest[split_at:].lstrip("\n")

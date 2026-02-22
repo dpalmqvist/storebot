@@ -68,7 +68,8 @@ async def _reply(update: Update, text: str, parse_mode: str | None = ParseMode.H
     for part in split_html_message(text):
         try:
             await update.message.reply_text(part, parse_mode=parse_mode)
-        except telegram.error.BadRequest:
+        except telegram.error.BadRequest as exc:
+            logger.warning("HTML parse failed, falling back to plain text: %s", exc)
             await update.message.reply_text(part)
 
 
@@ -85,7 +86,8 @@ async def _send(
     for part in split_html_message(text):
         try:
             await context.bot.send_message(chat_id=chat_id, text=part, parse_mode=parse_mode)
-        except telegram.error.BadRequest:
+        except telegram.error.BadRequest as exc:
+            logger.warning("HTML parse failed, falling back to plain text: %s", exc)
             await context.bot.send_message(chat_id=chat_id, text=part)
 
 

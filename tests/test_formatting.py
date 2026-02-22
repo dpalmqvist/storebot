@@ -71,6 +71,10 @@ class TestMarkdownToTelegramHtml:
         result = markdown_to_telegram_html("[Tradera](https://tradera.com)")
         assert '<a href="https://tradera.com">Tradera</a>' in result
 
+    def test_link_url_with_quotes_escaped(self):
+        result = markdown_to_telegram_html('[Click](https://x.com/q="a")')
+        assert '<a href="https://x.com/q=&quot;a&quot;">Click</a>' in result
+
     def test_header(self):
         result = markdown_to_telegram_html("# Rubrik")
         assert "<b>Rubrik</b>" in result
@@ -84,6 +88,10 @@ class TestMarkdownToTelegramHtml:
     def test_blockquote(self):
         result = markdown_to_telegram_html("> Citat här")
         assert "<blockquote>Citat här</blockquote>" in result
+
+    def test_blockquote_with_html_special_chars(self):
+        result = markdown_to_telegram_html("> Pris: 100 < 200 & moms")
+        assert "<blockquote>Pris: 100 &lt; 200 &amp; moms</blockquote>" in result
 
     def test_strikethrough(self):
         result = markdown_to_telegram_html("~~struken~~")
@@ -223,6 +231,13 @@ class TestSplitHtmlMessage:
         text = "x" * 35950
         result = split_html_message(text)
         assert len(result) >= 10
+        for part in result:
+            assert len(part) <= TELEGRAM_MAX_MESSAGE_LENGTH
+
+    def test_closing_tags_do_not_exceed_max_length(self):
+        half = TELEGRAM_MAX_MESSAGE_LENGTH // 2
+        text = "<b><i>" + "x" * half + " " + "y" * half + "</i></b>"
+        result = split_html_message(text)
         for part in result:
             assert len(part) <= TELEGRAM_MAX_MESSAGE_LENGTH
 
