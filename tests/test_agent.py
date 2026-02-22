@@ -102,9 +102,7 @@ class TestCallApiThinking:
     def test_thinking_enabled_on_primary_model(self, engine):
         settings = _make_settings(claude_thinking_budget=2048)
         agent = Agent(settings=settings, engine=engine)
-        agent.client.messages.create = MagicMock(
-            return_value=_make_api_response(content=[])
-        )
+        agent.client.messages.create = MagicMock(return_value=_make_api_response(content=[]))
 
         agent._call_api([{"role": "user", "content": "Hello"}])
 
@@ -115,9 +113,7 @@ class TestCallApiThinking:
     def test_thinking_not_added_for_secondary_model(self, engine):
         settings = _make_settings(claude_thinking_budget=2048)
         agent = Agent(settings=settings, engine=engine)
-        agent.client.messages.create = MagicMock(
-            return_value=_make_api_response(content=[])
-        )
+        agent.client.messages.create = MagicMock(return_value=_make_api_response(content=[]))
 
         agent._call_api(
             [{"role": "user", "content": "Hello"}],
@@ -352,10 +348,12 @@ class TestQueryCategories:
 
     def test_without_query_returns_depth_0(self, engine):
         with Session(engine) as session:
-            session.add_all([
-                _make_category(1, "Möbler"),
-                _make_category(2, "Stolar", depth=1, path="Möbler > Stolar"),
-            ])
+            session.add_all(
+                [
+                    _make_category(1, "Möbler"),
+                    _make_category(2, "Stolar", depth=1, path="Möbler > Stolar"),
+                ]
+            )
             session.commit()
 
         with Session(engine) as session:
@@ -493,9 +491,7 @@ class TestDebugLogFilteredTools:
     def test_debug_logging_of_tool_names(self, engine):
         settings = _make_settings()
         agent = Agent(settings=settings, engine=engine)
-        agent.client.messages.create = MagicMock(
-            return_value=_make_api_response(text="Hi")
-        )
+        agent.client.messages.create = MagicMock(return_value=_make_api_response(text="Hi"))
 
         with patch("storebot.agent.logger") as mock_logger:
             mock_logger.isEnabledFor = MagicMock(return_value=True)
