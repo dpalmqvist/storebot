@@ -88,7 +88,7 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **Image processing** — `resize_for_listing` (1200px), `resize_for_analysis` (800px), `optimize_for_upload` (JPEG compress), `encode_image_base64`. All handle EXIF rotation and RGBA conversion.
 - **Accounting** — `AccountingService` with local voucher storage (SQLite), double-entry bookkeeping with BAS-kontoplan, PDF export (single + batch), debit/credit balance validation, `list_vouchers` (with date filtering).
 - **Agent loop** — `agent.py` with Claude API tool loop, 53 tool definitions, vision support (base64 image content blocks), Swedish system prompt with image workflow guidance.
-- **Telegram bot** — `handlers.py` with `/start`, `/help`, `/new`, `/orders`, `/scout`, `/marketing`, `/rapport`, text message handling, and photo handling (download, resize, forward to agent with vision).
+- **Telegram bot** — `handlers.py` with `/start`, `/help`, `/new`, `/orders`, `/scout`, `/marketing`, `/rapport`, text message handling, and photo handling (download, resize, forward to agent with vision). HTML formatting via `bot/formatting.py` — agent Markdown responses converted to Telegram HTML, service reports HTML-escaped, `BadRequest` fallback to plain text.
 - **Config** — Pydantic Settings from `.env`, all service credentials.
 - **Deployment** — systemd service file, SQLite backup script with cron rotation.
 - **Order Agent** — `OrderService` with full order workflow: `check_new_orders` (polls Tradera, imports orders, updates listings/products), `get_order`, `list_orders`, `create_sale_voucher` (automatic VAT/revenue/fee calculation), `mark_shipped` (with Tradera notification, persists tracking number), `create_shipping_label` (PostNord integration). Scheduled polling via Telegram `job_queue`.
@@ -103,7 +103,7 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **PostNord shipping labels** — `PostNordClient` REST client: `create_shipment()`, `get_label()`, `save_label()`. `Address` dataclass for sender/recipient, `parse_buyer_address()` for parsing Swedish addresses. Sandbox/production URL switching. Integrated into `OrderService.create_shipping_label()` with validation (weight, address), PDF label storage, tracking number persistence, and `AgentAction` audit trail.
 - **Resilience & observability** — Retry decorator with exponential backoff on transient errors (Tradera SOAP, Blocket REST, PostNord REST), structured JSON logging (`LOG_JSON` toggle), startup credential validation, admin alerts on scheduled job failures. SQLite WAL mode + busy timeout. Systemd restart limits, backup integrity checks with gzip compression.
 - **Semantic versioning** — Conventional commits with `python-semantic-release`. Version in `src/storebot/__init__.py` (single source of truth), automatic bumps via GitHub Actions on merge to main. Pre-commit hook validates commit message format.
-- **Tests** — 802 tests across 26 modules covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, analytics, postnord, CLI, retry, logging, handlers, log_viewer, compaction, model_routing, parallel, reflection, schemas, thinking, tool_filtering, and usage.
+- **Tests** — 853 tests across 27 modules covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, analytics, postnord, CLI, retry, logging, handlers, formatting, log_viewer, compaction, model_routing, parallel, reflection, schemas, thinking, tool_filtering, and usage.
 
 ### Not started
 
