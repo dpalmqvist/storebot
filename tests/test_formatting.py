@@ -128,11 +128,30 @@ class TestMarkdownToTelegramHtml:
         assert "- Bord" in result
         assert "- Lampa" in result
 
+    def test_star_bullet_list_not_italicised(self):
+        md = "Saker:\n* Stol\n* Bord\n* Lampa"
+        result = markdown_to_telegram_html(md)
+        assert "* Stol" in result
+        assert "<i>" not in result
+
     def test_numbered_list_preserved(self):
         md = "Steg:\n1. Första\n2. Andra\n3. Tredje"
         result = markdown_to_telegram_html(md)
         assert "1. Första" in result
         assert "2. Andra" in result
+
+    def test_empty_input(self):
+        assert markdown_to_telegram_html("") == ""
+
+    def test_nested_bold_italic(self):
+        result = markdown_to_telegram_html("**bold and *italic* inside**")
+        assert "<b>" in result
+        assert "<i>italic</i>" in result
+
+    def test_link_non_http_scheme_rendered_as_text(self):
+        result = markdown_to_telegram_html("[click](javascript:alert(1))")
+        assert "<a " not in result
+        assert "click" in result
 
     def test_multi_paragraph_preserved(self):
         md = "Första stycket.\n\nAndra stycket."

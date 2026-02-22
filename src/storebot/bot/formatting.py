@@ -8,7 +8,7 @@ TELEGRAM_MAX_MESSAGE_LENGTH = 4000
 _FENCED_CODE_RE = re.compile(r"```(?:\w*)\n?(.*?)```", re.DOTALL)
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
-_ITALIC_STAR_RE = re.compile(r"\*(.+?)\*")
+_ITALIC_STAR_RE = re.compile(r"(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)")
 _ITALIC_UNDER_RE = re.compile(r"(?<!\w)_(.+?)_(?!\w)")
 _STRIKE_RE = re.compile(r"~~(.+?)~~")
 _LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
@@ -21,7 +21,7 @@ _TAG_NAME_RE = re.compile(r"<(\w+)")
 
 
 def html_escape(text: str) -> str:
-    """Escape HTML special characters for safe Telegram HTML output."""
+    """Escape text for Telegram HTML element content (does not escape quotes)."""
     return html.escape(text, quote=False)
 
 
@@ -58,6 +58,8 @@ def markdown_to_telegram_html(text: str) -> str:
 
     def _link_sub(m: re.Match) -> str:
         url = m.group(2).replace('"', "&quot;")
+        if not url.startswith(("http://", "https://")):
+            return m.group(1)
         return f'<a href="{url}">{m.group(1)}</a>'
 
     text = _LINK_RE.sub(_link_sub, text)
