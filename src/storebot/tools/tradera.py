@@ -130,6 +130,10 @@ class TraderaClient:
         if end_date is not None:
             end_date = str(end_date)
 
+        item_type = getattr(item, "ItemType", None)
+        if item_type is not None:
+            item_type = str(item_type)
+
         return {
             "id": item.Id,
             "title": item.ShortDescription,
@@ -139,7 +143,7 @@ class TraderaClient:
             "image_url": image_url,
             "end_date": end_date,
             "seller": getattr(item, "SellerAlias", None),
-            "item_type": getattr(item, "ItemType", None),
+            "item_type": item_type,
         }
 
     @retry_on_transient()
@@ -757,6 +761,10 @@ class TraderaClient:
             if end_date is not None:
                 end_date = str(end_date)
 
+            status = getattr(response, "Status", None)
+            if status is not None:
+                status = str(status)
+
             return {
                 "id": getattr(response, "Id", item_id),
                 "title": getattr(response, "Title", None),
@@ -764,7 +772,7 @@ class TraderaClient:
                 "price": float(
                     getattr(response, "BuyItNowPrice", 0) or getattr(response, "MaxBid", 0) or 0
                 ),
-                "status": getattr(response, "Status", None),
+                "status": status,
                 "end_date": end_date,
                 "url": getattr(response, "ItemUrl", None),
                 "views": getattr(response, "TotalViews", 0) or 0,

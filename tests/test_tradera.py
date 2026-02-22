@@ -185,6 +185,22 @@ class TestTraderaSearch:
             mock_zeep.assert_not_called()
             assert c._search_client is None
 
+    def test_item_type_enum_is_serializable(self, client):
+        """Zeep may return ItemType as an enum object. Verify it's cast to str."""
+
+        class ItemType:
+            def __str__(self):
+                return "Auction"
+
+        item = _make_search_item(ItemType=ItemType())
+        response = _make_response(items=[item], total=1)
+        client.search_client.service.SearchAdvanced.return_value = response
+
+        result = client.search("test")
+
+        assert result["items"][0]["item_type"] == "Auction"
+        json.dumps(result)
+
 
 def _make_seller_order(order_id=1, item_id=100, price=500, shipping=50):
     order = MagicMock()
@@ -285,6 +301,35 @@ class TestTraderaGetItem:
         assert result["id"] == 42
         assert result["title"] == "Antik byrå"
         assert result["price"] == 1500
+
+    def test_status_enum_is_serializable(self, client):
+        """Zeep returns ItemStatus as an enum object, not a string. Verify it's cast."""
+
+        class ItemStatus:
+            """Simulate a zeep enum type that is not JSON-serializable."""
+
+            def __str__(self):
+                return "Active"
+
+        item_resp = MagicMock()
+        item_resp.Id = 55
+        item_resp.Title = "Test"
+        item_resp.Description = "desc"
+        item_resp.BuyItNowPrice = 100
+        item_resp.MaxBid = 0
+        item_resp.Status = ItemStatus()
+        item_resp.EndDate = None
+        item_resp.ItemUrl = "https://www.tradera.com/item/55"
+        item_resp.TotalViews = 10
+        item_resp.NumberOfWatchers = 2
+        item_resp.BidCount = 0
+        client._public_client.service.GetItem.return_value = item_resp
+
+        result = client.get_item(55)
+
+        assert result["status"] == "Active"
+        # Must be JSON-serializable (this is what crashed in production)
+        json.dumps(result)
 
     def test_handles_api_error(self, client):
         client._public_client.service.GetItem.side_effect = Exception("Not found")
