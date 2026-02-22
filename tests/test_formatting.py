@@ -5,6 +5,7 @@ from storebot.bot.formatting import (
     html_escape,
     markdown_to_telegram_html,
     split_html_message,
+    strip_html_tags,
 )
 
 
@@ -26,6 +27,20 @@ class TestHtmlEscape:
 
     def test_empty_string(self):
         assert html_escape("") == ""
+
+
+class TestStripHtmlTags:
+    def test_strips_simple_tags(self):
+        assert strip_html_tags("<b>bold</b> text") == "bold text"
+
+    def test_strips_nested_tags(self):
+        assert strip_html_tags("<b><i>bi</i></b>") == "bi"
+
+    def test_strips_attributed_tags(self):
+        assert strip_html_tags('<a href="https://x.com">link</a>') == "link"
+
+    def test_preserves_plain_text(self):
+        assert strip_html_tags("no tags here") == "no tags here"
 
 
 class TestMarkdownToTelegramHtml:

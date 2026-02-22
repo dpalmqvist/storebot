@@ -453,10 +453,10 @@ class TestReplyAndSend:
             side_effect=[telegram.error.BadRequest("parse error"), None]
         )
 
-        await _reply(update, "Hello")
+        await _reply(update, "<b>Hello</b>")
 
         assert update.message.reply_text.await_count == 2
-        # Second call should have no parse_mode
+        # Second call should strip HTML tags and have no parse_mode
         second_call = update.message.reply_text.call_args_list[1]
         assert second_call == (("Hello",),)
 
@@ -478,9 +478,9 @@ class TestReplyAndSend:
             side_effect=[telegram.error.BadRequest("parse error"), None]
         )
 
-        await _send(context, 12345, "Hello")
+        await _send(context, 12345, "<b>Hello</b>")
 
         assert context.bot.send_message.await_count == 2
-        # Second call should have no parse_mode
+        # Second call should strip HTML tags and have no parse_mode
         second_call = context.bot.send_message.call_args_list[1]
         assert second_call == ((), {"chat_id": 12345, "text": "Hello"})

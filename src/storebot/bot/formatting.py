@@ -18,6 +18,12 @@ _BLOCKQUOTE_RE = re.compile(r"^&gt;\s?(.+)$", re.MULTILINE)
 _OPEN_TAG_RE = re.compile(r"<(b|i|s|code|pre|blockquote|a)(?:\s[^>]*)?>")
 _CLOSE_TAG_RE = re.compile(r"</(b|i|s|code|pre|blockquote|a)>")
 _TAG_NAME_RE = re.compile(r"<(\w+)")
+_TAG_STRIP_RE = re.compile(r"<[^>]+>")
+
+
+def strip_html_tags(text: str) -> str:
+    """Remove all HTML tags from text, leaving only content."""
+    return _TAG_STRIP_RE.sub("", text)
 
 
 def html_escape(text: str) -> str:
@@ -86,7 +92,7 @@ def _get_open_tags(text: str) -> list[str]:
     for m in _CLOSE_TAG_RE.finditer(text):
         tag_name = m.group(1)
         for j in range(len(stack) - 1, -1, -1):
-            if stack[j].startswith(f"<{tag_name}"):
+            if stack[j] == f"<{tag_name}>" or stack[j].startswith(f"<{tag_name} "):
                 stack.pop(j)
                 break
     return stack
@@ -124,7 +130,7 @@ def split_html_message(text: str, max_length: int = TELEGRAM_MAX_MESSAGE_LENGTH)
         chunks: list[str] = []
         rest = text
         # Leave room for closing tags that may be appended at boundaries
-        split_limit = chunk_size - tag_reserve
+        split_limit = max(1, chunk_size - tag_reserve)
         while rest:
             if len(rest) <= chunk_size:
                 chunks.append(rest)

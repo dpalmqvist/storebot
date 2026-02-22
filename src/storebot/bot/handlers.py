@@ -11,7 +11,12 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 from storebot import __version__
 from storebot.agent import Agent
-from storebot.bot.formatting import html_escape, markdown_to_telegram_html, split_html_message
+from storebot.bot.formatting import (
+    html_escape,
+    markdown_to_telegram_html,
+    split_html_message,
+    strip_html_tags,
+)
 from storebot.config import Settings, get_settings
 from storebot.db import init_db
 from storebot.logging_config import configure_logging
@@ -70,7 +75,7 @@ async def _reply(update: Update, text: str, parse_mode: str | None = ParseMode.H
             await update.message.reply_text(part, parse_mode=parse_mode)
         except telegram.error.BadRequest as exc:
             logger.warning("HTML parse failed, falling back to plain text: %s", exc)
-            await update.message.reply_text(part)
+            await update.message.reply_text(strip_html_tags(part))
 
 
 async def _send(
@@ -88,7 +93,7 @@ async def _send(
             await context.bot.send_message(chat_id=chat_id, text=part, parse_mode=parse_mode)
         except telegram.error.BadRequest as exc:
             logger.warning("HTML parse failed, falling back to plain text: %s", exc)
-            await context.bot.send_message(chat_id=chat_id, text=part)
+            await context.bot.send_message(chat_id=chat_id, text=strip_html_tags(part))
 
 
 async def _send_display_images(update: Update, display_images: list[dict]) -> None:
