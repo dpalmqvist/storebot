@@ -418,6 +418,45 @@ class TestGetPerformanceReport:
         assert result["funnel"]["with_bids"] == 1
         assert result["funnel"]["sold"] == 0
 
+    def test_bulk_loading_multiple_sold_listings(self, service, engine):
+        """Verify bulk-loaded orders and eager-loaded products work across multiple sold listings."""
+        pid1 = _create_product(engine, title="Stol", category="möbler", acquisition_cost=50.0)
+        pid2 = _create_product(engine, title="Bord", category="möbler", acquisition_cost=200.0)
+        pid3 = _create_product(engine, title="Lampa", category="inredning", acquisition_cost=30.0)
+        now = datetime.now(UTC)
+        _create_listing(
+            engine,
+            pid1,
+            status="sold",
+            external_id="1",
+            listed_at=now - timedelta(days=5),
+            ends_at=now,
+        )
+        _create_listing(
+            engine,
+            pid2,
+            status="sold",
+            external_id="2",
+            listed_at=now - timedelta(days=10),
+            ends_at=now,
+        )
+        lid3 = _create_listing(
+            engine, pid3, status="active", views=40, watchers=3, external_id="3"
+        )
+        _create_order(engine, pid1, sale_price=150.0)
+        _create_order(engine, pid2, sale_price=800.0)
+        _create_snapshot(engine, lid3, bids=1)
+
+        result = service.get_performance_report()
+
+        assert result["sales"]["count"] == 2
+        assert result["sales"]["total_revenue"] == 950.0
+        assert result["sales"]["total_profit"] == 700.0  # (150-50) + (800-200)
+        assert result["categories"]["möbler"]["count"] == 2
+        assert result["categories"]["möbler"]["sold"] == 2
+        assert result["categories"]["inredning"]["count"] == 1
+        assert result["funnel"]["with_bids"] == 1
+
     def test_logs_agent_action(self, service, engine):
         service.get_performance_report()
 

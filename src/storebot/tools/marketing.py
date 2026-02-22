@@ -1,6 +1,7 @@
 import logging
 
-from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.orm import Session, selectinload
 
 from storebot.db import ListingSnapshot, Order, PlatformListing
 from storebot.tools.helpers import log_action, naive_now
@@ -150,6 +151,7 @@ class MarketingService:
         with Session(self.engine) as session:
             all_listings = (
                 session.query(PlatformListing)
+                .options(selectinload(PlatformListing.product))
                 .filter(PlatformListing.status.in_(["active", "ended", "sold"]))
                 .all()
             )
@@ -166,11 +168,16 @@ class MarketingService:
                 min(active_listings, key=lambda lst: lst.views or 0) if active_listings else None
             )
 
+            # Bulk-load orders for sold listings
+            sold_product_ids = [lst.product_id for lst in sold_listings]
+            orders = session.query(Order).filter(Order.product_id.in_(sold_product_ids)).all()
+            order_by_product = {o.product_id: o for o in orders}
+
             total_revenue = 0.0
             total_profit = 0.0
             sale_times = []
             for listing in sold_listings:
-                order = session.query(Order).filter(Order.product_id == listing.product_id).first()
+                order = order_by_product.get(listing.product_id)
                 if order and order.sale_price:
                     total_revenue += order.sale_price
                     product = listing.product
@@ -193,13 +200,19 @@ class MarketingService:
                     entry["sold"] += 1
 
             total_with_watchers = sum(1 for lst in all_listings if (lst.watchers or 0) > 0)
-            total_with_bids = sum(
-                1
-                for lst in all_listings
-                if session.query(ListingSnapshot)
-                .filter(ListingSnapshot.listing_id == lst.id, ListingSnapshot.bids > 0)
-                .first()
-            )
+            # Single aggregate query for bid check
+            listing_ids = [lst.id for lst in all_listings]
+            ids_with_bids = {
+                row[0]
+                for row in session.query(ListingSnapshot.listing_id)
+                .filter(
+                    ListingSnapshot.listing_id.in_(listing_ids),
+                    ListingSnapshot.bids > 0,
+                )
+                .distinct()
+                .all()
+            }
+            total_with_bids = sum(1 for lst in all_listings if lst.id in ids_with_bids)
 
             log_action(
                 session,
@@ -239,16 +252,22 @@ class MarketingService:
             else:
                 listings = (
                     session.query(PlatformListing)
+                    .options(selectinload(PlatformListing.product))
                     .filter(PlatformListing.status.in_(["active", "ended"]))
                     .all()
                 )
 
             category_avg_views = self._compute_category_avg_views(session)
 
+            # Bulk-load latest snapshot per listing
+            listing_ids = [lst.id for lst in listings]
+            latest_snapshots = self._bulk_latest_snapshots(session, listing_ids)
+
             recommendations = []
             for listing in listings:
+                snapshot = latest_snapshots.get(listing.id)
                 recommendations.extend(
-                    self._evaluate_listing(session, listing, category_avg_views)
+                    self._evaluate_listing(listing, category_avg_views, snapshot)
                 )
 
             recommendations.sort(key=lambda r: PRIORITY_ORDER.get(r["priority"], 3))
@@ -272,6 +291,7 @@ class MarketingService:
         with Session(self.engine) as session:
             active = (
                 session.query(PlatformListing)
+                .options(selectinload(PlatformListing.snapshots))
                 .filter(
                     PlatformListing.status == "active",
                     PlatformListing.platform == "tradera",
@@ -281,13 +301,8 @@ class MarketingService:
 
             listings = []
             for listing in active:
-                snapshots = (
-                    session.query(ListingSnapshot)
-                    .filter(ListingSnapshot.listing_id == listing.id)
-                    .order_by(ListingSnapshot.snapshot_at.desc())
-                    .limit(3)
-                    .all()
-                )
+                sorted_snaps = sorted(listing.snapshots, key=lambda s: s.snapshot_at, reverse=True)
+                snapshots = sorted_snaps[:3]
 
                 latest = snapshots[0] if snapshots else None
                 previous = snapshots[1] if len(snapshots) >= 2 else None
@@ -431,7 +446,12 @@ class MarketingService:
 
     def _compute_category_avg_views(self, session: Session) -> dict[str, float]:
         """Compute average views per category for active listings."""
-        listings = session.query(PlatformListing).filter(PlatformListing.status == "active").all()
+        listings = (
+            session.query(PlatformListing)
+            .options(selectinload(PlatformListing.product))
+            .filter(PlatformListing.status == "active")
+            .all()
+        )
 
         category_views: dict[str, list[int]] = {}
         for listing in listings:
@@ -440,22 +460,37 @@ class MarketingService:
 
         return {cat: sum(views) / len(views) for cat, views in category_views.items()}
 
+    @staticmethod
+    def _bulk_latest_snapshots(
+        session: Session, listing_ids: list[int]
+    ) -> dict[int, ListingSnapshot]:
+        """Load the most recent snapshot per listing in a single query."""
+        if not listing_ids:
+            return {}
+        subq = (
+            session.query(
+                ListingSnapshot.listing_id,
+                func.max(ListingSnapshot.id).label("max_id"),
+            )
+            .filter(ListingSnapshot.listing_id.in_(listing_ids))
+            .group_by(ListingSnapshot.listing_id)
+            .subquery()
+        )
+        snapshots = (
+            session.query(ListingSnapshot).join(subq, ListingSnapshot.id == subq.c.max_id).all()
+        )
+        return {s.listing_id: s for s in snapshots}
+
     def _evaluate_listing(
         self,
-        session: Session,
         listing: PlatformListing,
         category_avg_views: dict[str, float],
+        latest_snapshot: ListingSnapshot | None = None,
     ) -> list[dict]:
         """Evaluate a single listing and return applicable recommendations."""
         views = listing.views or 0
         watchers = listing.watchers or 0
 
-        latest_snapshot = (
-            session.query(ListingSnapshot)
-            .filter(ListingSnapshot.listing_id == listing.id)
-            .order_by(ListingSnapshot.snapshot_at.desc())
-            .first()
-        )
         bids = latest_snapshot.bids if latest_snapshot else 0
 
         now = naive_now()
