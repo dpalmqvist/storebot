@@ -5,7 +5,8 @@ build-backend = "hatchling.build"
 [project]
 name = "storebot"
 dynamic = ["version"]
-description = "AI-powered agent for managing a Swedish country shop"
+description = "AI-powered agent for selling on Swedish marketplaces"
+license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
     "alembic>=1.13,<2.0",

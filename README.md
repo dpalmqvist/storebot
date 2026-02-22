@@ -1,56 +1,133 @@
 # Storebot
 
-AI-powered agent for managing a Swedish country shop ("Lanthandel") that sells renovated furniture, decor, curiosities, antiques, and crops. The owner interacts with the system through a Telegram bot backed by Claude.
+**Your AI-powered business partner for selling on Swedish marketplaces.**
 
-## How it works
+Storebot is an autonomous agent system that handles the entire lifecycle of buying and selling goods online — from sourcing and pricing to listing, order management, shipping, and bookkeeping. You interact with it through Telegram, and it takes care of the rest.
+
+Whether you sell vintage furniture, electronics, clothing, collectibles, or anything in between — Storebot manages the tedious parts so you can focus on finding great items.
+
+## What It Does
+
+**Snap a photo, get a listing.** Send a picture of an item in Telegram. Storebot describes what it sees, creates a product record, searches Tradera and Blocket for comparable prices, drafts a listing in Swedish, and waits for your approval before publishing. Every decision is logged for full auditability.
+
+### Key Capabilities
+
+| Capability | What happens |
+|---|---|
+| **Product Listing** | Vision-based item description, Swedish title/description generation, Tradera category selection, image optimization and upload |
+| **Pricing Intelligence** | Cross-platform price research on Tradera and Blocket, statistical analysis (min/max/mean/median), quartile-based price suggestions |
+| **Order Management** | Automatic Tradera order polling, inventory updates, PostNord shipping label generation, shipment tracking |
+| **Bookkeeping** | Double-entry vouchers following BAS-kontoplan, automatic VAT calculation, PDF export for your accountant |
+| **Sourcing (Scout)** | Saved searches with daily digest notifications, deduplication of already-seen items, find deals before anyone else |
+| **Marketing** | Listing performance tracking (views, watchers, bids), trend analysis, actionable recommendations (reprice, relist, improve) |
+| **Analytics** | Revenue and margin reports, profitability per product/category/source, inventory aging, period comparisons, sourcing ROI |
+
+### How It Works
 
 ```
-Telegram Bot  →  Claude API (tool use, vision)
-                       |
-                 Agent Tool Modules
-                 ├── Tradera (SOAP)       - search, list, sell
-                 ├── Blocket (REST)       - price research
-                 ├── Accounting           - vouchers + PDF export
-                 ├── Scout                - saved searches, daily digests
-                 ├── Marketing            - performance tracking
-                 ├── Analytics            - business reports, profitability
-                 ├── Order                - sales, shipping, invoicing
-                 ├── PostNord (REST)      - shipping labels
-                 └── Image (Pillow)       - resize, optimize, vision
-                       |
-                 SQLite + sqlite-vec
+You (Telegram)
+  │
+  ▼
+Claude API ─── tool use + vision ─── Agent Loop
+  │
+  ├── Tradera (SOAP)      search, list, sell, categories
+  ├── Blocket (REST)       price research, sourcing
+  ├── Accounting           vouchers, VAT, PDF export
+  ├── Scout                saved searches, daily digests
+  ├── Marketing            performance tracking, recommendations
+  ├── Analytics            business reports, profitability
+  ├── Orders               sales, shipping labels, invoicing
+  ├── PostNord (REST)      shipping labels
+  └── Image (Pillow)       resize, optimize, vision prep
+  │
+  ▼
+SQLite ── single file, zero maintenance
 ```
 
-Send a photo of an item in Telegram. The agent describes what it sees, creates a product record, searches Tradera and Blocket for comparable prices, drafts a listing for your approval, and logs everything to the database. All listings start as **drafts** requiring explicit approval before publishing.
+## Use Cases
 
-## Quick start
+### Daily Workflow
+1. **Morning** — Review the daily listing dashboard and scout digest that arrived automatically
+2. **Sourcing** — Spot a deal at a flea market? Snap a photo, ask "what's this worth?", get instant price research
+3. **Listing** — "List this oak chair for auction starting at 200 kr" — the agent drafts everything, you approve
+4. **Shipping** — An item sold? The agent imports the order, generates a PostNord label, and creates the accounting voucher
+5. **Evening** — Ask for a business summary: revenue, margins, what's selling, what isn't
+
+### Telegram Commands
+
+| Command | Purpose |
+|---|---|
+| `/start` | Welcome message and introduction |
+| `/help` | Available commands and capabilities |
+| `/new` | Start a fresh conversation |
+| `/orders` | Check for new Tradera orders |
+| `/scout` | Run saved searches now |
+| `/marketing` | Refresh listing performance stats |
+| `/rapport` | Generate a business report |
+
+Beyond commands, Storebot understands natural language in Swedish and English. Send text, photos, or voice your requests — the agent figures out which tools to use.
+
+## Quick Start
 
 ```bash
 git clone <repo-url> && cd storebot
 uv venv --python 3.13 && source .venv/bin/activate
 uv pip install -e ".[dev]"
-cp .env.example .env  # fill in API keys
-storebot
+cp .env.example .env   # fill in API keys
+storebot               # start the bot
 ```
 
-See [Installation & Setup](docs/installation.md) for full configuration and service setup.
+You'll need API keys for Claude, Telegram, and Tradera. See the [Installation Guide](docs/installation.md) for the full setup walkthrough.
+
+## Tech Stack
+
+| Component | Technology |
+|---|---|
+| Language | Python 3.13 |
+| LLM | Claude API (direct tool use, no framework overhead) |
+| Database | SQLite + sqlite-vec (zero-maintenance, single-file) |
+| Chat | Telegram via python-telegram-bot v20+ |
+| Marketplaces | Tradera (SOAP/zeep), Blocket (REST) |
+| Shipping | PostNord REST API |
+| ORM | SQLAlchemy 2.0 + Alembic migrations |
+| Accounting | Local double-entry bookkeeping, PDF via ReportLab |
+| Deployment | systemd on Raspberry Pi 5 |
 
 ## Documentation
 
 | Document | Description |
-|----------|-------------|
-| [Installation & Setup](docs/installation.md) | Prerequisites, install, configuration, external service setup |
-| [Usage Guide](docs/usage.md) | Telegram commands, workflows, agent tools, scheduled jobs |
-| [Maintenance & Operations](docs/maintenance.md) | Deployment, systemd, backups, logging, troubleshooting |
-| [Development Guide](docs/development.md) | Architecture, project structure, testing, adding features |
-| [Code Review](docs/code-review.md) | Architecture and code quality review findings |
+|---|---|
+| [Installation & Setup](docs/installation.md) | Prerequisites, environment variables, external service configuration, systemd setup |
+| [Usage Guide](docs/usage.md) | Telegram commands, agent workflows, tool reference, scheduled jobs |
+| [Maintenance & Operations](docs/maintenance.md) | Deployment, backups, logging, troubleshooting |
+| [Development Guide](docs/development.md) | Architecture deep-dive, project structure, testing patterns, extending the system |
 
-## Current Status
+## Project Status
 
-Phase 1 (MVP) and Phase 2 are complete. Phase 3 is partially done — Scout Agent, Marketing Agent, and Analytics are implemented (MCP wrappers and social media cross-posting remain). See [CLAUDE.md](CLAUDE.md) for full implementation status and build phases.
+The core system is fully operational: listing, pricing, orders, shipping, accounting, scouting, marketing, and analytics all work end-to-end.
 
-**Tech stack:** Python 3.11+, Claude API (direct, no LangChain), SQLite, Telegram, Tradera SOAP, PostNord REST, Pillow, SQLAlchemy 2.0, Alembic.
+- 57 agent tools across 15 modules
+- 857 tests passing
+- 14 database tables
+- 7 Telegram commands
+- Full audit trail via `agent_actions` table
+
+### Roadmap
+
+- **Semantic search** — sqlite-vec embeddings for finding similar products in your inventory
+- **MCP server wrappers** — Expose tool modules as MCP servers for use with other AI clients
+- **Social media cross-posting** — Publish listings to Instagram, Facebook Marketplace, etc.
+- **Customer messaging** — Email/IMAP integration for handling buyer questions
+- **Custom webshop** — Standalone storefront beyond marketplace platforms
+
+## Design Principles
+
+- **Human-in-the-loop** — All listings start as drafts. Nothing is published without your approval.
+- **Full audit trail** — Every agent decision is logged to the database for review.
+- **No framework lock-in** — Direct Claude API integration. No LangChain, no abstractions you can't debug.
+- **Single-file database** — SQLite means zero maintenance, easy backups, runs anywhere.
+- **Swedish business rules built in** — BAS-kontoplan, moms (VAT) at 25%, proper verifikationer (vouchers).
 
 ## License
 
-Private repository. All rights reserved.
+Licensed under the [Apache License, Version 2.0](LICENSE).
