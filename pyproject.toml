@@ -54,8 +54,10 @@ testpaths = ["tests"]
 [tool.coverage.run]
 source = ["src/storebot"]
 omit = ["*/__init__.py"]
+branch = true
 
 [tool.coverage.report]
+fail_under = 99
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",

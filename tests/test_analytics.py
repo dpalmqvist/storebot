@@ -750,7 +750,7 @@ class TestFormatFullReport:
         assert text.endswith("...avkortat")
 
 
-class TestAgingBucketFallback:
+class TestAgingBucketEdgeCases:
     def test_30_plus_bucket(self):
         from storebot.tools.analytics import _aging_bucket
 
