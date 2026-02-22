@@ -168,7 +168,7 @@ class MarketingService:
                 min(active_listings, key=lambda lst: lst.views or 0) if active_listings else None
             )
 
-            # Bulk-load orders for sold listings
+            # Bulk-load orders for sold listings (first order per product wins)
             sold_product_ids = list({lst.product_id for lst in sold_listings})
             orders = (
                 session.query(Order)
@@ -176,7 +176,10 @@ class MarketingService:
                 .order_by(Order.id)
                 .all()
             )
-            order_by_product = {o.product_id: o for o in orders}
+            order_by_product: dict[int, Order] = {}
+            for o in orders:
+                if o.product_id is not None:
+                    order_by_product.setdefault(o.product_id, o)
 
             total_revenue = 0.0
             total_profit = 0.0
@@ -475,7 +478,10 @@ class MarketingService:
     def _bulk_recent_snapshots(
         session: Session, listing_ids: list[int], limit: int = 1
     ) -> dict[int, list[ListingSnapshot]]:
-        """Load the N most recent snapshots per listing in a single query."""
+        """Load the N most recent snapshots per listing in a single query.
+
+        Requires SQLite >= 3.25 (window functions).
+        """
         if not listing_ids:
             return {}
         subq = (
