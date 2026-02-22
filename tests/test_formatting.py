@@ -90,6 +90,11 @@ class TestMarkdownToTelegramHtml:
         result = markdown_to_telegram_html('[Click](https://x.com/q="a")')
         assert '<a href="https://x.com/q=&quot;a&quot;">Click</a>' in result
 
+    def test_link_url_with_parentheses(self):
+        result = markdown_to_telegram_html("[Foo](https://en.wikipedia.org/wiki/Foo_(bar))")
+        assert "https://en.wikipedia.org/wiki/Foo_(bar)" in result
+        assert "<a " in result
+
     def test_header(self):
         result = markdown_to_telegram_html("# Rubrik")
         assert "<b>Rubrik</b>" in result
