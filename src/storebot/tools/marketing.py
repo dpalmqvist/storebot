@@ -490,7 +490,7 @@ class MarketingService:
                 func.row_number()
                 .over(
                     partition_by=ListingSnapshot.listing_id,
-                    order_by=ListingSnapshot.snapshot_at.desc(),
+                    order_by=[ListingSnapshot.snapshot_at.desc(), ListingSnapshot.id.desc()],
                 )
                 .label("rn"),
             )
