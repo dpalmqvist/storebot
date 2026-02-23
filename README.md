@@ -92,7 +92,7 @@ See the [Installation Guide](docs/installation.md) for the full setup walkthroug
 |---|---|
 | Language | Python 3.13 |
 | LLM | Claude API (direct tool use, no framework overhead) |
-| Database | SQLite + sqlite-vec (zero-maintenance, single-file) |
+| Database | SQLite (zero-maintenance, single-file) |
 | Chat | Telegram via python-telegram-bot v20+ |
 | Marketplace | Tradera (SOAP/zeep) — selling; Blocket (REST) — research only |
 | Shipping | PostNord REST API |
@@ -121,8 +121,6 @@ The core system is fully operational: listing, pricing, orders, shipping, accoun
 
 ### Roadmap
 
-- **Semantic search** — sqlite-vec embeddings for finding similar products in your inventory
-- **MCP server wrappers** — Expose tool modules as MCP servers for use with other AI clients
 - **Social media cross-posting** — Publish listings to Instagram, Facebook Marketplace, etc.
 - **Customer messaging** — Email/IMAP integration for handling buyer questions
 - **Custom webshop** — Standalone storefront beyond marketplace platforms

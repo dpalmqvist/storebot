@@ -16,7 +16,6 @@ dependencies = [
     "zeep>=4.2,<5.0",
     "requests>=2.31,<3.0",
     "sqlalchemy>=2.0,<3.0",
-    "sqlite-vec",
     "pillow>=12.1.1,<13.0",
     "reportlab>=4.0,<5.0",
     "pydantic-settings>=2.0,<3.0",

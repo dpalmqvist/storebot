@@ -1,5 +1,3 @@
-import logging
-
 import sqlalchemy as sa
 
 from storebot.db import (
@@ -180,23 +178,6 @@ def test_tradera_category_model(session):
     assert result.depth == 2
     assert result.parent_tradera_id == 100
     assert result.description is not None
-
-
-def test_load_sqlite_vec_failure(tmp_path, caplog):
-    """Cover _load_sqlite_vec exception path (lines 278-279)."""
-    import sqlite_vec
-    from unittest.mock import patch
-
-    db_path = str(tmp_path / "test_vec_fail.db")
-    with (
-        patch.object(sqlite_vec, "load", side_effect=Exception("vec not found")),
-        caplog.at_level(logging.DEBUG, logger="storebot.db"),
-    ):
-        eng = create_engine(database_path=db_path)
-        # Engine should still work despite sqlite_vec failing
-        tables = sa.inspect(eng).get_table_names()
-        assert isinstance(tables, list)
-    assert "sqlite_vec not loaded (optional): vec not found" in caplog.text
 
 
 def test_secure_db_file_oserror(tmp_path):
