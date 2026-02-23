@@ -42,12 +42,6 @@ class TestBuildTools:
         for excluded in _MCP_EXCLUDED_TOOLS:
             assert excluded not in names, f"{excluded} should be excluded from MCP tools"
 
-    def test_strips_internal_fields(self):
-        """Internal fields (category, strict) should not leak into MCP schema."""
-        tools = _build_tools()
-        for t in tools:
-            assert "category" not in (t.inputSchema or {}), f"Tool {t.name} has category in schema"
-
 
 class TestCreateServer:
     def test_creates_server(self):

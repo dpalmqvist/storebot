@@ -53,7 +53,8 @@ def _create_server(services: dict[str, object]) -> Server:
 
     @server.call_tool()
     async def handle_call_tool(name: str, arguments: dict | None) -> types.CallToolResult:
-        result = execute_tool(services, name, arguments or {})
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, execute_tool, services, name, arguments or {})
         text = json.dumps(result, default=str)
         is_error = "error" in result
         return types.CallToolResult(

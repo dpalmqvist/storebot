@@ -3,19 +3,27 @@
 Used by both ``agent.py`` (Claude API loop) and ``mcp_server.py`` (MCP server).
 """
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 
 from storebot.tools.schemas import validate_tool_result
+
+if TYPE_CHECKING:
+    import sqlalchemy as sa
+
+    from storebot.config import Settings
 
 logger = logging.getLogger(__name__)
 
 
 def strip_nulls(value):
-    """Recursively remove None values from dicts/lists.
+    """Recursively remove None values from dicts.
 
-    Empty dicts/lists that result from stripping are collapsed to None so
-    that downstream ``is not None`` guards work correctly (e.g. details in
-    relist_product).
+    List elements are preserved as-is (including None).  Empty dicts that
+    result from stripping are collapsed to None so that downstream
+    ``is not None`` guards work correctly (e.g. details in relist_product).
     """
     if isinstance(value, dict):
         cleaned = {k: strip_nulls(v) for k, v in value.items() if v is not None}
@@ -95,7 +103,7 @@ DB_SERVICES: dict[str, str] = {
 }
 
 
-def create_services(settings, engine) -> dict[str, object]:
+def create_services(settings: Settings, engine: sa.Engine | None) -> dict[str, object]:
     """Instantiate all tool services from settings and engine.
 
     Returns a dict keyed by service attribute name (matching DISPATCH values).
@@ -167,6 +175,8 @@ def create_services(settings, engine) -> dict[str, object]:
         ),
         "marketing": (MarketingService(engine=engine, tradera=tradera) if engine else None),
         "analytics": AnalyticsService(engine=engine) if engine else None,
+        # Not in DISPATCH (PostNord is accessed via OrderService internally),
+        # but exposed here so Agent.__init__'s setattr loop sets agent.postnord.
         "postnord": postnord,
     }
 
