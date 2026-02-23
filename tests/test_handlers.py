@@ -1331,8 +1331,16 @@ class TestMain:
 
             mock_app.run_polling.assert_called_once()
             mock_app.add_handler.assert_called()
-            mock_job_queue.run_repeating.assert_called_once()
-            assert mock_job_queue.run_daily.call_count == 4  # 4 daily jobs
+            mock_job_queue.run_repeating.assert_called_once_with(
+                poll_orders_job, interval=30 * 60, first=60
+            )
+            daily_jobs = [c.args[0] for c in mock_job_queue.run_daily.call_args_list]
+            assert set(daily_jobs) == {
+                scout_digest_job,
+                marketing_refresh_job,
+                daily_listing_report_job,
+                weekly_comparison_job,
+            }
 
 
 # ---------------------------------------------------------------------------
