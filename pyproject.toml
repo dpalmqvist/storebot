@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "alembic>=1.13,<2.0",
     "anthropic>=0.79,<2.0",
+    "mcp>=1.0,<2.0",
     "python-telegram-bot[job-queue]>=20,<22",
     "zeep>=4.2,<5.0",
     "requests>=2.31,<3.0",
@@ -36,6 +37,7 @@ dev = [
 storebot = "storebot.bot.handlers:main"
 storebot-authorize-tradera = "storebot.cli:authorize_tradera"
 storebot-logs = "storebot.tui.log_viewer:main"
+storebot-mcp = "storebot.mcp_server:main"
 storebot-sync-categories = "storebot.cli:sync_categories"
 
 [tool.hatch.version]

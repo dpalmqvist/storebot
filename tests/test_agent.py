@@ -199,7 +199,7 @@ class TestExecuteToolDispatch:
     def test_missing_db_service(self, engine):
         settings = _make_settings()
         agent = Agent(settings=settings, engine=engine)
-        agent.listing = None  # Simulate missing service
+        agent._services["listing"] = None  # Simulate missing service
         result = agent.execute_tool("list_draft_listings", {})
         assert "error" in result
         assert "not available" in result["error"]
@@ -215,8 +215,9 @@ class TestExecuteToolDispatch:
         settings = _make_settings()
         agent = Agent(settings=settings, engine=engine)
         # Mock a service method that raises
-        agent.pricing = MagicMock()
-        agent.pricing.price_check = MagicMock(side_effect=RuntimeError("boom"))
+        mock_pricing = MagicMock()
+        mock_pricing.price_check = MagicMock(side_effect=RuntimeError("boom"))
+        agent._services["pricing"] = mock_pricing
         result = agent.execute_tool("price_check", {"query": "test"})
         assert "error" in result
         assert "boom" in result["error"]
@@ -469,23 +470,23 @@ class TestExecuteToolNotImplemented:
     def test_not_implemented_error(self, engine):
         settings = _make_settings()
         agent = Agent(settings=settings, engine=engine)
-        agent.listing = MagicMock()
-        agent.listing.list_drafts = MagicMock(side_effect=NotImplementedError())
+        mock_listing = MagicMock()
+        mock_listing.list_drafts = MagicMock(side_effect=NotImplementedError())
+        agent._services["listing"] = mock_listing
         result = agent.execute_tool("list_draft_listings", {})
         assert "not yet implemented" in result["error"]
 
 
 class TestExecuteToolServiceNotInDb:
     def test_non_db_service_missing(self, engine):
-        """Cover line 1026: service_attr not in _DB_SERVICES."""
+        """Cover code path: service_attr not in DB_SERVICES."""
         settings = _make_settings()
         agent = Agent(settings=settings, engine=engine)
-        agent._DISPATCH["fake_tool"] = ("fake_service", "method")
-        try:
-            result = agent.execute_tool("fake_tool", {})
-            assert "not available" in result["error"]
-        finally:
-            agent._DISPATCH.pop("fake_tool", None)
+        # tradera is not a DB service — setting it to None exercises
+        # the generic "not available" branch in dispatch.execute_tool
+        agent._services["tradera"] = None
+        result = agent.execute_tool("search_tradera", {})
+        assert "not available" in result["error"]
 
 
 class TestDebugLogFilteredTools:

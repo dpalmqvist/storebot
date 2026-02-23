@@ -9,19 +9,14 @@ from sqlalchemy.orm import Session
 
 from storebot.config import get_settings
 from storebot.db import ApiUsage, TraderaCategory
-from storebot.tools.accounting import AccountingService
-from storebot.tools.analytics import AnalyticsService
-from storebot.tools.blocket import BlocketClient
 from storebot.tools.definitions import TOOLS, TOOL_CATEGORIES
+from storebot.tools.dispatch import (
+    create_services,
+    execute_tool as _dispatch_execute_tool,
+    strip_nulls as _strip_nulls,
+)
 from storebot.tools.image import encode_image_base64
-from storebot.tools.listing import ListingService
-from storebot.tools.marketing import MarketingService
-from storebot.tools.order import OrderService
-from storebot.tools.postnord import Address, PostNordClient
-from storebot.tools.pricing import PricingService
 from storebot.tools.schemas import validate_tool_result
-from storebot.tools.scout import ScoutService
-from storebot.tools.tradera import TraderaClient
 
 logger = logging.getLogger(__name__)
 
@@ -206,21 +201,6 @@ _COMPACT_SYSTEM_PROMPT = (
 )
 
 
-def _strip_nulls(value):
-    """Recursively remove None values from dicts/lists.
-
-    Empty dicts/lists that result from stripping are collapsed to None so
-    that downstream ``is not None`` guards work correctly (e.g. details in
-    relist_product).
-    """
-    if isinstance(value, dict):
-        cleaned = {k: _strip_nulls(v) for k, v in value.items() if v is not None}
-        return cleaned or None
-    if isinstance(value, list):
-        return [_strip_nulls(v) for v in value]
-    return value
-
-
 # Categories requiring the capable model for accuracy (financial, creative).
 _COMPLEX_CATEGORIES: frozenset[str] = frozenset(
     {
@@ -364,80 +344,11 @@ class Agent:
         self.settings = settings or get_settings()
         self.engine = engine
         self.client = anthropic.Anthropic(api_key=self.settings.claude_api_key)
-        self.tradera = TraderaClient(
-            app_id=self.settings.tradera_app_id,
-            app_key=self.settings.tradera_app_key,
-            sandbox=self.settings.tradera_sandbox,
-            user_id=self.settings.tradera_user_id,
-            user_token=self.settings.tradera_user_token,
-        )
-        self.blocket = BlocketClient()
-        self.accounting = (
-            AccountingService(
-                engine=self.engine,
-                export_path=self.settings.voucher_export_path,
-            )
-            if self.engine
-            else None
-        )
-        self.pricing = PricingService(
-            tradera=self.tradera,
-            blocket=self.blocket,
-            engine=self.engine,
-        )
-        self.listing = (
-            ListingService(
-                engine=self.engine,
-                tradera=self.tradera,
-                image_dir=self.settings.product_image_dir,
-            )
-            if self.engine
-            else None
-        )
-        self.postnord = None
-        if self.settings.postnord_api_key:
-            self.postnord = PostNordClient(
-                api_key=self.settings.postnord_api_key,
-                sender=Address(
-                    name=self.settings.postnord_sender_name,
-                    street=self.settings.postnord_sender_street,
-                    postal_code=self.settings.postnord_sender_postal_code,
-                    city=self.settings.postnord_sender_city,
-                    country_code=self.settings.postnord_sender_country_code,
-                    phone=self.settings.postnord_sender_phone,
-                    email=self.settings.postnord_sender_email,
-                ),
-                sandbox=self.settings.postnord_sandbox,
-            )
-        self.order = (
-            OrderService(
-                engine=self.engine,
-                tradera=self.tradera,
-                accounting=self.accounting,
-                postnord=self.postnord,
-                label_export_path=self.settings.label_export_path,
-            )
-            if self.engine
-            else None
-        )
-        self.scout = (
-            ScoutService(
-                engine=self.engine,
-                tradera=self.tradera,
-                blocket=self.blocket,
-            )
-            if self.engine
-            else None
-        )
-        self.marketing = (
-            MarketingService(
-                engine=self.engine,
-                tradera=self.tradera,
-            )
-            if self.engine
-            else None
-        )
-        self.analytics = AnalyticsService(engine=self.engine) if self.engine else None
+        self._services = create_services(self.settings, self.engine)
+        # Expose individual services as attributes for backward compatibility
+        # (used by get_categories, handle_message, and scheduled jobs)
+        for attr, svc in self._services.items():
+            setattr(self, attr, svc)
 
     def _select_model(self, categories: set[str], has_images: bool) -> str:
         """Select model based on task complexity.
@@ -832,75 +743,6 @@ class Agent:
             logger.warning("Context compaction failed, keeping original", exc_info=True)
             return messages
 
-    # Maps tool name → (service_attr, method_name).
-    _DISPATCH = {
-        "search_tradera": ("tradera", "search"),
-        "get_tradera_item": ("tradera", "get_item"),
-        "get_shipping_options": ("tradera", "get_shipping_options"),
-        "get_shipping_types": ("tradera", "get_shipping_types"),
-        "get_attribute_definitions": ("tradera", "get_attribute_definitions"),
-        "search_blocket": ("blocket", "search"),
-        "get_blocket_ad": ("blocket", "get_ad"),
-        "price_check": ("pricing", "price_check"),
-        "create_draft_listing": ("listing", "create_draft"),
-        "list_draft_listings": ("listing", "list_drafts"),
-        "get_draft_listing": ("listing", "get_draft"),
-        "update_draft_listing": ("listing", "update_draft"),
-        "reject_draft_listing": ("listing", "reject_draft"),
-        "approve_draft_listing": ("listing", "approve_draft"),
-        "revise_draft_listing": ("listing", "revise_draft"),
-        "publish_listing": ("listing", "publish_listing"),
-        "relist_product": ("listing", "relist_product"),
-        "cancel_listing": ("listing", "cancel_listing"),
-        "search_products": ("listing", "search_products"),
-        "create_product": ("listing", "create_product"),
-        "update_product": ("listing", "update_product"),
-        "get_product": ("listing", "get_product"),
-        "save_product_image": ("listing", "save_product_image"),
-        "get_product_images": ("listing", "get_product_images"),
-        "delete_product_image": ("listing", "delete_product_image"),
-        "archive_product": ("listing", "archive_product"),
-        "unarchive_product": ("listing", "unarchive_product"),
-        "check_new_orders": ("order", "check_new_orders"),
-        "list_orders": ("order", "list_orders"),
-        "get_order": ("order", "get_order"),
-        "create_sale_voucher": ("order", "create_sale_voucher"),
-        "mark_order_shipped": ("order", "mark_shipped"),
-        "create_shipping_label": ("order", "create_shipping_label"),
-        "list_orders_pending_feedback": ("order", "list_orders_pending_feedback"),
-        "leave_feedback": ("order", "leave_feedback"),
-        "create_voucher": ("accounting", "create_voucher"),
-        "list_vouchers": ("accounting", "list_vouchers"),
-        "export_vouchers": ("accounting", "export_vouchers_pdf"),
-        "create_saved_search": ("scout", "create_search"),
-        "list_saved_searches": ("scout", "list_searches"),
-        "update_saved_search": ("scout", "update_search"),
-        "delete_saved_search": ("scout", "delete_search"),
-        "run_saved_search": ("scout", "run_search"),
-        "run_all_saved_searches": ("scout", "run_all_searches"),
-        "refresh_listing_stats": ("marketing", "refresh_listing_stats"),
-        "analyze_listing": ("marketing", "analyze_listing"),
-        "get_performance_report": ("marketing", "get_performance_report"),
-        "get_recommendations": ("marketing", "get_recommendations"),
-        "listing_dashboard": ("marketing", "get_listing_dashboard"),
-        "business_summary": ("analytics", "business_summary"),
-        "profitability_report": ("analytics", "profitability_report"),
-        "inventory_report": ("analytics", "inventory_report"),
-        "period_comparison": ("analytics", "period_comparison"),
-        "sourcing_analysis": ("analytics", "sourcing_analysis"),
-        "usage_report": ("analytics", "usage_report"),
-    }
-
-    # Services that require a database engine (service_attr → display name)
-    _DB_SERVICES = {
-        "listing": "ListingService",
-        "order": "OrderService",
-        "accounting": "AccountingService",
-        "scout": "ScoutService",
-        "marketing": "MarketingService",
-        "analytics": "AnalyticsService",
-    }
-
     @staticmethod
     def _query_categories(session, query: str | None):
         """Build and execute a TraderaCategory query, returning up to 50 results.
@@ -992,47 +834,8 @@ class Agent:
         only make HTTP calls (tradera, blocket, postnord) are also safe since
         each request uses its own connection.
         """
-        if not isinstance(tool_input, dict):
-            return {"error": f"Invalid tool input type for '{name}': expected dict"}
-
-        if name == "request_tools":
-            return {"error": "request_tools is handled inline in handle_message"}
-
-        cleaned = _strip_nulls(tool_input) or {}
-
-        logger.debug(
-            "Executing tool: %s with keys: %s",
-            name,
-            list(cleaned.keys()),
-            extra={"tool_name": name},
-        )
-
         if name == "get_categories":
-            return self._execute_get_categories(cleaned)
-
-        entry = self._DISPATCH.get(name)
-        if entry is None:
-            return {"error": f"Unknown tool: {name}"}
-
-        service_attr, method_name = entry
-        service = getattr(self, service_attr, None)
-        if service is None:
-            if service_attr in self._DB_SERVICES:
-                return {
-                    "error": f"{self._DB_SERVICES[service_attr]} not available (no database engine)"
-                }
-            return {"error": f"Service '{service_attr}' not available"}
-
-        try:
-            result = getattr(service, method_name)(**cleaned)
-            return validate_tool_result(name, result)
-        except TypeError as e:
-            logger.warning(
-                "Tool input validation failed: %s — %s", name, e, extra={"tool_name": name}
-            )
-            return {"error": f"Invalid arguments for '{name}': {e}"}
-        except NotImplementedError:
-            return {"error": f"Tool '{name}' is not yet implemented"}
-        except Exception as e:
-            logger.exception("Tool execution failed: %s", name, extra={"tool_name": name})
-            return {"error": str(e)}
+            if not isinstance(tool_input, dict):
+                return {"error": f"Invalid tool input type for '{name}': expected dict"}
+            return self._execute_get_categories(_strip_nulls(tool_input) or {})
+        return _dispatch_execute_tool(self._services, name, tool_input)
