@@ -103,12 +103,12 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **PostNord shipping labels** — `PostNordClient` REST client: `create_shipment()`, `get_label()`, `save_label()`. `Address` dataclass for sender/recipient, `parse_buyer_address()` for parsing Swedish addresses. Sandbox/production URL switching. Integrated into `OrderService.create_shipping_label()` with validation (weight, address), PDF label storage, tracking number persistence, and `AgentAction` audit trail.
 - **Resilience & observability** — Retry decorator with exponential backoff on transient errors (Tradera SOAP, Blocket REST, PostNord REST), structured JSON logging (`LOG_JSON` toggle), startup credential validation, admin alerts on scheduled job failures. SQLite WAL mode + busy timeout. Systemd restart limits, backup integrity checks with gzip compression.
 - **Semantic versioning** — Conventional commits with `python-semantic-release`. Version in `src/storebot/__init__.py` (single source of truth), automatic bumps via GitHub Actions on merge to main. Pre-commit hook validates commit message format.
-- **Tests** — 857 tests across 27 modules covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, analytics, postnord, CLI, retry, logging, handlers, formatting, log_viewer, compaction, model_routing, parallel, reflection, schemas, thinking, tool_filtering, and usage.
+- **MCP server** — `storebot-mcp` CLI exposing all 57 tools via MCP protocol. Low-level `Server` class with shared dispatch from `dispatch.py`. Supports stdio (default) and streamable-http transports. Client-compatible with Claude Desktop, Claude Code, Cursor, etc.
+- **Tests** — 1072 tests across 30 modules covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, analytics, postnord, CLI, retry, logging, handlers, formatting, log_viewer, compaction, model_routing, parallel, reflection, schemas, thinking, tool_filtering, usage, agent, dispatch, and mcp_server. 100% line coverage, 99% branch coverage.
 
 ### Roadmap
 
 - sqlite-vec embeddings for semantic product search
-- MCP server wrappers for tool modules
 - Social media cross-posting (Instagram, Facebook Marketplace)
 - Customer message handling (email/IMAP — Tradera API has no messaging support)
 - Custom webshop, wishlist matching
@@ -172,6 +172,7 @@ Versioning is managed by `python-semantic-release`. On merge to `main`, GitHub A
 - **Run bot:** `storebot` (or `python -m storebot.bot.handlers`)
 - **Authorize Tradera:** `storebot-authorize-tradera` (interactive token consent flow)
 - **Audit log viewer:** `storebot-logs` (Textual TUI for reviewing agent_actions)
+- **MCP server:** `storebot-mcp` (or `storebot-mcp --transport streamable-http --port 8080`)
 - **Run tests:** `pytest`
 - **Run single test:** `pytest tests/test_db.py::test_name`
 - **Lint:** `ruff check src/ tests/`
