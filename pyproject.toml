@@ -27,6 +27,7 @@ dependencies = [
 dev = [
     "pytest",
     "pytest-asyncio",
+    "pytest-cov",
     "ruff",
     "pre-commit",
 ]
@@ -49,6 +50,21 @@ target-version = "py310"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src/storebot"]
+omit = ["*/__init__.py"]
+branch = true
+
+[tool.coverage.report]
+# 100% line coverage; 99% combined with branch coverage (49 partial branches
+# from loop exits and multi-condition guards remain uncovered).
+fail_under = 99
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    'if __name__ == "__main__"',
+]
 
 [tool.semantic_release]
 version_variables = ["src/storebot/__init__.py:__version__"]

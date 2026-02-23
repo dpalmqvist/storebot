@@ -221,3 +221,39 @@ class TestBasAccounts:
         expected = [1910, 1930, 2611, 2640, 3001, 4010, 6250, 6570]
         for account in expected:
             assert account in BAS_ACCOUNTS
+
+
+class TestVoucherPdfWithOrderId:
+    def test_voucher_with_order_id(self, accounting, engine):
+        """Cover _build_voucher_story when voucher.order_id is set (line 133)."""
+        from sqlalchemy.orm import Session
+
+        # Create a product and order so we have valid references
+        with Session(engine) as session:
+            product = Product(title="Test", status="sold")
+            session.add(product)
+            session.flush()
+            order = Order(
+                product_id=product.id,
+                platform="tradera",
+                external_order_id="42",
+                sale_price=500,
+                status="shipped",
+            )
+            session.add(order)
+            session.commit()
+            order_id = order.id
+
+        result = accounting.create_voucher(
+            description="Försäljning med order",
+            rows=[
+                {"account": 1930, "debit": 500, "credit": 0},
+                {"account": 3001, "debit": 0, "credit": 400},
+                {"account": 2611, "debit": 0, "credit": 100},
+            ],
+            order_id=order_id,
+        )
+        assert "error" not in result
+
+        pdf_path = accounting.export_voucher_pdf(result["voucher_id"])
+        assert Path(pdf_path).exists()

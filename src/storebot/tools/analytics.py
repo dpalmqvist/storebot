@@ -123,7 +123,7 @@ def _aging_bucket(days: int) -> str:
     for label, upper in _AGING_BUCKETS:
         if upper is None or days <= upper:
             return label
-    return "30+d"
+    return "30+d"  # pragma: no cover
 
 
 class AnalyticsService:

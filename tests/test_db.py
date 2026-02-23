@@ -1,3 +1,5 @@
+import logging
+
 import sqlalchemy as sa
 
 from storebot.db import (
@@ -178,3 +180,67 @@ def test_tradera_category_model(session):
     assert result.depth == 2
     assert result.parent_tradera_id == 100
     assert result.description is not None
+
+
+def test_load_sqlite_vec_failure(tmp_path, caplog):
+    """Cover _load_sqlite_vec exception path (lines 278-279)."""
+    import sqlite_vec
+    from unittest.mock import patch
+
+    db_path = str(tmp_path / "test_vec_fail.db")
+    with (
+        patch.object(sqlite_vec, "load", side_effect=Exception("vec not found")),
+        caplog.at_level(logging.DEBUG, logger="storebot.db"),
+    ):
+        eng = create_engine(database_path=db_path)
+        # Engine should still work despite sqlite_vec failing
+        tables = sa.inspect(eng).get_table_names()
+        assert isinstance(tables, list)
+    assert "sqlite_vec not loaded (optional): vec not found" in caplog.text
+
+
+def test_secure_db_file_oserror(tmp_path):
+    """Cover _secure_db_file OSError path (lines 290-291)."""
+    from pathlib import Path
+    from unittest.mock import patch
+
+    from storebot.db import _secure_db_file
+
+    db_path = str(tmp_path / "test_secure.db")
+    # Create the file so exists() returns True
+    Path(db_path).touch()
+    with patch("storebot.db.os.chmod", side_effect=OSError("Permission denied")):
+        _secure_db_file(db_path)  # should not raise
+
+
+def test_init_db_with_custom_path(tmp_path):
+    """Cover init_db with custom database_path (line 323, 330)."""
+    from unittest.mock import MagicMock, patch
+
+    from storebot.db import init_db
+
+    db_path = str(tmp_path / "custom.db")
+    mock_config = MagicMock()
+    with (
+        patch("storebot.db._find_alembic_ini", return_value=tmp_path / "alembic.ini"),
+        patch("alembic.config.Config", return_value=mock_config),
+        patch("alembic.command") as mock_command,
+    ):
+        init_db(database_path=db_path)
+        mock_config.set_main_option.assert_called_once_with(
+            "sqlalchemy.url", f"sqlite:///{db_path}"
+        )
+        mock_command.upgrade.assert_called_once_with(mock_config, "head")
+
+
+def test_init_db_fallback_no_alembic(tmp_path):
+    """Cover init_db fallback to create_all when no alembic.ini (line 323)."""
+    from unittest.mock import patch
+
+    from storebot.db import init_db
+
+    db_path = str(tmp_path / "noinit.db")
+    with patch("storebot.db._find_alembic_ini", return_value=None):
+        engine = init_db(database_path=db_path)
+        tables = sa.inspect(engine).get_table_names()
+        assert "products" in tables

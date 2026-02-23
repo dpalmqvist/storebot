@@ -2,6 +2,8 @@ import json
 import logging
 from logging.handlers import RotatingFileHandler
 
+import pytest
+
 from storebot.logging_config import JSONFormatter, configure_logging
 from storebot.db import init_db
 
@@ -183,3 +185,20 @@ class TestConfigureLogging:
             "storebot logger disabled by Alembic fileConfig — "
             "check disable_existing_loggers=False in alembic/env.py"
         )
+
+
+class TestJsonDefault:
+    def test_decimal_converts_to_float(self):
+        from decimal import Decimal
+
+        from storebot.logging_config import _json_default
+
+        result = _json_default(Decimal("3.14"))
+        assert result == 3.14
+        assert isinstance(result, float)
+
+    def test_non_serializable_raises(self):
+        from storebot.logging_config import _json_default
+
+        with pytest.raises(TypeError, match="not JSON serializable"):
+            _json_default(object())

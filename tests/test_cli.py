@@ -417,3 +417,147 @@ class TestSyncCategories:
         assert "120 descriptions" in output
         mock_tradera.sync_categories_to_db.assert_called_once_with(mock_engine)
         mock_gen_desc.assert_called_once_with(mock_engine, "test-key", "claude-haiku-3-5-20241022")
+
+
+class TestUpdateEnvFileCreatesNew:
+    def test_creates_new_file_with_permissions(self, tmp_path):
+        env_path = tmp_path / ".env"
+        _update_env_file(env_path, "MY_KEY", "my_value")
+        assert env_path.exists()
+        assert env_path.read_text() == "MY_KEY=my_value\n"
+        assert oct(env_path.stat().st_mode & 0o777) == "0o600"
+
+    def test_appends_without_trailing_newline(self, tmp_path):
+        env_path = tmp_path / ".env"
+        env_path.write_text("EXISTING=value")  # no trailing newline
+        _update_env_file(env_path, "NEW_KEY", "new_value")
+        content = env_path.read_text()
+        assert "EXISTING=value\n" in content
+        assert "NEW_KEY=new_value\n" in content
+
+
+class TestAuthorizeTraderaResponseRepr:
+    @patch("storebot.cli.TraderaClient")
+    @patch("storebot.cli.Settings")
+    @patch("builtins.input")
+    def test_response_repr_displayed(
+        self, mock_input, mock_settings_cls, mock_tradera_cls, capsys
+    ):
+        mock_settings_cls.return_value = _mock_settings()
+
+        mock_client = MagicMock()
+        mock_client.fetch_token.return_value = {
+            "error": "FetchToken failed",
+            "response_repr": "SomeRepr()",
+        }
+        mock_tradera_cls.return_value = mock_client
+
+        # Redirect URL without token param, so fallback also fails
+        mock_input.side_effect = ["http://localhost:8080/auth/accept?secretKey=abc"]
+
+        with pytest.raises(SystemExit):
+            authorize_tradera()
+
+        output = capsys.readouterr().out
+        assert "SomeRepr()" in output
+
+
+class TestAuthorizeTraderaSaveWithoutUserId:
+    @patch("storebot.cli.TraderaClient")
+    @patch("storebot.cli.Settings")
+    @patch("builtins.input")
+    def test_save_token_without_user_id(
+        self, mock_input, mock_settings_cls, mock_tradera_cls, tmp_path, monkeypatch, capsys
+    ):
+        mock_settings_cls.return_value = _mock_settings()
+
+        mock_client = MagicMock()
+        mock_client.fetch_token.return_value = {
+            "token": "ABCDEFGHIJ",
+            "expires": "2027-01-01",
+        }
+        mock_tradera_cls.return_value = mock_client
+
+        # Redirect URL without userId param
+        mock_input.side_effect = [
+            "http://localhost:8080/auth/accept?secretKey=abc",
+            "y",
+        ]
+
+        env_file = tmp_path / ".env"
+        env_file.write_text("TRADERA_USER_TOKEN=\n")
+        monkeypatch.chdir(tmp_path)
+
+        authorize_tradera()
+
+        output = capsys.readouterr().out
+        assert "Saved TRADERA_USER_TOKEN to" in output
+        # user_id not in redirect, so only token saved
+        content = env_file.read_text()
+        assert "TRADERA_USER_TOKEN=ABCDEFGHIJ" in content
+
+
+class TestGenerateCategoryDescriptionsJsonError:
+    @patch("storebot.cli.anthropic.Anthropic")
+    def test_unparseable_json_skipped(self, mock_anthropic_cls, capsys):
+        import sqlalchemy as sa
+        from sqlalchemy.orm import Session
+
+        from storebot.db import Base, TraderaCategory
+
+        engine = sa.create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+
+        from datetime import UTC, datetime
+
+        with Session(engine) as session:
+            session.add(
+                TraderaCategory(
+                    tradera_id=1,
+                    name="Möbler",
+                    path="Möbler",
+                    depth=0,
+                    synced_at=datetime.now(UTC),
+                )
+            )
+            session.commit()
+
+        mock_client = MagicMock()
+        mock_msg = MagicMock()
+        mock_block = MagicMock()
+        mock_block.text = "this is not json at all"
+        mock_msg.content = [mock_block]
+        mock_client.messages.create.return_value = mock_msg
+        mock_anthropic_cls.return_value = mock_client
+
+        result = generate_category_descriptions(engine, "test-key", "test-model")
+        assert result == 0
+        output = capsys.readouterr().out
+        assert "Warning" in output
+
+
+class TestSyncCategoriesRuntimeError:
+    @patch("storebot.cli.generate_category_descriptions")
+    @patch("storebot.cli.TraderaClient")
+    @patch("storebot.cli.init_db")
+    @patch("storebot.cli.Settings")
+    def test_runtime_error_prints_error(
+        self, mock_settings_cls, mock_init_db, mock_tradera_cls, mock_gen_desc, capsys
+    ):
+        settings = _mock_settings()
+        settings.claude_api_key = "test-key"
+        settings.claude_model_simple = ""
+        settings.claude_model_compact = "claude-haiku-3-5-20241022"
+        mock_settings_cls.return_value = settings
+
+        mock_init_db.return_value = MagicMock()
+
+        mock_tradera = MagicMock()
+        mock_tradera.sync_categories_to_db.side_effect = RuntimeError("API down")
+        mock_tradera_cls.return_value = mock_tradera
+
+        with pytest.raises(SystemExit):
+            sync_categories()
+
+        output = capsys.readouterr().out
+        assert "API down" in output

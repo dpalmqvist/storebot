@@ -1371,3 +1371,202 @@ class TestSyncCategoriesToDb:
         with Session(engine) as session:
             cat = session.query(TraderaCategory).filter_by(tradera_id=10).one()
             assert cat.description == "Alla typer av möbler"
+
+
+class TestParseIntConfig:
+    def test_non_integer_string_raises(self):
+        from storebot.tools.tradera import _parse_int_config
+
+        with pytest.raises(ValueError, match="must be an integer"):
+            _parse_int_config("abc", "TEST_VAR")
+
+    def test_none_raises(self):
+        from storebot.tools.tradera import _parse_int_config
+
+        with pytest.raises(ValueError, match="must be an integer"):
+            _parse_int_config(None, "TEST_VAR")
+
+
+class TestLazyClientInit:
+    def test_search_client_creates_zeep(self):
+        with patch("storebot.tools.tradera.zeep.Client") as mock_zeep:
+            c = TraderaClient(app_id="1", app_key="k", sandbox=True)
+            _ = c.search_client
+            mock_zeep.assert_called_once()
+
+    def test_order_client_creates_zeep(self):
+        with patch("storebot.tools.tradera.zeep.Client") as mock_zeep:
+            c = TraderaClient(app_id="1", app_key="k", sandbox=True)
+            _ = c.order_client
+            mock_zeep.assert_called_once()
+
+    def test_public_client_creates_zeep(self):
+        with patch("storebot.tools.tradera.zeep.Client") as mock_zeep:
+            c = TraderaClient(app_id="1", app_key="k", sandbox=True)
+            _ = c.public_client
+            mock_zeep.assert_called_once()
+
+    def test_restricted_client_creates_zeep(self):
+        with patch("storebot.tools.tradera.zeep.Client") as mock_zeep:
+            c = TraderaClient(app_id="1", app_key="k", sandbox=True)
+            _ = c.restricted_client
+            mock_zeep.assert_called_once()
+
+
+class TestSoapListNone:
+    def test_none_container_returns_empty(self, client):
+        result = client._soap_list(None, "Items")
+        assert result == []
+
+
+class TestParseItemImageLinks:
+    def test_image_links_with_elements(self, client):
+        item = _make_search_item()
+        links = MagicMock()
+        links.string = ["https://img.example.com/1.jpg", "https://img.example.com/2.jpg"]
+        item.ImageLinks = links
+        parsed = client._parse_item(item)
+        assert parsed["image_url"] == "https://img.example.com/1.jpg"
+
+
+class TestSoapBodyXml:
+    def test_body_not_found_returns_none(self):
+        from lxml import etree
+
+        envelope = etree.Element("Envelope")
+        result = TraderaClient._soap_body_xml(envelope)
+        assert result is None
+
+
+class TestSoapBodyXmlWithBody:
+    def test_body_found_returns_xml(self):
+        from lxml import etree
+
+        ns = "http://schemas.xmlsoap.org/soap/envelope/"
+        envelope = etree.Element(f"{{{ns}}}Envelope")
+        body = etree.SubElement(envelope, f"{{{ns}}}Body")
+        etree.SubElement(body, "Data").text = "test"
+        result = TraderaClient._soap_body_xml(envelope)
+        assert result is not None
+        assert "Data" in result
+
+
+class TestLogSoapExchange:
+    def test_missing_envelope(self, client):
+        history = MagicMock()
+        history.last_sent = {}
+        history.last_received = {}
+        client._log_soap_exchange(history, "Test")
+
+    def test_valid_envelope_logged(self, client):
+        from lxml import etree
+
+        ns = "http://schemas.xmlsoap.org/soap/envelope/"
+        envelope = etree.Element(f"{{{ns}}}Envelope")
+        body = etree.SubElement(envelope, f"{{{ns}}}Body")
+        etree.SubElement(body, "Response").text = "ok"
+        history = MagicMock()
+        history.last_sent = {"envelope": envelope}
+        history.last_received = {"envelope": envelope}
+        client._log_soap_exchange(history, "AddItem")
+
+
+class TestCommitListingNone:
+    def test_none_request_id(self, client):
+        result = client.commit_listing(None)
+        assert "error" in result
+
+
+class TestFlattenCategoriesNoId:
+    def test_skips_category_without_id(self):
+        cat = MagicMock()
+        cat.Id = None
+        cat.Name = "BadCat"
+        cat.Category = []
+        result = TraderaClient._flatten_categories([cat])
+        assert result == []
+
+
+class TestSyncCategoriesError:
+    def test_get_categories_error_raises(self, client):
+        client._public_client.service.GetCategories.side_effect = Exception("API down")
+        with pytest.raises(RuntimeError, match="API down"):
+            client.sync_categories_to_db(MagicMock())
+
+
+class TestGetShippingOptionsSingleElements:
+    def test_non_iterable_span_list(self, client):
+        span = MagicMock(spec=[])
+        span.Weight = 5.0
+        prod = MagicMock(spec=[])
+        prod.Id = 1
+        prod.ShippingProviderId = 2
+        prod.ShippingProvider = "PostNord"
+        prod.Name = "Brev"
+        prod.Price = 49.0
+        prod.VatPercent = 25.0
+        prod.FromCountry = "SE"
+        prod.ToCountry = "SE"
+        prod.PackageRequirements = None
+        prod.DeliveryInformation = None
+        products_obj = MagicMock(spec=[])
+        products_obj.Product = prod
+        span.Products = products_obj
+        spans = MagicMock()
+        spans.ProductsPerWeightSpan = span
+        response = MagicMock()
+        response.ProductsPerWeightSpan = spans
+        client._public_client.service.GetShippingOptions.return_value = response
+        result = client.get_shipping_options()
+        assert len(result["shipping_options"]) == 1
+
+    def test_empty_products_skips_span(self, client):
+        span = MagicMock()
+        span.Weight = 1.0
+        span.Products = None
+        spans = MagicMock()
+        spans.ProductsPerWeightSpan = [span]
+        response = MagicMock()
+        response.ProductsPerWeightSpan = spans
+        client._public_client.service.GetShippingOptions.return_value = response
+        result = client.get_shipping_options()
+        assert result["shipping_options"] == []
+
+    def test_non_iterable_prod_list(self, client):
+        prod = MagicMock(spec=[])
+        prod.Id = 1
+        prod.ShippingProviderId = 2
+        prod.ShippingProvider = "PostNord"
+        prod.Name = "Brev"
+        prod.Price = 49.0
+        prod.VatPercent = 25.0
+        prod.FromCountry = "SE"
+        prod.ToCountry = "SE"
+        prod.PackageRequirements = None
+        prod.DeliveryInformation = None
+        products_obj = MagicMock(spec=[])
+        products_obj.Product = prod
+        span = MagicMock()
+        span.Weight = 1.0
+        span.Products = products_obj
+        spans = MagicMock()
+        spans.ProductsPerWeightSpan = [span]
+        response = MagicMock()
+        response.ProductsPerWeightSpan = spans
+        client._public_client.service.GetShippingOptions.return_value = response
+        result = client.get_shipping_options()
+        assert len(result["shipping_options"]) == 1
+
+
+class TestGetShippingTypesEdgeCases:
+    def test_empty_response(self, client):
+        client._public_client.service.GetShippingTypes.return_value = None
+        result = client.get_shipping_types()
+        assert result == {"shipping_types": []}
+
+    def test_non_iterable_items(self, client):
+        response = MagicMock(spec=[])
+        response.IdDescriptionPair = 42
+        client._public_client.service.GetShippingTypes.return_value = response
+        result = client.get_shipping_types()
+        assert result == {"shipping_types": []}

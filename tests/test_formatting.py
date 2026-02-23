@@ -287,3 +287,25 @@ class TestSplitHtmlMessage:
         assert len(result) >= 2
         second_content = result[1].split("\n", 1)[1]
         assert '<a href="https://example.com">' in second_content
+
+
+class TestGetOpenTags:
+    def test_close_tag_pops_from_stack(self):
+        from storebot.bot.formatting import _get_open_tags
+
+        # All tags closed — empty stack
+        result = _get_open_tags("<b>hello</b>")
+        assert result == []
+
+    def test_nested_close_tags(self):
+        from storebot.bot.formatting import _get_open_tags
+
+        # Inner closed, outer still open
+        result = _get_open_tags("<b><i>hello</i>")
+        assert result == ["<b>"]
+
+    def test_close_tag_with_attr(self):
+        from storebot.bot.formatting import _get_open_tags
+
+        result = _get_open_tags('<a href="http://x.com">link</a>')
+        assert result == []

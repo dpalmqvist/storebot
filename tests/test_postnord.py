@@ -269,3 +269,64 @@ class TestBackwardsCompatibleAliases:
 
     def test_recipient_address_is_address(self):
         assert RecipientAddress is Address
+
+
+class TestParseUnparseableAddress:
+    def test_too_few_parts_raises(self):
+        with pytest.raises(ValueError, match="Cannot parse address"):
+            parse_buyer_address("Anna", "OnlyOnePart")
+
+
+class TestCreateShipmentJsonError:
+    def test_400_with_invalid_json(self, client):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 400
+        mock_resp.json.side_effect = ValueError("No JSON")
+
+        with patch.object(client.session, "post", return_value=mock_resp):
+            with pytest.raises(PostNordError, match="400"):
+                client.create_shipment(
+                    Address(
+                        name="Test",
+                        street="Gatan 1",
+                        postal_code="12345",
+                        city="Stad",
+                    ),
+                    weight_grams=1000,
+                )
+
+
+class TestGetLabelEdgeCases:
+    def test_400_raises_error(self, client):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 400
+        mock_resp.headers = {}
+
+        with patch.object(client.session, "get", return_value=mock_resp):
+            with pytest.raises(PostNordError, match="400"):
+                client.get_label("SH-001")
+
+    def test_json_label_fallback(self, client):
+        label_bytes = b"%PDF-1.4 test label"
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {"Content-Type": "application/json"}
+        mock_resp.json.return_value = {
+            "labelPrintout": base64.b64encode(label_bytes).decode(),
+        }
+
+        with patch.object(client.session, "get", return_value=mock_resp):
+            result = client.get_label("SH-001")
+            assert result == label_bytes
+
+    def test_json_parse_error_fallback(self, client):
+        """Cover lines 230-233: json() raises ValueError, falls back to content."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {"Content-Type": "text/html"}
+        mock_resp.json.side_effect = ValueError("No JSON")
+        mock_resp.content = b"raw-pdf-bytes"
+
+        with patch.object(client.session, "get", return_value=mock_resp):
+            result = client.get_label("SH-001")
+            assert result == b"raw-pdf-bytes"

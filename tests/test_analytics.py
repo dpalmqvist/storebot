@@ -748,3 +748,128 @@ class TestFormatFullReport:
 
         assert len(text) <= 4000
         assert text.endswith("...avkortat")
+
+
+class TestAgingBucketEdgeCases:
+    def test_30_plus_bucket(self):
+        from storebot.tools.analytics import _aging_bucket
+
+        assert _aging_bucket(45) == "30+d"
+
+    def test_boundary_30(self):
+        from storebot.tools.analytics import _aging_bucket
+
+        assert _aging_bucket(30) == "15-30d"
+
+
+class TestProfitabilityReportNoProduct:
+    @patch("storebot.tools.analytics.naive_now", return_value=FIXED_NOW)
+    def test_order_without_product(self, _mock_now, service, engine):
+        """Cover line 210: order.product is None → continue."""
+        with Session(engine) as session:
+            order = Order(
+                product_id=None,
+                platform="tradera",
+                external_order_id="999",
+                sale_price=100,
+                status="shipped",
+                ordered_at=FIXED_NOW - timedelta(days=1),
+            )
+            session.add(order)
+            session.commit()
+
+        result = service.profitability_report(period="2026-06")
+        assert result["total_products"] == 0
+
+
+class TestSourcingAnalysisEdgeCases:
+    @patch("storebot.tools.analytics.naive_now", return_value=FIXED_NOW)
+    def test_order_without_product_skipped(self, _mock_now, service, engine):
+        """Cover line 365: order.product is None → continue."""
+        with Session(engine) as session:
+            order = Order(
+                product_id=None,
+                platform="tradera",
+                external_order_id="888",
+                sale_price=200,
+                status="shipped",
+                ordered_at=FIXED_NOW - timedelta(days=1),
+            )
+            session.add(order)
+            session.commit()
+
+        result = service.sourcing_analysis(period="2026-06")
+        assert result["channels"] == {}
+
+    @patch("storebot.tools.analytics.naive_now", return_value=FIXED_NOW)
+    def test_sale_times_appended(self, _mock_now, service, engine):
+        """Cover line 385: sale_times.append."""
+        with Session(engine) as session:
+            product = Product(
+                title="Test",
+                status="sold",
+                source="tradera",
+                acquisition_cost=100,
+                created_at=FIXED_NOW - timedelta(days=10),
+            )
+            session.add(product)
+            session.flush()
+            listing = PlatformListing(
+                product_id=product.id,
+                platform="tradera",
+                external_id="L1",
+                status="sold",
+                listing_type="auction",
+                listing_title="T",
+                listing_description="D",
+                listed_at=FIXED_NOW - timedelta(days=5),
+            )
+            session.add(listing)
+            order = Order(
+                product_id=product.id,
+                platform="tradera",
+                external_order_id="O1",
+                sale_price=200,
+                status="shipped",
+                ordered_at=FIXED_NOW - timedelta(days=1),
+            )
+            session.add(order)
+            session.commit()
+
+        result = service.sourcing_analysis(period="2026-06")
+        ch = result["channels"]["tradera"]
+        assert ch["avg_time_to_sale"] is not None
+
+
+class TestTimeToSaleDaysNegative:
+    def test_negative_days_returns_none(self, engine):
+        from storebot.tools.analytics import _time_to_sale_days
+
+        with Session(engine) as session:
+            product = Product(title="Test", status="sold")
+            session.add(product)
+            session.flush()
+            listing = PlatformListing(
+                product_id=product.id,
+                platform="tradera",
+                external_id="X1",
+                status="sold",
+                listing_type="auction",
+                listing_title="T",
+                listing_description="D",
+                listed_at=FIXED_NOW,
+            )
+            session.add(listing)
+            order = Order(
+                product_id=product.id,
+                platform="tradera",
+                external_order_id="O2",
+                sale_price=100,
+                status="shipped",
+                ordered_at=FIXED_NOW - timedelta(days=2),
+            )
+            session.add(order)
+            session.commit()
+
+            result = _time_to_sale_days(session, order)
+            assert result is None
