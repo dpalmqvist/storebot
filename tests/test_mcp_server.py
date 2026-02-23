@@ -2,9 +2,9 @@
 
 import asyncio
 import json
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from storebot.mcp_server import _build_tools, _create_server
+from storebot.mcp_server import _build_tools, _create_server, main
 from storebot.tools.definitions import TOOLS
 
 
@@ -29,9 +29,9 @@ class TestBuildTools:
         tools = _build_tools()
         for t in tools:
             assert t.inputSchema is not None, f"Tool {t.name} has no inputSchema"
-            assert (
-                t.inputSchema.get("type") == "object"
-            ), f"Tool {t.name} schema type is not object"
+            assert t.inputSchema.get("type") == "object", (
+                f"Tool {t.name} schema type is not object"
+            )
 
     def test_strips_internal_fields(self):
         """Internal fields (category, strict) should not leak into MCP schema."""
@@ -107,3 +107,52 @@ class TestCreateServer:
 
         result = asyncio.run(_run())
         assert result.root.isError is True
+
+
+class TestMain:
+    def test_main_stdio(self):
+        """main() with stdio transport runs the stdio event loop."""
+        mock_server = MagicMock()
+        mock_server.create_initialization_options.return_value = MagicMock()
+        mock_server.run = AsyncMock()
+
+        mock_stdio_ctx = MagicMock()
+        mock_stdio_ctx.__aenter__ = AsyncMock(return_value=(MagicMock(), MagicMock()))
+        mock_stdio_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch("storebot.mcp_server.get_settings", return_value=MagicMock()),
+            patch("storebot.mcp_server.init_db", return_value=MagicMock()),
+            patch("storebot.mcp_server.create_services", return_value={}),
+            patch("storebot.mcp_server._create_server", return_value=mock_server),
+            patch("sys.argv", ["storebot-mcp", "--transport", "stdio"]),
+            patch("mcp.server.stdio.stdio_server", return_value=mock_stdio_ctx),
+        ):
+            main()
+
+        mock_server.run.assert_awaited_once()
+
+    def test_main_http(self):
+        """main() with streamable-http transport calls uvicorn.run."""
+        mock_server = MagicMock()
+        mock_session_manager = MagicMock()
+        mock_session_manager.handle_request = AsyncMock()
+
+        with (
+            patch("storebot.mcp_server.get_settings", return_value=MagicMock()),
+            patch("storebot.mcp_server.init_db", return_value=MagicMock()),
+            patch("storebot.mcp_server.create_services", return_value={}),
+            patch("storebot.mcp_server._create_server", return_value=mock_server),
+            patch(
+                "sys.argv", ["storebot-mcp", "--transport", "streamable-http", "--port", "9000"]
+            ),
+            patch("uvicorn.run") as mock_uvicorn,
+            patch(
+                "mcp.server.streamable_http_manager.StreamableHTTPSessionManager",
+                return_value=mock_session_manager,
+            ),
+        ):
+            main()
+            mock_uvicorn.assert_called_once()
+            call_kwargs = mock_uvicorn.call_args[1]
+            assert call_kwargs.get("port") == 9000

@@ -164,9 +164,7 @@ def create_services(settings, engine) -> dict[str, object]:
         "scout": (
             ScoutService(engine=engine, tradera=tradera, blocket=blocket) if engine else None
         ),
-        "marketing": (
-            MarketingService(engine=engine, tradera=tradera) if engine else None
-        ),
+        "marketing": (MarketingService(engine=engine, tradera=tradera) if engine else None),
         "analytics": AnalyticsService(engine=engine) if engine else None,
         "postnord": postnord,
     }

@@ -47,9 +47,7 @@ def _create_server(services: dict[str, object]) -> Server:
         return tools
 
     @server.call_tool()
-    async def handle_call_tool(
-        name: str, arguments: dict | None
-    ) -> types.CallToolResult:
+    async def handle_call_tool(name: str, arguments: dict | None) -> types.CallToolResult:
         result = execute_tool(services, name, arguments or {})
         text = json.dumps(result, default=str)
         is_error = "error" in result
