@@ -10,7 +10,7 @@ Storebot is an AI-powered agent system for selling goods on Swedish marketplaces
 
 - **Language:** Python 3.11+
 - **LLM:** Claude API (direct integration, no LangChain)
-- **Database:** SQLite + sqlite-vec (single-user, simple deployment)
+- **Database:** SQLite (single-user, simple deployment)
 - **Accounting:** Local SQLite vouchers + PDF export (double-entry bookkeeping, BAS-kontoplan)
 - **Chat interface:** Telegram via `python-telegram-bot` v20+
 - **Marketplace APIs:** Tradera (SOAP via `zeep`), Blocket (unofficial REST, no auth needed)
@@ -35,7 +35,7 @@ Agent Tool Modules (plain Python, MCP-wrappable later)
     ├── tools/conversation.py(history persistence per chat)
     └── tools/image.py       (Pillow: resize, optimize)
     ↓
-SQLite + sqlite-vec (operational + financial: inventory, listings, orders, vouchers, agent state, embeddings)
+SQLite (operational + financial: inventory, listings, orders, vouchers, agent state)
 ```
 
 ### Sub-Agents
@@ -108,7 +108,6 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 
 ### Roadmap
 
-- sqlite-vec embeddings for semantic product search
 - Social media cross-posting (Instagram, Facebook Marketplace)
 - Customer message handling (email/IMAP — Tradera API has no messaging support)
 - Custom webshop, wishlist matching

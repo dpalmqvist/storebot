@@ -266,22 +266,6 @@ def _configure_sqlite(dbapi_connection, connection_record):
     cursor.close()
 
 
-def _load_sqlite_vec(dbapi_connection, connection_record):
-    enabled = False
-    try:
-        import sqlite_vec
-
-        dbapi_connection.enable_load_extension(True)
-        enabled = True
-        sqlite_vec.load(dbapi_connection)
-        logger.debug("sqlite_vec extension loaded")
-    except Exception as e:
-        logger.debug("sqlite_vec not loaded (optional): %s", e)
-    finally:
-        if enabled:
-            dbapi_connection.enable_load_extension(False)
-
-
 def _secure_db_file(database_path: str) -> None:
     db_path = Path(database_path)
     if db_path.exists():
@@ -299,7 +283,6 @@ def create_engine(database_path: str | None = None) -> sa.Engine:
 
     engine = sa.create_engine(f"sqlite:///{database_path}")
     event.listen(engine, "connect", _configure_sqlite)
-    event.listen(engine, "connect", _load_sqlite_vec)
 
     return engine
 
