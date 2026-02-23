@@ -30,6 +30,7 @@ DISPATCH: dict[str, tuple[str, str]] = {
     "get_tradera_item": ("tradera", "get_item"),
     "get_shipping_options": ("tradera", "get_shipping_options"),
     "get_shipping_types": ("tradera", "get_shipping_types"),
+    "get_categories": ("tradera", "get_categories"),
     "get_attribute_definitions": ("tradera", "get_attribute_definitions"),
     "search_blocket": ("blocket", "search"),
     "get_blocket_ad": ("blocket", "get_ad"),
@@ -184,7 +185,9 @@ def execute_tool(services: dict[str, object], name: str, tool_input: dict) -> di
 
     cleaned = strip_nulls(tool_input) or {}
 
-    logger.debug("Executing tool: %s with keys: %s", name, list(cleaned.keys()))
+    logger.debug(
+        "Executing tool: %s with keys: %s", name, list(cleaned.keys()), extra={"tool_name": name}
+    )
 
     entry = DISPATCH.get(name)
     if entry is None:
@@ -201,10 +204,10 @@ def execute_tool(services: dict[str, object], name: str, tool_input: dict) -> di
         result = getattr(service, method_name)(**cleaned)
         return validate_tool_result(name, result)
     except TypeError as e:
-        logger.warning("Tool input validation failed: %s — %s", name, e)
+        logger.warning("Tool input validation failed: %s — %s", name, e, extra={"tool_name": name})
         return {"error": f"Invalid arguments for '{name}': {e}"}
     except NotImplementedError:
         return {"error": f"Tool '{name}' is not yet implemented"}
     except Exception as e:
-        logger.exception("Tool execution failed: %s", name)
+        logger.exception("Tool execution failed: %s", name, extra={"tool_name": name})
         return {"error": str(e)}

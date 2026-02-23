@@ -4,14 +4,16 @@ import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from storebot.mcp_server import _build_tools, _create_server, main
+import pytest
+
+from storebot.mcp_server import _MCP_EXCLUDED_TOOLS, _build_tools, _create_server, main
 from storebot.tools.definitions import TOOLS
 
 
 class TestBuildTools:
     def test_returns_correct_count(self):
         tools = _build_tools()
-        assert len(tools) == len(TOOLS)
+        assert len(tools) == len(TOOLS) - len(_MCP_EXCLUDED_TOOLS)
 
     def test_tool_has_name(self):
         tools = _build_tools()
@@ -32,6 +34,13 @@ class TestBuildTools:
             assert t.inputSchema.get("type") == "object", (
                 f"Tool {t.name} schema type is not object"
             )
+
+    def test_excludes_agent_internal_tools(self):
+        """Agent-internal tools like request_tools should not appear in MCP tool list."""
+        tools = _build_tools()
+        names = {t.name for t in tools}
+        for excluded in _MCP_EXCLUDED_TOOLS:
+            assert excluded not in names, f"{excluded} should be excluded from MCP tools"
 
     def test_strips_internal_fields(self):
         """Internal fields (category, strict) should not leak into MCP schema."""
@@ -59,7 +68,7 @@ class TestCreateServer:
             return result
 
         result = asyncio.run(_run())
-        assert len(result.root.tools) == len(TOOLS)
+        assert len(result.root.tools) == len(TOOLS) - len(_MCP_EXCLUDED_TOOLS)
 
     def test_call_tool_dispatches(self):
         mock_tradera = MagicMock()
@@ -156,3 +165,59 @@ class TestMain:
             mock_uvicorn.assert_called_once()
             call_kwargs = mock_uvicorn.call_args[1]
             assert call_kwargs.get("port") == 9000
+            assert call_kwargs.get("host") == "127.0.0.1"
+
+    def test_main_http_custom_host(self):
+        """main() with --host passes host to uvicorn."""
+        mock_server = MagicMock()
+        mock_session_manager = MagicMock()
+        mock_session_manager.handle_request = AsyncMock()
+
+        with (
+            patch("storebot.mcp_server.get_settings", return_value=MagicMock()),
+            patch("storebot.mcp_server.init_db", return_value=MagicMock()),
+            patch("storebot.mcp_server.create_services", return_value={}),
+            patch("storebot.mcp_server._create_server", return_value=mock_server),
+            patch(
+                "sys.argv",
+                [
+                    "storebot-mcp",
+                    "--transport",
+                    "streamable-http",
+                    "--host",
+                    "0.0.0.0",
+                    "--port",
+                    "9000",
+                ],
+            ),
+            patch("uvicorn.run") as mock_uvicorn,
+            patch(
+                "mcp.server.streamable_http_manager.StreamableHTTPSessionManager",
+                return_value=mock_session_manager,
+            ),
+        ):
+            main()
+            call_kwargs = mock_uvicorn.call_args[1]
+            assert call_kwargs.get("host") == "0.0.0.0"
+
+    def test_main_http_missing_uvicorn(self):
+        """main() with HTTP transport raises SystemExit when uvicorn is not installed."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def _mock_import(name, *args, **kwargs):
+            if name == "uvicorn":
+                raise ImportError("No module named 'uvicorn'")
+            return real_import(name, *args, **kwargs)
+
+        with (
+            patch("storebot.mcp_server.get_settings", return_value=MagicMock()),
+            patch("storebot.mcp_server.init_db", return_value=MagicMock()),
+            patch("storebot.mcp_server.create_services", return_value={}),
+            patch("storebot.mcp_server._create_server", return_value=MagicMock()),
+            patch("sys.argv", ["storebot-mcp", "--transport", "streamable-http"]),
+            patch("builtins.__import__", side_effect=_mock_import),
+            pytest.raises(SystemExit, match="uvicorn"),
+        ):
+            main()

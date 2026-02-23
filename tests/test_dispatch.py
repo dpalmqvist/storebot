@@ -79,8 +79,9 @@ class TestDispatchMapping:
     def test_request_tools_not_in_dispatch(self):
         assert "request_tools" not in DISPATCH
 
-    def test_get_categories_not_in_dispatch(self):
-        assert "get_categories" not in DISPATCH
+    def test_get_categories_in_dispatch(self):
+        assert "get_categories" in DISPATCH
+        assert DISPATCH["get_categories"] == ("tradera", "get_categories")
 
 
 class TestCreateServices:
@@ -163,3 +164,4 @@ class TestExecuteTool:
     def test_request_tools_returns_error(self):
         result = execute_tool({}, "request_tools", {})
         assert "error" in result
+        assert "handle_message" in result["error"]

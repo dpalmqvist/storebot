@@ -21,11 +21,16 @@ from storebot.tools.dispatch import create_services, execute_tool
 
 logger = logging.getLogger(__name__)
 
+# Agent-internal tools not applicable to MCP clients.
+_MCP_EXCLUDED_TOOLS = {"request_tools"}
+
 
 def _build_tools() -> list[types.Tool]:
     """Convert definitions.py TOOLS to MCP Tool objects."""
     mcp_tools = []
     for tool_def in TOOLS:
+        if tool_def["name"] in _MCP_EXCLUDED_TOOLS:
+            continue
         schema = dict(tool_def["input_schema"])
         mcp_tools.append(
             types.Tool(
@@ -69,6 +74,11 @@ def main():
         help="Transport type (default: stdio)",
     )
     parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host for HTTP transport (default: 127.0.0.1)",
+    )
+    parser.add_argument(
         "--port",
         type=int,
         default=8080,
@@ -96,7 +106,12 @@ def main():
 
         asyncio.run(_run_stdio())
     else:
-        import uvicorn
+        try:
+            import uvicorn
+        except ImportError:
+            raise SystemExit(
+                "HTTP transport requires uvicorn: uv pip install 'storebot[http]'"
+            ) from None
         from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
         session_manager = StreamableHTTPSessionManager(app=server, stateless=True)
@@ -104,7 +119,7 @@ def main():
         async def asgi_app(scope, receive, send):
             await session_manager.handle_request(scope, receive, send)
 
-        uvicorn.run(asgi_app, host="0.0.0.0", port=args.port)
+        uvicorn.run(asgi_app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":
