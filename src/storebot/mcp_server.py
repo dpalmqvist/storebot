@@ -53,7 +53,7 @@ def _create_server(services: dict[str, object]) -> Server:
 
     @server.call_tool()
     async def handle_call_tool(name: str, arguments: dict | None) -> types.CallToolResult:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(None, execute_tool, services, name, arguments or {})
         text = json.dumps(result, default=str)
         is_error = "error" in result
@@ -107,13 +107,15 @@ def main():
 
         asyncio.run(_run_stdio())
     else:
-        try:
-            import uvicorn
-        except ImportError:
-            raise SystemExit(
-                "HTTP transport requires uvicorn: uv pip install 'storebot[http]'"
-            ) from None
+        import uvicorn
         from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+
+        if args.host != "127.0.0.1":
+            logger.warning(
+                "MCP HTTP server bound to %s — no authentication is enforced. "
+                "All storebot tools are accessible to any client that can reach this port.",
+                args.host,
+            )
 
         session_manager = StreamableHTTPSessionManager(app=server, stateless=True)
 

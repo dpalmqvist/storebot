@@ -4,8 +4,6 @@ import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from storebot.mcp_server import _MCP_EXCLUDED_TOOLS, _build_tools, _create_server, main
 from storebot.tools.definitions import TOOLS
 
@@ -194,24 +192,28 @@ class TestMain:
             call_kwargs = mock_uvicorn.call_args[1]
             assert call_kwargs.get("host") == "0.0.0.0"
 
-    def test_main_http_missing_uvicorn(self):
-        """main() with HTTP transport raises SystemExit when uvicorn is not installed."""
-        import builtins
-
-        real_import = builtins.__import__
-
-        def _mock_import(name, *args, **kwargs):
-            if name == "uvicorn":
-                raise ImportError("No module named 'uvicorn'")
-            return real_import(name, *args, **kwargs)
+    def test_main_http_warns_on_non_localhost(self):
+        """main() with --host 0.0.0.0 logs a security warning."""
+        mock_server = MagicMock()
+        mock_session_manager = MagicMock()
+        mock_session_manager.handle_request = AsyncMock()
 
         with (
             patch("storebot.mcp_server.get_settings", return_value=MagicMock()),
             patch("storebot.mcp_server.init_db", return_value=MagicMock()),
             patch("storebot.mcp_server.create_services", return_value={}),
-            patch("storebot.mcp_server._create_server", return_value=MagicMock()),
-            patch("sys.argv", ["storebot-mcp", "--transport", "streamable-http"]),
-            patch("builtins.__import__", side_effect=_mock_import),
-            pytest.raises(SystemExit, match="uvicorn"),
+            patch("storebot.mcp_server._create_server", return_value=mock_server),
+            patch(
+                "sys.argv",
+                ["storebot-mcp", "--transport", "streamable-http", "--host", "0.0.0.0"],
+            ),
+            patch("uvicorn.run"),
+            patch(
+                "mcp.server.streamable_http_manager.StreamableHTTPSessionManager",
+                return_value=mock_session_manager,
+            ),
+            patch("storebot.mcp_server.logger") as mock_logger,
         ):
             main()
+            mock_logger.warning.assert_called_once()
+            assert "0.0.0.0" in mock_logger.warning.call_args[0][1]

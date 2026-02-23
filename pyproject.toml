@@ -32,7 +32,6 @@ dev = [
     "ruff",
     "pre-commit",
 ]
-http = ["uvicorn>=0.20"]
 
 [project.scripts]
 storebot = "storebot.bot.handlers:main"
