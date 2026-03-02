@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""OpenAI GPT-5.2 Codex PR code review script for GitHub Actions.
+"""Ollama Qwen 3.5 9B PR code review script for GitHub Actions.
 
 Uses only stdlib — no pip dependencies needed on CI runners.
-Fetches PR diff via `gh`, sends to GPT-5.2 Codex for review, posts result as PR comment.
+Fetches PR diff via `gh`, sends to local Ollama for review, posts result as PR comment.
 """
 
 import json
@@ -86,32 +86,27 @@ def truncate_diff(diff: str) -> str:
     return "".join(truncated) + "\n\n[... diff truncated for token limit ...]\n"
 
 
-def call_openai(api_key: str, diff: str) -> str:
+def call_ollama(base_url: str, model: str, diff: str) -> str:
     req = urllib.request.Request(
-        "https://api.openai.com/v1/responses",
+        f"{base_url}/api/chat",
         data=json.dumps({
-            "model": "gpt-5.2-codex",
-            "instructions": SYSTEM_PROMPT,
-            "input": USER_PROMPT_TEMPLATE.format(diff=diff),
+            "model": model,
+            "stream": False,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": USER_PROMPT_TEMPLATE.format(diff=diff)},
+            ],
         }).encode(),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
+        headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=120) as resp:
+    with urllib.request.urlopen(req, timeout=300) as resp:
         data = json.loads(resp.read())
-        # Extract text from output array: [{type: "message", content: [{type: "text", text: "..."}]}]
-        for item in data.get("output", []):
-            if item.get("type") == "message":
-                for block in item.get("content", []):
-                    if block.get("type") in {"output_text", "text"}:
-                        return block.get("text", "")
-        return data.get("output_text", "")
+        return data.get("message", {}).get("content", "")
 
 
 def main() -> None:
-    api_key = os.environ["OPENAI_API_KEY"]
+    base_url = os.environ.get("OLLAMA_BASE_URL") or "http://localhost:11434"
+    model = os.environ.get("OLLAMA_MODEL") or "qwen3.5:9b"
     pr_number = os.environ["PR_NUMBER"]
     repo = os.environ["REPO"]
 
@@ -133,13 +128,13 @@ def main() -> None:
 
     diff = truncate_diff(diff)
 
-    print("Calling OpenAI GPT-5.2 Codex...")
-    review = call_openai(api_key, diff)
+    print(f"Calling Ollama ({model})...")
+    review = call_ollama(base_url, model, diff)
 
     print("Posting review comment...")
     comment = (
-        f"## GPT-5.2 Codex Code Review\n\n{review}\n\n---\n"
-        f"*Automated review by GPT-5.2 Codex — complements the Claude Opus review.*"
+        f"## Qwen 3.5 9B (Ollama) Code Review\n\n{review}\n\n---\n"
+        f"*Automated review by Qwen 3.5 9B via Ollama — complements the Claude Opus review.*"
     )
     run_gh("pr", "comment", pr_number, "--repo", repo, "--body", comment)
     print("Done.")

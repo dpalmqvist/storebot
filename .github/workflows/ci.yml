@@ -63,9 +63,9 @@ jobs:
           claude_args: |
             --allowedTools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"
 
-  openai-review:
+  ollama-review:
     needs: lint-and-test
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     continue-on-error: true
     permissions:
       contents: read
@@ -75,10 +75,11 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Run OpenAI GPT-5.2 Codex review
+      - name: Run Ollama Qwen 3.5 9B review
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OLLAMA_BASE_URL: ${{ vars.OLLAMA_BASE_URL }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
-        run: python3 .github/scripts/openai_review.py
+        run: python3 .github/scripts/ollama_review.py
