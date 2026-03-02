@@ -105,8 +105,8 @@ def call_ollama(base_url: str, model: str, diff: str) -> str:
 
 
 def main() -> None:
-    base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-    model = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
+    base_url = os.environ.get("OLLAMA_BASE_URL") or "http://localhost:11434"
+    model = os.environ.get("OLLAMA_MODEL") or "qwen3.5:9b"
     pr_number = os.environ["PR_NUMBER"]
     repo = os.environ["REPO"]
 
