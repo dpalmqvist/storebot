@@ -15,6 +15,7 @@ from pathlib import Path
 
 LABEL = "ai-codebase-review"
 MAX_ISSUES = 5
+MAX_CHUNK_CHARS = 200_000  # ~50K tokens
 OLLAMA_TIMEOUT = 600  # 10 minutes per chunk
 
 # Module chunks — logical groupings of related files
@@ -89,8 +90,8 @@ Do NOT flag:
 - Test coverage gaps (this review is for production code only)
 """
 
-CHUNK_PROMPT_TEMPLATE = """\
-Review the following module chunk: **{chunk_name}**
+CHUNK_PROMPT_PREFIX = """\
+Review the following module chunk: **$CHUNK_NAME$**
 
 Return your findings as a JSON array. Each finding must have these fields:
 - "severity": "critical", "warning", or "suggestion"
@@ -104,20 +105,18 @@ If no issues found, return an empty array: []
 
 ---
 
-{code}
 """
 
-RANKING_PROMPT = """\
-Below are code review findings from a whole-codebase review. Select the top {n} \
-most impactful findings — prioritize critical bugs and security issues, then \
-warnings, then suggestions. Prefer findings that affect correctness or security \
-over style improvements.
+RANKING_PROMPT_PREFIX = """\
+Below are code review findings from a whole-codebase review. Select the top \
+$N$ most impactful findings — prioritize critical bugs and security issues, \
+then warnings, then suggestions. Prefer findings that affect correctness or \
+security over style improvements.
 
-Return ONLY a JSON array of the top {n} findings (same schema as input), ranked \
-from most to least impactful. No markdown fences, no extra text.
+Return ONLY a JSON array of the top $N$ findings (same schema as input), \
+ranked from most to least impactful. No markdown fences, no extra text.
 
 Findings:
-{findings_json}
 """
 
 
@@ -147,7 +146,7 @@ def call_ollama(base_url: str, model: str, system: str, user: str) -> str:
         return data.get("message", {}).get("content", "")
 
 
-def read_module_chunk(base_dir: Path, files: list[str]) -> str:
+def read_module_chunk(base_dir: Path, chunk_name: str, files: list[str]) -> str:
     """Read and concatenate files with header separators."""
     parts: list[str] = []
     for relpath in files:
@@ -156,7 +155,10 @@ def read_module_chunk(base_dir: Path, files: list[str]) -> str:
             continue
         content = full.read_text(encoding="utf-8", errors="replace")
         parts.append(f"# --- file: src/storebot/{relpath} ---\n{content}")
-    return "\n\n".join(parts)
+    combined = "\n\n".join(parts)
+    if len(combined) > MAX_CHUNK_CHARS:
+        print(f"  WARNING: {chunk_name} is {len(combined):,} chars, may exceed context window")
+    return combined
 
 
 def parse_json_findings(text: str) -> list[dict]:
@@ -173,7 +175,7 @@ def parse_json_findings(text: str) -> list[dict]:
         text = text.split("</think>")[-1].strip()
     try:
         result = json.loads(text)
-        if isinstance(result, list):
+        if isinstance(result, list) and all(isinstance(f, dict) for f in result):
             return result
     except json.JSONDecodeError:
         pass
@@ -183,7 +185,7 @@ def parse_json_findings(text: str) -> list[dict]:
     if start != -1 and end != -1 and end > start:
         try:
             result = json.loads(text[start : end + 1])
-            if isinstance(result, list):
+            if isinstance(result, list) and all(isinstance(f, dict) for f in result):
                 return result
         except json.JSONDecodeError:
             pass
@@ -193,7 +195,7 @@ def parse_json_findings(text: str) -> list[dict]:
 def review_chunk(base_url: str, model: str, chunk_name: str, code: str) -> list[dict]:
     """Review a single module chunk and return findings."""
     print(f"  Reviewing chunk: {chunk_name}...")
-    user_prompt = CHUNK_PROMPT_TEMPLATE.format(chunk_name=chunk_name, code=code)
+    user_prompt = CHUNK_PROMPT_PREFIX.replace("$CHUNK_NAME$", chunk_name) + code
     try:
         response = call_ollama(base_url, model, SYSTEM_PROMPT, user_prompt)
     except Exception as exc:
@@ -209,7 +211,9 @@ def rank_findings(base_url: str, model: str, findings: list[dict]) -> list[dict]
     if len(findings) <= MAX_ISSUES:
         return findings
     print(f"Ranking {len(findings)} findings to select top {MAX_ISSUES}...")
-    user_prompt = RANKING_PROMPT.format(n=MAX_ISSUES, findings_json=json.dumps(findings, indent=2))
+    user_prompt = RANKING_PROMPT_PREFIX.replace("$N$", str(MAX_ISSUES)) + json.dumps(
+        findings, indent=2
+    )
     try:
         response = call_ollama(base_url, model, SYSTEM_PROMPT, user_prompt)
     except Exception as exc:
@@ -237,7 +241,7 @@ def find_duplicate_titles(repo: str) -> set[str]:
             "--json",
             "title",
             "--limit",
-            "100",
+            "500",
         )
         issues = json.loads(output)
         return {issue["title"] for issue in issues}
@@ -312,10 +316,11 @@ def main() -> None:
         sys.exit(1)
 
     # Discover and review module chunks
-    print(f"Starting codebase review with {model}...")
+    tag = os.environ.get("GITHUB_REF_NAME", "unknown")
+    print(f"Starting codebase review for {tag} with {model}...")
     all_findings: list[dict] = []
     for chunk_name, files in MODULE_CHUNKS.items():
-        code = read_module_chunk(src_dir, files)
+        code = read_module_chunk(src_dir, chunk_name, files)
         if not code.strip():
             print(f"  Skipping empty chunk: {chunk_name}")
             continue
