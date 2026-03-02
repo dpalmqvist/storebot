@@ -506,6 +506,43 @@ async def daily_listing_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         await _alert_admin(context, "Fel i annonsrapport-jobbet. Kontrollera loggarna.")
 
 
+async def check_expired_listings_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.info(
+        "Starting scheduled job: check_expired_listings",
+        extra={"job_name": "check_expired_listings"},
+    )
+    agent: Agent = context.bot_data.get("agent")
+    if not agent or not agent.listing:
+        return
+
+    try:
+        result = agent.listing.check_expired_listings()
+        if result.get("expired_count", 0) == 0:
+            return
+
+        chat_id = context.bot_data.get("owner_chat_id")
+        if not chat_id:
+            logger.warning("No owner_chat_id set — cannot send expired listings notification")
+            return
+
+        expired = result["expired_listings"]
+        lines = [f"{len(expired)} annons(er) har avslutats:\n"]
+        for item in expired:
+            lines.append(
+                f"  \u2022 Annons #{item['listing_id']}: "
+                f"{item['listing_title'] or '(ingen titel)'} (produkt #{item['product_id']})"
+            )
+        lines.append("\nAnvänd relist_product för att skapa ett nytt utkast och publicera igen.")
+        text = "\n".join(lines)
+        await _send(context, chat_id, html_escape(text))
+    except Exception:
+        logger.exception(
+            "Error in check expired listings job",
+            extra={"job_name": "check_expired_listings"},
+        )
+        await _alert_admin(context, "Fel i kontroll av utgångna annonser. Kontrollera loggarna.")
+
+
 async def poll_orders_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.info("Starting scheduled job: poll_orders", extra={"job_name": "poll_orders"})
     agent: Agent = context.bot_data.get("agent")
@@ -578,6 +615,16 @@ def main() -> None:
         logger.info(
             "Order polling scheduled every %d minutes",
             settings.order_poll_interval_minutes,
+        )
+
+        app.job_queue.run_repeating(
+            check_expired_listings_job,
+            interval=settings.expired_listings_check_interval_minutes * 60,
+            first=60,
+        )
+        logger.info(
+            "Expired listings check scheduled every %d minutes",
+            settings.expired_listings_check_interval_minutes,
         )
 
         app.job_queue.run_daily(

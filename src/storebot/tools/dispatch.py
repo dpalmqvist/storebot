@@ -53,6 +53,7 @@ DISPATCH: dict[str, tuple[str, str]] = {
     "publish_listing": ("listing", "publish_listing"),
     "relist_product": ("listing", "relist_product"),
     "cancel_listing": ("listing", "cancel_listing"),
+    "check_expired_listings": ("listing", "check_expired_listings"),
     "search_products": ("listing", "search_products"),
     "create_product": ("listing", "create_product"),
     "update_product": ("listing", "update_product"),

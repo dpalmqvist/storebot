@@ -971,6 +971,74 @@ class ListingService:
             "deleted_file": file_path,
         }
 
+    def check_expired_listings(self) -> dict:
+        """Find active listings past their ends_at and mark them as ended."""
+        now = datetime.now(UTC)
+        with Session(self.engine) as session:
+            expired = (
+                session.query(PlatformListing)
+                .filter(
+                    PlatformListing.status == "active",
+                    PlatformListing.ends_at.isnot(None),
+                    PlatformListing.ends_at <= now,
+                )
+                .all()
+            )
+
+            if not expired:
+                return {"expired_count": 0, "expired_listings": []}
+
+            # Autoflush ensures each status="ended" mutation is visible to
+            # subsequent count queries, so siblings already processed are excluded.
+            expired_info = []
+            for listing in expired:
+                listing.status = "ended"
+
+                other_active = (
+                    session.query(PlatformListing)
+                    .filter(
+                        PlatformListing.product_id == listing.product_id,
+                        PlatformListing.id != listing.id,
+                        PlatformListing.status == "active",
+                    )
+                    .count()
+                )
+
+                product = session.get(Product, listing.product_id)
+                if product and other_active == 0 and product.status == "listed":
+                    product.status = "draft"
+
+                expired_info.append(
+                    (listing.id, listing.product_id, listing.listing_title, listing.ends_at)
+                )
+
+            # Build result after all mutations so product_status reflects final state
+            result_listings = []
+            for lid, pid, title, ends_at in expired_info:
+                product = session.get(Product, pid) if pid else None
+                result_listings.append(
+                    {
+                        "listing_id": lid,
+                        "product_id": pid,
+                        "listing_title": title,
+                        "ends_at": ends_at.isoformat() if ends_at else None,
+                        "product_status": product.status if product else None,
+                    }
+                )
+
+            log_action(
+                session,
+                "listing",
+                "check_expired_listings",
+                {"listing_ids": [item["listing_id"] for item in result_listings]},
+            )
+            session.commit()
+
+            return {
+                "expired_count": len(result_listings),
+                "expired_listings": result_listings,
+            }
+
     def cancel_listing(self, listing_id: int) -> dict:
         """Cancel an active listing locally. Tradera has no cancel API."""
         with Session(self.engine) as session:

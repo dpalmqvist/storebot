@@ -42,6 +42,7 @@ class Settings(BaseSettings):
 
     # Order polling
     order_poll_interval_minutes: int = 30
+    expired_listings_check_interval_minutes: int = 60
 
     # Conversation history
     max_history_messages: int = 20

@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -2062,6 +2063,261 @@ class TestCancelListing:
             assert action.agent_name == "listing"
             assert action.product_id == product
             assert "Local cancel only" in action.details["note"]
+
+
+class TestCheckExpiredListings:
+    def test_no_expired_returns_zero(self, service):
+        result = service.check_expired_listings()
+        assert result["expired_count"] == 0
+        assert result["expired_listings"] == []
+
+    def test_active_past_ends_at_transitions_to_ended(self, service, product, engine):
+
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Old listing",
+            listing_description="Desc",
+            start_price=100.0,
+        )
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            listing.status = "active"
+            listing.ends_at = datetime.now(UTC) - timedelta(hours=1)
+            p = session.get(Product, product)
+            p.status = "listed"
+            session.commit()
+
+        result = service.check_expired_listings()
+
+        assert result["expired_count"] == 1
+        assert result["expired_listings"][0]["listing_id"] == draft["listing_id"]
+        assert result["expired_listings"][0]["product_id"] == product
+
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            assert listing.status == "ended"
+
+    def test_active_future_ends_at_untouched(self, service, product, engine):
+
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Future listing",
+            listing_description="Desc",
+            start_price=100.0,
+        )
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            listing.status = "active"
+            listing.ends_at = datetime.now(UTC) + timedelta(days=3)
+            session.commit()
+
+        result = service.check_expired_listings()
+
+        assert result["expired_count"] == 0
+
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            assert listing.status == "active"
+
+    def test_listing_without_ends_at_untouched(self, service, product, engine):
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="buy_it_now",
+            listing_title="No end date",
+            listing_description="Desc",
+            buy_it_now_price=200.0,
+        )
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            listing.status = "active"
+            listing.ends_at = None
+            session.commit()
+
+        result = service.check_expired_listings()
+
+        assert result["expired_count"] == 0
+
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            assert listing.status == "active"
+
+    def test_product_status_reset_to_draft(self, service, product, engine):
+
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Single listing",
+            listing_description="Desc",
+            start_price=100.0,
+        )
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            listing.status = "active"
+            listing.ends_at = datetime.now(UTC) - timedelta(hours=1)
+            p = session.get(Product, product)
+            p.status = "listed"
+            session.commit()
+
+        result = service.check_expired_listings()
+
+        assert result["expired_listings"][0]["product_status"] == "draft"
+        with Session(engine) as session:
+            p = session.get(Product, product)
+            assert p.status == "draft"
+
+    def test_product_stays_listed_with_other_active(self, service, engine):
+
+        with Session(engine) as session:
+            p = Product(title="Multi-listed", status="listed")
+            session.add(p)
+            session.flush()
+            l1 = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Expired",
+                listing_description="D1",
+                ends_at=datetime.now(UTC) - timedelta(hours=1),
+            )
+            l2 = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Still active",
+                listing_description="D2",
+                ends_at=datetime.now(UTC) + timedelta(days=3),
+            )
+            session.add_all([l1, l2])
+            session.commit()
+            lid1, pid = l1.id, p.id
+
+        result = service.check_expired_listings()
+
+        assert result["expired_count"] == 1
+        assert result["expired_listings"][0]["listing_id"] == lid1
+        assert result["expired_listings"][0]["product_status"] == "listed"
+
+        with Session(engine) as session:
+            p = session.get(Product, pid)
+            assert p.status == "listed"
+
+    def test_multiple_expired_all_transitioned(self, service, engine):
+
+        with Session(engine) as session:
+            p = Product(title="Multi-expired", status="listed")
+            session.add(p)
+            session.flush()
+            l1 = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Expired 1",
+                listing_description="D1",
+                ends_at=datetime.now(UTC) - timedelta(hours=2),
+            )
+            l2 = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Expired 2",
+                listing_description="D2",
+                ends_at=datetime.now(UTC) - timedelta(hours=1),
+            )
+            session.add_all([l1, l2])
+            session.commit()
+            lid1, lid2, pid = l1.id, l2.id, p.id
+
+        result = service.check_expired_listings()
+
+        assert result["expired_count"] == 2
+        expired_ids = {item["listing_id"] for item in result["expired_listings"]}
+        assert expired_ids == {lid1, lid2}
+
+        # Both items should report final product_status ("draft"), not stale intermediate state
+        for item in result["expired_listings"]:
+            assert item["product_status"] == "draft"
+
+        with Session(engine) as session:
+            assert session.get(PlatformListing, lid1).status == "ended"
+            assert session.get(PlatformListing, lid2).status == "ended"
+            assert session.get(Product, pid).status == "draft"
+
+    def test_logs_agent_action(self, service, product, engine):
+
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Logged listing",
+            listing_description="Desc",
+            start_price=100.0,
+        )
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            listing.status = "active"
+            listing.ends_at = datetime.now(UTC) - timedelta(hours=1)
+            session.commit()
+
+        service.check_expired_listings()
+
+        with Session(engine) as session:
+            action = (
+                session.query(AgentAction).filter_by(action_type="check_expired_listings").one()
+            )
+            assert action.agent_name == "listing"
+            assert draft["listing_id"] in action.details["listing_ids"]
+
+    def test_already_ended_not_double_counted(self, service, product, engine):
+
+        draft = service.create_draft(
+            product_id=product,
+            listing_type="auction",
+            listing_title="Already ended",
+            listing_description="Desc",
+            start_price=100.0,
+        )
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, draft["listing_id"])
+            listing.status = "ended"
+            listing.ends_at = datetime.now(UTC) - timedelta(hours=1)
+            session.commit()
+
+        result = service.check_expired_listings()
+
+        assert result["expired_count"] == 0
+
+    def test_product_not_listed_status_untouched(self, service, engine):
+
+        with Session(engine) as session:
+            p = Product(title="Sold item", status="sold")
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="T",
+                listing_description="D",
+                ends_at=datetime.now(UTC) - timedelta(hours=1),
+            )
+            session.add(listing)
+            session.commit()
+            pid = p.id
+
+        result = service.check_expired_listings()
+
+        assert result["expired_count"] == 1
+        assert result["expired_listings"][0]["product_status"] == "sold"
+
+        with Session(engine) as session:
+            p = session.get(Product, pid)
+            assert p.status == "sold"
 
 
 class TestImagePathValidation:
