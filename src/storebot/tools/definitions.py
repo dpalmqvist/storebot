@@ -522,6 +522,13 @@ TOOLS = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "check_expired_listings",
+        "description": "Kontrollera om aktiva annonser har passerat sitt slutdatum och markera dem som avslutade. Uppdaterar produktstatus till utkast om inga aktiva annonser återstår. Körs automatiskt varje timme.",
+        "category": "listing",
+        "strict": True,
+        "input_schema": _EMPTY_SCHEMA,
+    },
     # --- Products ---
     {
         "name": "search_products",

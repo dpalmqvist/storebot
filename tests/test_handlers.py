@@ -29,6 +29,7 @@ from storebot.bot.handlers import (
     marketing_refresh_job,
     new_conversation,
     orders_command,
+    check_expired_listings_job,
     poll_orders_job,
     rapport_command,
     scout_command,
@@ -1285,6 +1286,114 @@ class TestPollOrdersJob:
         context.bot.send_message.assert_awaited()
 
 
+class TestCheckExpiredListingsJob:
+    @pytest.mark.asyncio
+    async def test_sends_notification_when_listings_expired(self):
+        listing_svc = MagicMock()
+        listing_svc.check_expired_listings = MagicMock(
+            return_value={
+                "expired_count": 2,
+                "expired_listings": [
+                    {
+                        "listing_id": 42,
+                        "product_id": 7,
+                        "listing_title": "Ektaburett 1940-tal",
+                        "ends_at": "2025-01-01T00:00:00+00:00",
+                        "product_status": "draft",
+                    },
+                    {
+                        "listing_id": 43,
+                        "product_id": 9,
+                        "listing_title": "Gustaviansk spegel",
+                        "ends_at": "2025-01-01T12:00:00+00:00",
+                        "product_status": "draft",
+                    },
+                ],
+            }
+        )
+        agent = MagicMock()
+        agent.listing = listing_svc
+        context = MagicMock()
+        context.bot_data = {"agent": agent, "owner_chat_id": 12345}
+        context.bot.send_message = AsyncMock()
+        await check_expired_listings_job(context)
+        context.bot.send_message.assert_awaited_once()
+        text = context.bot.send_message.call_args.kwargs["text"]
+        assert "2 annons(er) har avslutats" in text
+        assert "Annons #42" in text
+        assert "Annons #43" in text
+        assert "relist_product" in text
+
+    @pytest.mark.asyncio
+    async def test_silent_when_no_expired(self):
+        listing_svc = MagicMock()
+        listing_svc.check_expired_listings = MagicMock(
+            return_value={"expired_count": 0, "expired_listings": []}
+        )
+        agent = MagicMock()
+        agent.listing = listing_svc
+        context = MagicMock()
+        context.bot_data = {"agent": agent, "owner_chat_id": 12345}
+        context.bot.send_message = AsyncMock()
+        await check_expired_listings_job(context)
+        context.bot.send_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_returns_early_when_no_agent(self):
+        context = MagicMock()
+        context.bot_data = {}
+        context.bot.send_message = AsyncMock()
+        await check_expired_listings_job(context)
+        context.bot.send_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_returns_early_when_no_listing_service(self):
+        agent = MagicMock()
+        agent.listing = None
+        context = MagicMock()
+        context.bot_data = {"agent": agent}
+        context.bot.send_message = AsyncMock()
+        await check_expired_listings_job(context)
+        context.bot.send_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_skips_send_when_no_owner_chat_id(self):
+        listing_svc = MagicMock()
+        listing_svc.check_expired_listings = MagicMock(
+            return_value={
+                "expired_count": 1,
+                "expired_listings": [
+                    {
+                        "listing_id": 1,
+                        "product_id": 1,
+                        "listing_title": "T",
+                        "ends_at": "2025-01-01T00:00:00+00:00",
+                        "product_status": "draft",
+                    }
+                ],
+            }
+        )
+        agent = MagicMock()
+        agent.listing = listing_svc
+        context = MagicMock()
+        context.bot_data = {"agent": agent}
+        context.bot.send_message = AsyncMock()
+        await check_expired_listings_job(context)
+        context.bot.send_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_error_alerts_admin(self):
+        listing_svc = MagicMock()
+        listing_svc.check_expired_listings = MagicMock(side_effect=RuntimeError("fail"))
+        agent = MagicMock()
+        agent.listing = listing_svc
+        context = MagicMock()
+        context.bot_data = {"agent": agent, "owner_chat_id": 12345}
+        context.bot.send_message = AsyncMock()
+        await check_expired_listings_job(context)
+        context.bot.send_message.assert_awaited()
+
+
 # ---------------------------------------------------------------------------
 # main()
 # ---------------------------------------------------------------------------
@@ -1309,6 +1418,7 @@ class TestMain:
         mock_settings.scout_digest_hour = 7
         mock_settings.marketing_refresh_hour = 8
         mock_settings.listing_report_hour = 7
+        mock_settings.expired_listings_check_interval_minutes = 60
 
         mock_app = MagicMock()
         mock_app.bot_data = {}
@@ -1331,9 +1441,9 @@ class TestMain:
 
             mock_app.run_polling.assert_called_once()
             mock_app.add_handler.assert_called()
-            mock_job_queue.run_repeating.assert_called_once_with(
-                poll_orders_job, interval=30 * 60, first=60
-            )
+            assert mock_job_queue.run_repeating.call_count == 2
+            repeating_jobs = {c.args[0] for c in mock_job_queue.run_repeating.call_args_list}
+            assert repeating_jobs == {poll_orders_job, check_expired_listings_job}
             daily_jobs = [c.args[0] for c in mock_job_queue.run_daily.call_args_list]
             assert set(daily_jobs) == {
                 scout_digest_job,
