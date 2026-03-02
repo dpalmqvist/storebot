@@ -284,12 +284,13 @@ ruff check --fix src/ tests/
    - Posts detailed review comments on the PR
    - Requires `CLAUDE_CODE_OAUTH_TOKEN` secret
 
-3. **`openai-review`** — GPT-5.2 Codex code review (runs in parallel with claude-review):
-   - Custom stdlib-only Python script (`.github/scripts/openai_review.py`)
-   - Fetches PR diff, filters lock files, sends to GPT-5.2 Codex for analysis
+3. **`ollama-review`** — Qwen 3.5 9B code review via Ollama (runs in parallel with claude-review):
+   - Custom stdlib-only Python script (`.github/scripts/ollama_review.py`)
+   - Fetches PR diff, filters lock files, sends to local Ollama instance for analysis
    - Posts structured review as PR comment (Summary + Findings with severity)
-   - `continue-on-error: true` — API failures don't block merges
-   - Requires `OPENAI_API_KEY` secret
+   - `continue-on-error: true` — inference failures don't block merges
+   - Runs on `self-hosted` runner with Ollama at `localhost:11434`
+   - Configurable via `OLLAMA_BASE_URL` and `OLLAMA_MODEL` repository variables
    - Size controls: skips diffs > 500KB, truncates at 100KB
 
 ## Swedish Business Context
