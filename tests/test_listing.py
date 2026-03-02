@@ -2243,6 +2243,10 @@ class TestCheckExpiredListings:
         expired_ids = {item["listing_id"] for item in result["expired_listings"]}
         assert expired_ids == {lid1, lid2}
 
+        # Both items should report final product_status ("draft"), not stale intermediate state
+        for item in result["expired_listings"]:
+            assert item["product_status"] == "draft"
+
         with Session(engine) as session:
             assert session.get(PlatformListing, lid1).status == "ended"
             assert session.get(PlatformListing, lid2).status == "ended"

@@ -988,7 +988,7 @@ class ListingService:
             if not expired:
                 return {"expired_count": 0, "expired_listings": []}
 
-            result_listings = []
+            expired_info = []
             for listing in expired:
                 listing.status = "ended"
 
@@ -1006,12 +1006,20 @@ class ListingService:
                 if product and other_active == 0 and product.status == "listed":
                     product.status = "draft"
 
+                expired_info.append(
+                    (listing.id, listing.product_id, listing.listing_title, listing.ends_at)
+                )
+
+            # Build result after all mutations so product_status reflects final state
+            result_listings = []
+            for lid, pid, title, ends_at in expired_info:
+                product = session.get(Product, pid) if pid else None
                 result_listings.append(
                     {
-                        "listing_id": listing.id,
-                        "product_id": listing.product_id,
-                        "listing_title": listing.listing_title,
-                        "ends_at": listing.ends_at.isoformat() if listing.ends_at else None,
+                        "listing_id": lid,
+                        "product_id": pid,
+                        "listing_title": title,
+                        "ends_at": ends_at.isoformat() if ends_at else None,
                         "product_status": product.status if product else None,
                     }
                 )
