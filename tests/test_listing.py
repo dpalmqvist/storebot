@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -2071,7 +2072,6 @@ class TestCheckExpiredListings:
         assert result["expired_listings"] == []
 
     def test_active_past_ends_at_transitions_to_ended(self, service, product, engine):
-        from datetime import UTC, datetime, timedelta
 
         draft = service.create_draft(
             product_id=product,
@@ -2099,7 +2099,6 @@ class TestCheckExpiredListings:
             assert listing.status == "ended"
 
     def test_active_future_ends_at_untouched(self, service, product, engine):
-        from datetime import UTC, datetime, timedelta
 
         draft = service.create_draft(
             product_id=product,
@@ -2145,7 +2144,6 @@ class TestCheckExpiredListings:
             assert listing.status == "active"
 
     def test_product_status_reset_to_draft(self, service, product, engine):
-        from datetime import UTC, datetime, timedelta
 
         draft = service.create_draft(
             product_id=product,
@@ -2170,7 +2168,6 @@ class TestCheckExpiredListings:
             assert p.status == "draft"
 
     def test_product_stays_listed_with_other_active(self, service, engine):
-        from datetime import UTC, datetime, timedelta
 
         with Session(engine) as session:
             p = Product(title="Multi-listed", status="listed")
@@ -2209,7 +2206,6 @@ class TestCheckExpiredListings:
             assert p.status == "listed"
 
     def test_multiple_expired_all_transitioned(self, service, engine):
-        from datetime import UTC, datetime, timedelta
 
         with Session(engine) as session:
             p = Product(title="Multi-expired", status="listed")
@@ -2253,7 +2249,6 @@ class TestCheckExpiredListings:
             assert session.get(Product, pid).status == "draft"
 
     def test_logs_agent_action(self, service, product, engine):
-        from datetime import UTC, datetime, timedelta
 
         draft = service.create_draft(
             product_id=product,
@@ -2278,7 +2273,6 @@ class TestCheckExpiredListings:
             assert draft["listing_id"] in action.details["listing_ids"]
 
     def test_already_ended_not_double_counted(self, service, product, engine):
-        from datetime import UTC, datetime, timedelta
 
         draft = service.create_draft(
             product_id=product,
@@ -2298,7 +2292,6 @@ class TestCheckExpiredListings:
         assert result["expired_count"] == 0
 
     def test_product_not_listed_status_untouched(self, service, engine):
-        from datetime import UTC, datetime, timedelta
 
         with Session(engine) as session:
             p = Product(title="Sold item", status="sold")
