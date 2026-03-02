@@ -45,7 +45,7 @@ src/storebot/
     helpers.py         Shared utilities (log_action, naive_now)
   tui/
     log_viewer.py      Textual TUI for agent_actions audit log
-tests/                 pytest tests (18 modules)
+tests/                 pytest tests (30 modules)
 deploy/
   storebot.service     systemd unit file
   backup.sh            SQLite backup script (cron, gzip, integrity check)
@@ -207,7 +207,7 @@ pytest -v
 
 ### Test Modules
 
-26 test modules covering all core functionality:
+30 test modules covering all core functionality:
 
 | Module | Coverage |
 |--------|----------|
@@ -237,6 +237,10 @@ pytest -v
 | `test_thinking.py` | Extended thinking block handling |
 | `test_tool_filtering.py` | Dynamic tool category filtering |
 | `test_usage.py` | API token/cost tracking |
+| `test_agent.py` | Agent loop, tool dispatch, message handling |
+| `test_dispatch.py` | Shared tool dispatch, service creation |
+| `test_formatting.py` | Markdown→Telegram HTML conversion, message splitting |
+| `test_mcp_server.py` | MCP server tool listing, tool execution |
 
 ### Writing New Tests
 
@@ -271,20 +275,15 @@ ruff check --fix src/ tests/
 
 ### GitHub Actions
 
-**`ci.yml`** — Runs on pull requests to `main` with three jobs:
+**`ci.yml`** — Runs on pull requests to `main`:
 
-1. **`lint-and-test`** — Gate job that must pass before reviews run:
+1. **`lint-and-test`** — Gate job that must pass before merge:
    - Installs Python 3.13 via uv
    - Installs dependencies with `uv sync --locked --extra dev`
    - Runs `ruff check` and `ruff format --check`
    - Runs `pytest -v`
 
-2. **`claude-review`** — Claude Opus code review (runs after lint-and-test):
-   - Uses `claude-code-action` with deep repo context
-   - Posts detailed review comments on the PR
-   - Requires `CLAUDE_CODE_OAUTH_TOKEN` secret
-
-3. **`ollama-review`** — Qwen 3.5 9B code review via Ollama (runs in parallel with claude-review):
+2. **`ollama-review`** — Qwen 3.5 9B code review via Ollama (runs in parallel with claude-review):
    - Custom stdlib-only Python script (`.github/scripts/ollama_review.py`)
    - Fetches PR diff, filters lock files, sends to local Ollama instance for analysis
    - Posts structured review as PR comment (Summary + Findings with severity)
@@ -292,6 +291,24 @@ ruff check --fix src/ tests/
    - Runs on `self-hosted` runner with Ollama at `localhost:11434`
    - Configurable via `OLLAMA_BASE_URL` and `OLLAMA_MODEL` repository variables
    - Size controls: skips diffs > 500KB, truncates at 100KB
+
+**`release.yml`** — Runs on push to `main` (i.e., after PR merge):
+
+1. Runs lint and tests as a final safety check
+2. Runs `python-semantic-release` to:
+   - Determine next version from conventional commit messages
+   - Update version in `src/storebot/__init__.py`
+   - Update `CHANGELOG.md`
+   - Create a git tag and push directly to `main`
+
+**Important:** The release workflow requires a fine-grained PAT stored as `SEMANTIC_RELEASE_TOKEN` (not `GITHUB_TOKEN`), because the repository ruleset on `main` requires changes via PR. The PAT authenticates as a user with the Repository Admin bypass role, allowing the version bump commit to push directly.
+
+### Repository Secrets
+
+| Secret | Used by | Purpose |
+|--------|---------|---------|
+| `SEMANTIC_RELEASE_TOKEN` | `release.yml` | Fine-grained PAT for pushing version bumps to `main` |
+| `CLAUDE_CODE_OAUTH_TOKEN` | `claude.yml` | Claude Code interactive agent |
 
 ## Swedish Business Context
 
