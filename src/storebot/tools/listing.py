@@ -988,6 +988,8 @@ class ListingService:
             if not expired:
                 return {"expired_count": 0, "expired_listings": []}
 
+            # Autoflush ensures each status="ended" mutation is visible to
+            # subsequent count queries, so siblings already processed are excluded.
             expired_info = []
             for listing in expired:
                 listing.status = "ended"

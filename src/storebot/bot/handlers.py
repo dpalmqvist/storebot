@@ -530,7 +530,7 @@ async def check_expired_listings_job(context: ContextTypes.DEFAULT_TYPE) -> None
         for item in expired:
             lines.append(
                 f"  \u2022 Annons #{item['listing_id']}: "
-                f"{item['listing_title']} (produkt #{item['product_id']})"
+                f"{item['listing_title'] or '(ingen titel)'} (produkt #{item['product_id']})"
             )
         lines.append("\nAnvänd relist_product för att skapa ett nytt utkast och publicera igen.")
         text = "\n".join(lines)
