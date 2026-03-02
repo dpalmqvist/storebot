@@ -7,6 +7,7 @@ on:
 jobs:
   codebase-review:
     runs-on: self-hosted
+    timeout-minutes: 90
     continue-on-error: true
     permissions:
       contents: read

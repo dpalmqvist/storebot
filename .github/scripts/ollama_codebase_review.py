@@ -157,7 +157,10 @@ def read_module_chunk(base_dir: Path, chunk_name: str, files: list[str]) -> str:
         parts.append(f"# --- file: src/storebot/{relpath} ---\n{content}")
     combined = "\n\n".join(parts)
     if len(combined) > MAX_CHUNK_CHARS:
-        print(f"  WARNING: {chunk_name} is {len(combined):,} chars, may exceed context window")
+        print(
+            f"  WARNING: {chunk_name} truncated from {len(combined):,} to {MAX_CHUNK_CHARS:,} chars"
+        )
+        combined = combined[:MAX_CHUNK_CHARS]
     return combined
 
 
@@ -271,21 +274,22 @@ def ensure_label(repo: str) -> None:
 
 def create_issue(repo: str, finding: dict) -> None:
     """Create a GitHub issue for a finding."""
-    title = f"[AI Review] {finding.get('title', 'Untitled finding')}"
+    title = f"[AI Review] {finding.get('title', 'Untitled finding')[:80]}"
     severity = finding.get("severity", "suggestion")
     file_path = finding.get("file", "unknown")
     description = finding.get("description", "No description provided.")
     suggestion = finding.get("suggestion", "No suggestion provided.")
 
     body = (
+        f"@claude Please review this suggestion and implement it if appropriate. "
+        f"Create a PR with the fix.\n\n"
+        f"---\n\n"
         f"**File:** `{file_path}`\n"
         f"**Severity:** {severity}\n\n"
         f"## Description\n{description}\n\n"
         f"## Suggested Fix\n{suggestion}\n\n"
         f"---\n"
-        f"*Automated codebase review by Qwen 3.5 9B via Ollama (post-release).*\n\n"
-        f"@claude Please review this suggestion and implement it if appropriate. "
-        f"Create a PR with the fix."
+        f"*Automated codebase review by Qwen 3.5 9B via Ollama (post-release).*"
     )
     run_gh(
         "issue",
@@ -314,6 +318,15 @@ def main() -> None:
     if not src_dir.is_dir():
         print(f"ERROR: {src_dir} not found.")
         sys.exit(1)
+
+    # Check for files not covered by any chunk
+    all_known = {f for files in MODULE_CHUNKS.values() for f in files}
+    all_actual = {
+        str(p.relative_to(src_dir)) for p in src_dir.rglob("*.py") if not p.name.startswith("__")
+    }
+    uncovered = all_actual - all_known
+    if uncovered:
+        print(f"  NOTE: files not in any review chunk: {sorted(uncovered)}")
 
     # Discover and review module chunks
     tag = os.environ.get("GITHUB_REF_NAME", "unknown")
