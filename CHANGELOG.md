@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.13.1 (2026-03-03)
+
+### Bug Fixes
+
+- **ci**: Allow claude[bot] in Claude Code workflow
+  ([`2858047`](https://github.com/dpalmqvist/storebot/commit/285804755e50ef48e365251b227779a77a76736b))
+
+The codebase review creates issues mentioning @claude, which triggers the Claude Code workflow.
+  Without allowed_bots, the action rejects bot-initiated events.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.13.0 (2026-03-03)
 
 ### Documentation
