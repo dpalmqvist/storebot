@@ -233,8 +233,8 @@ def rank_findings(base_url: str, model: str, findings: list[dict]) -> list[dict]
         print(f"WARNING: Ranking call failed: {exc}")
         # Fallback: take first MAX_ISSUES sorted by severity
         severity_order = {"critical": 0, "warning": 1, "suggestion": 2}
-        findings.sort(key=lambda f: severity_order.get(f.get("severity", ""), 2))
-        return findings[:MAX_ISSUES]
+        by_severity = sorted(findings, key=lambda f: severity_order.get(f.get("severity", ""), 2))
+        return by_severity[:MAX_ISSUES]
     ranked = parse_json_findings(response)
     return ranked[:MAX_ISSUES] if ranked else findings[:MAX_ISSUES]
 
@@ -291,15 +291,13 @@ def create_issue(repo: str, finding: dict) -> None:
     suggestion = finding.get("suggestion", "No suggestion provided.")
 
     body = (
-        f"@claude Please review this suggestion and implement it if appropriate. "
-        f"Create a PR with the fix.\n\n"
-        f"---\n\n"
         f"**File:** `{file_path}`\n"
         f"**Severity:** {severity}\n\n"
         f"## Description\n{description}\n\n"
         f"## Suggested Fix\n{suggestion}\n\n"
         f"---\n"
-        f"*Automated codebase review by Qwen 3.5 9B via Ollama (post-release).*"
+        f"*Automated codebase review by Qwen 3.5 9B via Ollama (post-release).*\n\n"
+        f"To trigger an automated fix, comment `@claude` on this issue after reviewing."
     )
     run_gh(
         "issue",
