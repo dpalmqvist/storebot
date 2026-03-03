@@ -17,6 +17,8 @@ LABEL = "ai-codebase-review"
 MAX_ISSUES = 5
 MAX_CHUNK_CHARS = 200_000  # ~50K tokens
 OLLAMA_TIMEOUT = 600  # 10 minutes per chunk
+REQUIRED_FIELDS = {"severity", "file", "title", "description", "suggestion"}
+VALID_SEVERITIES = {"critical", "warning", "suggestion"}
 
 # Module chunks — logical groupings of related files
 MODULE_CHUNKS: dict[str, list[str]] = {
@@ -157,10 +159,12 @@ def read_module_chunk(base_dir: Path, chunk_name: str, files: list[str]) -> str:
         parts.append(f"# --- file: src/storebot/{relpath} ---\n{content}")
     combined = "\n\n".join(parts)
     if len(combined) > MAX_CHUNK_CHARS:
+        truncated = combined[:MAX_CHUNK_CHARS]
+        last_nl = truncated.rfind("\n")
+        combined = truncated[:last_nl] if last_nl != -1 else truncated
         print(
             f"  WARNING: {chunk_name} truncated from {len(combined):,} to {MAX_CHUNK_CHARS:,} chars"
         )
-        combined = combined[:MAX_CHUNK_CHARS]
     return combined
 
 
@@ -204,7 +208,12 @@ def review_chunk(base_url: str, model: str, chunk_name: str, code: str) -> list[
     except Exception as exc:
         print(f"  WARNING: Ollama call failed for {chunk_name}: {exc}")
         return []
-    findings = parse_json_findings(response)
+    raw = parse_json_findings(response)
+    findings = [
+        f
+        for f in raw
+        if REQUIRED_FIELDS.issubset(f.keys()) and f.get("severity") in VALID_SEVERITIES
+    ]
     print(f"  Found {len(findings)} finding(s) in {chunk_name}")
     return findings
 
@@ -355,12 +364,15 @@ def main() -> None:
     existing_titles = find_duplicate_titles(repo)
     created = 0
     for finding in top_findings:
-        title = f"[AI Review] {finding.get('title', 'Untitled finding')}"
+        title = f"[AI Review] {finding.get('title', 'Untitled finding')[:80]}"
         if title in existing_titles:
             print(f"Skipping duplicate: {title}")
             continue
-        create_issue(repo, finding)
-        created += 1
+        try:
+            create_issue(repo, finding)
+            created += 1
+        except subprocess.CalledProcessError as exc:
+            print(f"WARNING: Failed to create issue '{title}': {exc}")
 
     print(f"\nDone. Created {created} issue(s).")
 

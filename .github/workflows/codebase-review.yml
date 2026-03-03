@@ -23,4 +23,5 @@ jobs:
           OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
         run: python3 .github/scripts/ollama_codebase_review.py
