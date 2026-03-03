@@ -159,11 +159,12 @@ def read_module_chunk(base_dir: Path, chunk_name: str, files: list[str]) -> str:
         parts.append(f"# --- file: src/storebot/{relpath} ---\n{content}")
     combined = "\n\n".join(parts)
     if len(combined) > MAX_CHUNK_CHARS:
+        original_len = len(combined)
         truncated = combined[:MAX_CHUNK_CHARS]
         last_nl = truncated.rfind("\n")
         combined = truncated[:last_nl] if last_nl != -1 else truncated
         print(
-            f"  WARNING: {chunk_name} truncated from {len(combined):,} to {MAX_CHUNK_CHARS:,} chars"
+            f"  WARNING: {chunk_name} truncated from {original_len:,} to {len(combined):,} chars"
         )
     return combined
 
