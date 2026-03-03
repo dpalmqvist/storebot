@@ -297,7 +297,7 @@ def create_issue(repo: str, finding: dict) -> None:
         f"## Suggested Fix\n{suggestion}\n\n"
         f"---\n"
         f"*Automated codebase review by Qwen 3.5 9B via Ollama (post-release).*\n\n"
-        f"To trigger an automated fix, comment `@claude` on this issue after reviewing."
+        f"To trigger an automated fix, tag Claude in a comment on this issue after reviewing."
     )
     run_gh(
         "issue",
