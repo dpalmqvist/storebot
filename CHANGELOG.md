@@ -1,6 +1,80 @@
 # CHANGELOG
 
 
+## v0.13.0 (2026-03-03)
+
+### Documentation
+
+- Update CI/CD section and fix test module counts
+  ([#124](https://github.com/dpalmqvist/storebot/pull/124),
+  [`ffc3a28`](https://github.com/dpalmqvist/storebot/commit/ffc3a2892afdab009946f2cf6dfdff0b8d5562f5))
+
+- Document release.yml workflow and SEMANTIC_RELEASE_TOKEN requirement - Add repository secrets
+  reference table - Fix test module count (18 → 30 in structure, 26 → 30 in table) - Add 4 missing
+  test modules (agent, dispatch, formatting, mcp_server)
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+### Features
+
+- Add post-release codebase review via Ollama
+  ([#125](https://github.com/dpalmqvist/storebot/pull/125),
+  [`8507232`](https://github.com/dpalmqvist/storebot/commit/85072324275fd0470f252c4a79fc0a3ac90f20de))
+
+* feat: add post-release codebase review via Ollama
+
+Add a new GitHub Actions workflow triggered by version tag pushes (v*) that reviews the entire
+  src/storebot/ codebase using Ollama (Qwen 3.5 9B). The script groups files into 7 module chunks,
+  reviews each chunk, ranks findings by severity, and creates up to 5 GitHub issues with @claude
+  mentions to trigger automated fixes.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+* fix: address review feedback on codebase review script
+
+- Replace str.format() with str.replace() + concatenation to avoid KeyError from curly braces in
+  Python source code and JSON output - Validate that parsed JSON items are dicts before downstream
+  use - Add chunk size warning when code exceeds 200K chars (context window) - Bump dedup issue
+  search limit from 100 to 500 - Log triggering tag name for easier CI log correlation
+
+* fix: address second round of review feedback
+
+- Truncate oversized chunks instead of just warning (prevents context window overflow) - Guard issue
+  title length to 80 chars - Move @claude trigger before LLM-generated content in issue body - Add
+  timeout-minutes: 90 to workflow job - Log uncovered files not in any MODULE_CHUNKS group
+
+* fix: address third round of review feedback
+
+- Fix title truncation mismatch between main() and create_issue() that broke duplicate detection for
+  long titles - Wrap create_issue() calls in try/except so one failure doesn't abort remaining
+  issues - Truncate oversized chunks on line boundary instead of mid-character - Filter structurally
+  invalid findings (missing required fields or invalid severity) before issue creation - Map
+  GITHUB_REF_NAME explicitly in workflow env block
+
+* fix: capture original length before truncation in warning message
+
+The truncation warning was printing the post-truncation length for both values since combined was
+  reassigned before the print statement.
+
+* fix: require human triage before triggering @claude on AI review issues
+
+Remove @claude auto-trigger from issue body to break the unlimited autonomous chain (Qwen -> issue
+  -> Claude -> PR). Issues now include a note to comment @claude after reviewing the finding. This
+  preserves the human-in-the-loop principle while keeping the review automation.
+
+Also fix rank_findings() to use sorted() instead of in-place .sort() to avoid mutating the input
+  list.
+
+* fix: avoid literal @claude in issue body to prevent auto-trigger
+
+The claude.yml workflow uses contains(body, '@claude') substring match, so even the instruction text
+  would trigger it. Use 'tag Claude' instead.
+
+---------
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.12.0 (2026-03-02)
 
 ### Bug Fixes
