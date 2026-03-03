@@ -1,0 +1,27 @@
+name: Codebase Review
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  codebase-review:
+    runs-on: self-hosted
+    timeout-minutes: 90
+    continue-on-error: true
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Ollama codebase review
+        env:
+          OLLAMA_BASE_URL: ${{ vars.OLLAMA_BASE_URL }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: python3 .github/scripts/ollama_codebase_review.py
