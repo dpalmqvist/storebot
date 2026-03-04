@@ -174,11 +174,10 @@ class TestAuthorizeTraderaCLI:
         authorize_tradera()
 
         output = capsys.readouterr().out
-        # First 8 chars of "fetched-real-token" shown as masked prefix
-        assert "fetched-" in output
-        assert "fetched-real-token" not in output  # full token never shown
-        assert "re-run this command" in output
-        assert "999" in output
+        # Full token shown once for manual copy, with security warning
+        assert "TRADERA_USER_TOKEN=fetched-real-token" in output
+        assert "TRADERA_USER_ID=999" in output
+        assert "securely" in output
 
     @patch("storebot.cli.Settings")
     @patch("builtins.input")

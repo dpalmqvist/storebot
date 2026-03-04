@@ -134,10 +134,12 @@ def authorize_tradera() -> None:
         else:
             print(f"Saved TRADERA_USER_TOKEN to {env_path}")
     else:
-        print(f"Not saved. Token: {token_masked}")
-        print("To complete setup, re-run this command and choose 'Y' to save.")
+        print("Not saved. Add these to your .env manually:")
+        print(f"  TRADERA_USER_TOKEN={token}")
         if user_id:
-            print(f"  (User ID: {user_id})")
+            print(f"  TRADERA_USER_ID={user_id}")
+        print()
+        print("Store these values securely — they will not be shown again.")
 
 
 def _extract_json_array(text: str) -> str:
