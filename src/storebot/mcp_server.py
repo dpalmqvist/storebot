@@ -8,13 +8,15 @@ Usage:
 
 import argparse
 import asyncio
+import hmac
 import json
 import logging
+import sys
 
 from mcp import types
 from mcp.server.lowlevel import Server
 
-from storebot.config import get_settings
+from storebot.config import Settings, get_settings
 from storebot.db import init_db
 from storebot.tools.definitions import TOOLS
 from storebot.tools.dispatch import create_services, execute_tool
@@ -65,6 +67,35 @@ def _create_server(services: dict[str, object]) -> Server:
     return server
 
 
+def _make_auth_app(inner_app, api_key: str):
+    """Wrap an ASGI app with Bearer token authentication."""
+
+    async def _auth_app(scope, receive, send):
+        if scope["type"] != "http":
+            await inner_app(scope, receive, send)
+            return
+
+        headers = dict(scope.get("headers", []))
+        auth = headers.get(b"authorization", b"").decode()
+        expected = f"Bearer {api_key}"
+
+        if not hmac.compare_digest(auth, expected):
+            logger.warning("MCP HTTP request rejected — invalid or missing API key")
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [[b"content-type", b"application/json"]],
+                }
+            )
+            await send({"type": "http.response.body", "body": b'{"error":"Unauthorized"}'})
+            return
+
+        await inner_app(scope, receive, send)
+
+    return _auth_app
+
+
 def main():
     """Entry point for storebot-mcp CLI."""
     parser = argparse.ArgumentParser(description="Storebot MCP server")
@@ -107,22 +138,44 @@ def main():
 
         asyncio.run(_run_stdio())
     else:
-        import uvicorn
-        from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+        _run_http(args, settings, server)
 
-        if args.host != "127.0.0.1":
-            logger.warning(
-                "MCP HTTP server bound to %s — no authentication is enforced. "
-                "All storebot tools are accessible to any client that can reach this port.",
-                args.host,
-            )
 
-        session_manager = StreamableHTTPSessionManager(app=server, stateless=True)
+def _run_http(args, settings: Settings, server: Server) -> None:
+    """Start the MCP server with streamable-HTTP transport."""
+    import uvicorn
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
-        async def asgi_app(scope, receive, send):
-            await session_manager.handle_request(scope, receive, send)
+    is_localhost = args.host == "127.0.0.1"
+    api_key = settings.mcp_api_key
 
-        uvicorn.run(asgi_app, host=args.host, port=args.port)
+    if not is_localhost and not api_key:
+        logger.error(
+            "MCP_API_KEY is required when binding to non-localhost (%s). "
+            "Set MCP_API_KEY in .env or use --host 127.0.0.1.",
+            args.host,
+        )
+        sys.exit(1)
+
+    if not is_localhost and api_key:
+        logger.info("MCP HTTP server bound to %s with API key authentication", args.host)
+    elif not is_localhost:
+        logger.warning(
+            "MCP HTTP server bound to %s — no authentication is enforced. "
+            "All storebot tools are accessible to any client that can reach this port.",
+            args.host,
+        )
+
+    session_manager = StreamableHTTPSessionManager(app=server, stateless=True)
+
+    async def asgi_app(scope, receive, send):
+        await session_manager.handle_request(scope, receive, send)
+
+    app = asgi_app
+    if api_key:
+        app = _make_auth_app(asgi_app, api_key)
+
+    uvicorn.run(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     rate_limit_messages: int = 30  # max messages per window
     rate_limit_window_seconds: int = 60
 
+    # MCP server
+    mcp_api_key: str = ""  # API key for HTTP transport; required when binding to non-localhost
+
     # Logging
     log_level: str = "INFO"
     log_json: bool = True
