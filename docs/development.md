@@ -20,9 +20,9 @@ See [installation.md](installation.md) for full configuration reference.
 
 ```
 src/storebot/
-  agent.py             Claude API tool loop (57 tools, vision support)
+  agent.py             Claude API tool loop (63 tools, vision support)
   config.py            Pydantic Settings from .env
-  db.py                SQLAlchemy 2.0 models (SQLite, 14 tables)
+  db.py                SQLAlchemy 2.0 models (SQLite, 15 tables)
   cli.py               Tradera authorization CLI
   retry.py             Retry decorator with exponential backoff
   logging_config.py    JSON/human-readable logging config

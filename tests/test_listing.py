@@ -2702,6 +2702,72 @@ class TestUpdateLiveListingPrice:
         result = svc.update_live_listing_price(lid, start_price=200)
         assert "error" in result
 
+    def test_reserve_price_in_result(self, engine):
+        tradera = MagicMock()
+        tradera.set_prices.return_value = {
+            "item_id": 999,
+            "updated": True,
+            "start_price": 200,
+            "reserve_price": 400,
+        }
+        svc = ListingService(engine=engine, tradera=tradera)
+
+        with Session(engine) as session:
+            p = Product(title="Test", status="listed")
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Test",
+                start_price=300.0,
+                external_id="999",
+            )
+            session.add(listing)
+            session.commit()
+            lid = listing.id
+
+        result = svc.update_live_listing_price(lid, start_price=200, reserve_price=400)
+
+        assert "error" not in result
+        assert result["reserve_price"] == 400
+        tradera.set_prices.assert_called_once_with(
+            item_id=999,
+            listing_type="auction",
+            start_price=200,
+            buy_it_now_price=None,
+            reserve_price=400,
+        )
+
+    def test_no_reserve_price_omitted_from_result(self, engine):
+        tradera = MagicMock()
+        tradera.set_prices.return_value = {"item_id": 999, "updated": True, "start_price": 200}
+        svc = ListingService(engine=engine, tradera=tradera)
+
+        with Session(engine) as session:
+            p = Product(title="Test", status="listed")
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Test",
+                start_price=300.0,
+                external_id="999",
+            )
+            session.add(listing)
+            session.commit()
+            lid = listing.id
+
+        result = svc.update_live_listing_price(lid, start_price=200)
+
+        assert "error" not in result
+        assert "reserve_price" not in result
+
     def test_no_tradera_client(self, engine):
         svc = ListingService(engine=engine, tradera=None)
         result = svc.update_live_listing_price(1, start_price=200)

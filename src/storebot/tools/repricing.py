@@ -15,7 +15,7 @@ from storebot.tools.helpers import log_action
 
 logger = logging.getLogger(__name__)
 
-PROPOSAL_STATUSES = {"pending", "approved", "rejected", "executed", "failed"}
+PROPOSAL_STATUSES = {"pending", "rejected", "executed", "failed"}
 PROPOSAL_TYPES = {"reprice_lower", "reprice_raise"}
 
 
@@ -91,7 +91,11 @@ class RepricingService:
                 if not listing:
                     continue
 
-                current_price = listing.buy_it_now_price or listing.start_price or 0
+                # Use the price field that _execute_proposal will actually change
+                if listing.listing_type == "buy_it_now":
+                    current_price = listing.buy_it_now_price or 0
+                else:
+                    current_price = listing.start_price or 0
                 if current_price <= 0:
                     continue
 

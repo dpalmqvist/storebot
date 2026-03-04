@@ -1119,14 +1119,14 @@ TOOLS = [
     # --- Repricing (marketing category) ---
     {
         "name": "list_price_proposals",
-        "description": "Lista prisförslag för annonser. Kan filtreras på status (pending, approved, rejected, executed, failed).",
+        "description": "Lista prisförslag för annonser. Kan filtreras på status (pending, rejected, executed, failed).",
         "category": "marketing",
         "input_schema": {
             "type": "object",
             "properties": {
                 "status": {
                     "type": "string",
-                    "description": "Filter on proposal status (pending, approved, rejected, executed, failed). Omit to show all.",
+                    "description": "Filter on proposal status (pending, rejected, executed, failed). Omit to show all.",
                 },
             },
             "additionalProperties": False,

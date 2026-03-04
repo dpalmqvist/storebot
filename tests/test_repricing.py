@@ -161,6 +161,45 @@ class TestGenerateProposals:
         result = service.generate_proposals()
         assert "error" in result
 
+    def test_auction_with_bin_uses_start_price_as_baseline(self, service, marketing, engine):
+        """For auction listings with BIN set, baseline must be start_price (not BIN)."""
+        with Session(engine) as session:
+            p = Product(title="Mixed", status="listed", acquisition_cost=100.0)
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Mixed auction",
+                start_price=300.0,
+                buy_it_now_price=500.0,
+                external_id="55555",
+            )
+            session.add(listing)
+            session.commit()
+            lid = listing.id
+
+        marketing.get_recommendations.return_value = {
+            "recommendations": [
+                {
+                    "listing_id": lid,
+                    "type": "reprice_lower",
+                    "priority": "medium",
+                    "suggestion": "Sänk priset.",
+                },
+            ],
+        }
+
+        result = service.generate_proposals()
+        assert result["new_proposals"] == 1
+        proposal = result["proposals"][0]
+        # Baseline is start_price (300), not buy_it_now_price (500)
+        assert proposal["current_price"] == 300.0
+        # 300 * 0.85 = 255 → ceil(255/10)*10 = 260
+        assert proposal["suggested_price"] == 260
+
 
 class TestListProposals:
     def test_lists_all_proposals(self, service, engine, active_listing):
@@ -364,6 +403,7 @@ class TestRejectProposal:
             p = session.get(PriceProposal, pid)
             assert p.status == "rejected"
             assert p.decided_at is not None
+            assert p.details["rejection_reason"] == "Vill inte sänka"
 
     def test_not_found(self, service):
         result = service.reject_proposal(9999)
@@ -429,7 +469,7 @@ class TestComputeSuggestedPrice:
 
 class TestConstants:
     def test_proposal_statuses(self):
-        assert PROPOSAL_STATUSES == {"pending", "approved", "rejected", "executed", "failed"}
+        assert PROPOSAL_STATUSES == {"pending", "rejected", "executed", "failed"}
 
     def test_proposal_types(self):
         assert PROPOSAL_TYPES == {"reprice_lower", "reprice_raise"}

@@ -1120,12 +1120,16 @@ class ListingService:
             )
             session.commit()
 
-            return {
+            result = {
                 "listing_id": listing_id,
                 "updated": True,
                 "start_price": listing.start_price,
                 "buy_it_now_price": listing.buy_it_now_price,
             }
+            # reserve_price has no local DB column but include if sent to Tradera
+            if reserve_price is not None:
+                result["reserve_price"] = reserve_price
+            return result
 
     def cancel_listing(self, listing_id: int) -> dict:
         """Cancel an active listing locally, attempting Tradera EndItem best-effort."""
