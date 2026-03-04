@@ -87,7 +87,8 @@ def _make_auth_app(inner_app, api_key: str):
                     "status": 401,
                     "headers": [
                         [b"content-type", b"application/json"],
-                        [b"www-authenticate", b"Bearer"],
+                        [b"content-length", b"24"],
+                        [b"www-authenticate", b'Bearer realm="storebot-mcp"'],
                     ],
                 }
             )

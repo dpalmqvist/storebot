@@ -144,9 +144,10 @@ class TestMakeAuthApp:
         await app(scope, AsyncMock(), mock_send)
         inner.assert_not_awaited()
         assert sent[0]["status"] == 401
-        # RFC 7235: 401 must include WWW-Authenticate header
+        # RFC 7235: 401 must include WWW-Authenticate with realm
         headers = dict(sent[0]["headers"])
-        assert b"www-authenticate" in headers
+        assert headers[b"www-authenticate"] == b'Bearer realm="storebot-mcp"'
+        assert b"content-length" in headers
 
     @pytest.mark.asyncio
     async def test_wrong_key_returns_401(self):
