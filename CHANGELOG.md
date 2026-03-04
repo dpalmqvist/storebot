@@ -1,6 +1,81 @@
 # CHANGELOG
 
 
+## v0.14.0 (2026-03-04)
+
+### Bug Fixes
+
+- Security hardening — CLI output, image paths, access warnings
+  ([#136](https://github.com/dpalmqvist/storebot/pull/136),
+  [`94798ef`](https://github.com/dpalmqvist/storebot/commit/94798ef43a168faee8aa4dd248d3a2afbde6a7c5))
+
+* fix: harden security in CLI output, image paths, and access warnings
+
+- Mask full file paths in Telegram replies when image not found (#135) - Log startup warning when
+  ALLOWED_CHAT_IDS is empty (dev mode) (#133) - Mask token on CLI decline path instead of printing
+  full value (#132) - Remove raw repr(response) from CLI error output, log to server (#127)
+
+Closes #135, closes #133, closes #132, closes #127
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+* fix: address PR review — remove contradictory token copy instructions
+
+- Simplify "not saved" path to only suggest re-running the command - Rename
+  TestAuthorizeTraderaResponseRepr → TestAuthorizeTraderaErrorOutput - Improve test assertion
+  comments for clarity
+
+* fix: show full token once with security warning on decline path
+
+Restore full token display for manual-save workflows (CI, remote provisioning) but add explicit
+  "store securely" warning. This balances security with usability for users who can't auto-save.
+
+---------
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+### Features
+
+- Add API key authentication to MCP HTTP transport
+  ([#137](https://github.com/dpalmqvist/storebot/pull/137),
+  [`50dd628`](https://github.com/dpalmqvist/storebot/commit/50dd6289ad7c9c66ff58ea88df201fec149af00e))
+
+* feat: add API key authentication to MCP HTTP transport
+
+Add Bearer token auth middleware for the MCP streamable-HTTP transport. When MCP_API_KEY is set, all
+  HTTP requests must include a matching Authorization header. Non-localhost binding now requires
+  MCP_API_KEY to prevent accidental unauthenticated exposure.
+
+- New MCP_API_KEY config setting (empty = disabled for localhost) - ASGI middleware with
+  constant-time comparison (hmac.compare_digest) - sys.exit(1) if binding to non-localhost without
+  API key - Localhost still works without a key for local development
+
+Closes #131
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+* fix: address PR review — dead code, IPv6 localhost, WWW-Authenticate header
+
+- Remove unreachable elif branch in _run_http (dead after sys.exit) - Treat ::1 and localhost as
+  localhost (not just 127.0.0.1) - Add WWW-Authenticate: Bearer header to 401 responses (RFC 7235) -
+  Document MCP_API_KEY in .env.example - Fix fragile __name__ test assertion
+
+* fix: add realm and content-length to 401 response (RFC compliance)
+
+- WWW-Authenticate header now includes realm="storebot-mcp" per RFC 7235 - Content-Length header
+  added for proxy compatibility
+
+* fix: address review — dynamic content-length, header iteration, test robustness
+
+- Compute content-length from body length instead of hardcoding 24 - Use next() iterator for ASGI
+  headers instead of dict() (avoids silent duplicate drops) - Patch _make_auth_app in test to verify
+  it was called with correct key
+
+---------
+
+Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.13.1 (2026-03-03)
 
 ### Bug Fixes
