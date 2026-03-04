@@ -132,7 +132,11 @@ class TestSendDisplayImages:
 
         update.message.reply_photo.assert_not_awaited()
         update.message.reply_text.assert_awaited_once()
-        assert "saknas" in update.message.reply_text.call_args[0][0]
+        reply_text = update.message.reply_text.call_args[0][0]
+        assert "saknas" in reply_text
+        # Should only show filename, not the full path
+        assert "photo.jpg" in reply_text
+        assert "/nonexistent/" not in reply_text
 
 
 class TestAlertAdmin:
@@ -1451,6 +1455,47 @@ class TestMain:
                 daily_listing_report_job,
                 weekly_comparison_job,
             }
+
+    def test_main_warns_empty_allowed_chat_ids(self, caplog):
+        """Startup logs warning when ALLOWED_CHAT_IDS is empty (dev mode)."""
+        mock_settings = MagicMock(spec=Settings)
+        mock_settings.telegram_bot_token = "test-token"
+        mock_settings.claude_api_key = "test-key"
+        mock_settings.tradera_app_id = ""
+        mock_settings.tradera_app_key = ""
+        mock_settings.postnord_api_key = ""
+        mock_settings.allowed_chat_ids = ""
+        mock_settings.log_level = "INFO"
+        mock_settings.log_json = False
+        mock_settings.log_file = ""
+        mock_settings.max_history_messages = 50
+        mock_settings.conversation_timeout_minutes = 60
+        mock_settings.order_poll_interval_minutes = 30
+        mock_settings.scout_digest_hour = 7
+        mock_settings.marketing_refresh_hour = 8
+        mock_settings.listing_report_hour = 7
+        mock_settings.expired_listings_check_interval_minutes = 60
+
+        mock_app = MagicMock()
+        mock_app.bot_data = {}
+        mock_app.job_queue = MagicMock()
+
+        with (
+            patch("storebot.bot.handlers.get_settings", return_value=mock_settings),
+            patch("storebot.bot.handlers.init_db", return_value=MagicMock()),
+            patch("storebot.bot.handlers.configure_logging"),
+            patch("storebot.bot.handlers.Agent", return_value=MagicMock()),
+            patch("storebot.bot.handlers.ConversationService", return_value=MagicMock()),
+            patch("storebot.bot.handlers.Application") as MockApplication,
+            caplog.at_level(logging.WARNING, logger="storebot.bot.handlers"),
+        ):
+            mock_builder = MagicMock()
+            mock_builder.token.return_value.build.return_value = mock_app
+            MockApplication.builder.return_value = mock_builder
+
+            main()
+
+            assert any("ALLOWED_CHAT_IDS is empty" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------

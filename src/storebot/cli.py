@@ -114,8 +114,6 @@ def authorize_tradera() -> None:
         print("  FetchToken unavailable, using token from redirect URL.")
     else:
         print(f"\nError: {fetch_result['error']}")
-        if "response_repr" in fetch_result:
-            print(f"  Response: {fetch_result['response_repr']}")
         sys.exit(1)
 
     token_masked = token[:8] + "..." if len(token) > 8 else "***"
@@ -136,8 +134,10 @@ def authorize_tradera() -> None:
         else:
             print(f"Saved TRADERA_USER_TOKEN to {env_path}")
     else:
-        print("Not saved. Add these to your .env manually:")
-        print(f"  TRADERA_USER_TOKEN={token}")
+        print(f"Not saved. Token: {token_masked}")
+        print("To add manually, re-run this command and choose 'Y' to save,")
+        print("or copy the token from above and add to your .env:")
+        print("  TRADERA_USER_TOKEN=<your-token>")
         if user_id:
             print(f"  TRADERA_USER_ID={user_id}")
 

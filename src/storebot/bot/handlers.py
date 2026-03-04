@@ -104,7 +104,7 @@ async def _send_display_images(update: Update, display_images: list[dict]) -> No
                 await update.message.reply_photo(photo=f, caption=img.get("caption", ""))
         except FileNotFoundError:
             logger.warning("Display image not found: %s", img["path"])
-            await update.message.reply_text(f"Bildfilen saknas: {img['path']}")
+            await update.message.reply_text(f"Bildfilen saknas: {Path(img['path']).name}")
 
 
 _TREND_LABELS = {
@@ -583,6 +583,11 @@ def main() -> None:
     )
 
     _validate_credentials(settings)
+
+    if not settings.allowed_chat_ids.strip():
+        logger.warning(
+            "ALLOWED_CHAT_IDS is empty — all Telegram users can access the bot (dev mode)"
+        )
 
     app = Application.builder().token(settings.telegram_bot_token).build()
 

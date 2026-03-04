@@ -667,9 +667,9 @@ class TraderaClient:
                 expires = str(expires)
 
             if token is None:
+                logger.error("FetchToken response missing AuthToken: %s", repr(response))
                 return {
-                    "error": "FetchToken response missing AuthToken",
-                    "response_repr": repr(response),
+                    "error": "FetchToken response missing AuthToken — check logs for details",
                 }
 
             return {
