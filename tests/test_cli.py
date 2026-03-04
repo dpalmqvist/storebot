@@ -174,10 +174,11 @@ class TestAuthorizeTraderaCLI:
         authorize_tradera()
 
         output = capsys.readouterr().out
-        # "Not saved" path shows masked token, not the full token
-        assert "fetched-" in output  # masked prefix shown
-        assert "TRADERA_USER_TOKEN=fetched-real-token" not in output
-        assert "TRADERA_USER_ID=999" in output
+        # First 8 chars of "fetched-real-token" shown as masked prefix
+        assert "fetched-" in output
+        assert "fetched-real-token" not in output  # full token never shown
+        assert "re-run this command" in output
+        assert "999" in output
 
     @patch("storebot.cli.Settings")
     @patch("builtins.input")
@@ -437,7 +438,7 @@ class TestUpdateEnvFileCreatesNew:
         assert "NEW_KEY=new_value\n" in content
 
 
-class TestAuthorizeTraderaResponseRepr:
+class TestAuthorizeTraderaErrorOutput:
     @patch("storebot.cli.TraderaClient")
     @patch("storebot.cli.Settings")
     @patch("builtins.input")
