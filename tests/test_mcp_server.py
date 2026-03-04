@@ -340,10 +340,9 @@ class TestMain:
                 "mcp.server.streamable_http_manager.StreamableHTTPSessionManager",
                 return_value=mock_session_manager,
             ),
+            patch("storebot.mcp_server._make_auth_app", wraps=_make_auth_app) as mock_auth,
         ):
             main()
             mock_uvicorn.assert_called_once()
-            # The app passed to uvicorn should be the auth wrapper, not the raw asgi_app
-            app_arg = mock_uvicorn.call_args[0][0]
-            # Auth wrapper is a different callable than session_manager.handle_request
-            assert app_arg is not mock_session_manager.handle_request
+            mock_auth.assert_called_once()
+            assert mock_auth.call_args[1].get("api_key", mock_auth.call_args[0][1]) == "my-key"

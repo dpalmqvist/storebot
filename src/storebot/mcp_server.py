@@ -75,24 +75,27 @@ def _make_auth_app(inner_app, api_key: str):
             await inner_app(scope, receive, send)
             return
 
-        headers = dict(scope.get("headers", []))
-        auth = headers.get(b"authorization", b"").decode()
+        auth = next(
+            (v for k, v in scope.get("headers", []) if k == b"authorization"),
+            b"",
+        ).decode()
         expected = f"Bearer {api_key}"
 
         if not hmac.compare_digest(auth, expected):
             logger.warning("MCP HTTP request rejected — invalid or missing API key")
+            body = b'{"error":"Unauthorized"}'
             await send(
                 {
                     "type": "http.response.start",
                     "status": 401,
                     "headers": [
                         [b"content-type", b"application/json"],
-                        [b"content-length", b"24"],
+                        [b"content-length", str(len(body)).encode()],
                         [b"www-authenticate", b'Bearer realm="storebot-mcp"'],
                     ],
                 }
             )
-            await send({"type": "http.response.body", "body": b'{"error":"Unauthorized"}'})
+            await send({"type": "http.response.body", "body": body})
             return
 
         await inner_app(scope, receive, send)
