@@ -114,7 +114,7 @@ See the [Installation Guide](docs/installation.md) for the full setup walkthroug
 The core system is fully operational: listing, pricing, orders, shipping, accounting, scouting, marketing, and analytics all work end-to-end.
 
 - 63 agent tools across 17 modules
-- 1155 tests passing
+- 1156 tests passing
 - 15 database tables
 - 7 Telegram commands
 - Full audit trail via `agent_actions` table

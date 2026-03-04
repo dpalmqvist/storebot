@@ -513,7 +513,7 @@ async def repricing_check_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     try:
-        result = agent.repricing.generate_proposals()
+        result = agent.repricing.generate_proposals(skip_refresh=True)
         proposals = result.get("proposals", [])
         if not proposals:
             return

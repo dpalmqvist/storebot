@@ -48,7 +48,7 @@ class RepricingService:
         recs_result = self.marketing.get_recommendations()
         recs = recs_result.get("recommendations", [])
 
-        reprice_recs = [r for r in recs if r["type"] in ("reprice_lower", "reprice_raise")]
+        reprice_recs = [r for r in recs if r["type"] in PROPOSAL_TYPES]
         if not reprice_recs:
             return {"new_proposals": 0, "proposals": []}
 
@@ -171,7 +171,7 @@ class RepricingService:
                         ),
                         "proposal_type": p.proposal_type,
                         "current_price": p.current_price,
-                        "suggested_price": p.suggested_price,
+                        "suggested_price": int(p.suggested_price),
                         "reason": p.reason,
                         "status": p.status,
                         "created_at": p.created_at.isoformat() if p.created_at else None,
@@ -198,9 +198,7 @@ class RepricingService:
                     "must be 'pending'"
                 }
 
-            proposal.status = "approved"
             proposal.decided_at = datetime.now(UTC)
-
             result = self._execute_proposal(proposal, session)
 
             log_action(
@@ -327,14 +325,14 @@ class RepricingService:
         """
         if proposal_type == "reprice_lower":
             raw = current_price * 0.85
-            suggested = int(math.ceil(raw / 10) * 10)
+            suggested = int(round(raw / 10) * 10)
             if product and product.acquisition_cost:
                 # acquisition_cost is the gross (VAT-inclusive) purchase price
-                floor = int(math.ceil(product.acquisition_cost * 1.1 / 10) * 10)
+                floor = int(math.ceil(round(product.acquisition_cost * 1.1, 2) / 10) * 10)
                 suggested = max(suggested, floor)
         else:
             # reprice_raise
             raw = current_price * 1.20
-            suggested = int(math.ceil(raw / 10) * 10)
+            suggested = int(round(raw / 10) * 10)
 
         return max(suggested, 10)  # minimum 10 kr

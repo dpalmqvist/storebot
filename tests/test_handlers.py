@@ -1573,6 +1573,7 @@ class TestRepricingCheckJob:
         context.bot_data = {"agent": agent, "owner_chat_id": 12345}
         context.bot.send_message = AsyncMock()
         await repricing_check_job(context)
+        repricing.generate_proposals.assert_called_once_with(skip_refresh=True)
         context.bot.send_message.assert_awaited_once()
 
     @pytest.mark.asyncio

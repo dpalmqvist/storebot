@@ -1184,7 +1184,7 @@ class ListingService:
             return result
 
 
-def _maybe_revert_product_status(session, listing) -> Product | None:
+def _maybe_revert_product_status(session: Session, listing: PlatformListing) -> Product | None:
     """Revert product to 'draft' if no other active listings remain.
 
     Returns the product if found, else None.

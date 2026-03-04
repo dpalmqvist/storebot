@@ -107,7 +107,7 @@ SQLAlchemy 2.0 declarative models in `src/storebot/db.py`. Schema managed via Al
 - **Proactive repricing** — `RepricingService` generates price proposals from marketing recommendations, stores in `price_proposals` table for human approval, executes via Tradera SOAP. Daily scheduled job sends digest to Telegram.
 - **Tradera live listing management** — `TraderaClient.end_item()` (EndItem SOAP) and `set_prices()` (SetPricesOnNonShopItems/SetPriceOnShopItems). `ListingService.end_tradera_listing()` and `update_live_listing_price()` for DB+SOAP sync. `cancel_listing()` now attempts best-effort EndItem.
 - **MCP server** — `storebot-mcp` CLI exposing all 62 tools via MCP protocol. Low-level `Server` class with shared dispatch from `dispatch.py`. Supports stdio (default) and streamable-http transports. Client-compatible with Claude Desktop, Claude Code, Cursor, etc.
-- **Tests** — 1155 tests across 31 modules covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, analytics, postnord, CLI, retry, logging, handlers, formatting, log_viewer, compaction, model_routing, parallel, reflection, schemas, thinking, tool_filtering, usage, agent, dispatch, mcp_server, and repricing. 100% line coverage, 99% branch coverage.
+- **Tests** — 1156 tests across 31 modules covering db, tradera, blocket, pricing, listing, image, order, accounting, conversation, scout, marketing, analytics, postnord, CLI, retry, logging, handlers, formatting, log_viewer, compaction, model_routing, parallel, reflection, schemas, thinking, tool_filtering, usage, agent, dispatch, mcp_server, and repricing. 100% line coverage, 99% branch coverage.
 
 ### Roadmap
 

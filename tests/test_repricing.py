@@ -436,13 +436,22 @@ class TestComputeSuggestedPrice:
     def test_lower_rounds_to_nearest_10(self):
         product = MagicMock(acquisition_cost=None)
         result = RepricingService._compute_suggested_price(333, "reprice_lower", product)
-        # 333 * 0.85 = 283.05 → ceil(283.05 / 10) * 10 = 290
-        assert result == 290
+        # 333 * 0.85 = 283.05 → round(283.05 / 10) * 10 = 280
+        assert result == 280
 
     def test_lower_floor_at_acquisition_cost(self):
         product = MagicMock(acquisition_cost=400.0)
-        # 500 * 0.85 = 425, ceil(425/10)*10 = 430
-        # floor = ceil(400 * 1.1 / 10) * 10 = 450 (float rounding: 400*1.1=440.00...06)
+        # 500 * 0.85 = 425, round(425/10)*10 = 420 (banker's rounding: 42.5 → 42)
+        # floor = ceil(round(400 * 1.1, 2) / 10) * 10 = ceil(440.0 / 10) * 10 = 440
+        # max(420, 440) = 440
+        result = RepricingService._compute_suggested_price(500, "reprice_lower", product)
+        assert result == 440
+
+    def test_lower_floor_rounds_up_to_next_10(self):
+        product = MagicMock(acquisition_cost=405.0)
+        # 500 * 0.85 = 425, round(425/10)*10 = 420
+        # floor = ceil(round(405 * 1.1, 2) / 10) * 10 = ceil(445.5 / 10) * 10 = 450
+        # max(420, 450) = 450
         result = RepricingService._compute_suggested_price(500, "reprice_lower", product)
         assert result == 450
 
@@ -454,7 +463,7 @@ class TestComputeSuggestedPrice:
     def test_raise_rounds_to_nearest_10(self):
         product = MagicMock(acquisition_cost=None)
         result = RepricingService._compute_suggested_price(333, "reprice_raise", product)
-        # 333 * 1.20 = 399.6 → ceil(399.6 / 10) * 10 = 400
+        # 333 * 1.20 = 399.6 → round(399.6 / 10) * 10 = 400
         assert result == 400
 
     def test_minimum_10_kr(self):

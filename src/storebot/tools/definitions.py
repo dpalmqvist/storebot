@@ -1192,7 +1192,7 @@ TOOLS = [
                 "buy_it_now_price": {"type": "integer", "description": "Nytt köp-nu-pris"},
                 "reserve_price": {
                     "type": "integer",
-                    "description": "Nytt reservationspris (auktioner)",
+                    "description": "Nytt reservationspris (auktioner, skickas till Tradera men sparas ej lokalt)",
                 },
             },
             "required": ["listing_id"],
