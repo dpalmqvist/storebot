@@ -85,7 +85,10 @@ def _make_auth_app(inner_app, api_key: str):
                 {
                     "type": "http.response.start",
                     "status": 401,
-                    "headers": [[b"content-type", b"application/json"]],
+                    "headers": [
+                        [b"content-type", b"application/json"],
+                        [b"www-authenticate", b"Bearer"],
+                    ],
                 }
             )
             await send({"type": "http.response.body", "body": b'{"error":"Unauthorized"}'})
@@ -146,7 +149,7 @@ def _run_http(args, settings: Settings, server: Server) -> None:
     import uvicorn
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
-    is_localhost = args.host == "127.0.0.1"
+    is_localhost = args.host in ("127.0.0.1", "::1", "localhost")
     api_key = settings.mcp_api_key
 
     if not is_localhost and not api_key:
@@ -157,14 +160,8 @@ def _run_http(args, settings: Settings, server: Server) -> None:
         )
         sys.exit(1)
 
-    if not is_localhost and api_key:
+    if not is_localhost:
         logger.info("MCP HTTP server bound to %s with API key authentication", args.host)
-    elif not is_localhost:
-        logger.warning(
-            "MCP HTTP server bound to %s — no authentication is enforced. "
-            "All storebot tools are accessible to any client that can reach this port.",
-            args.host,
-        )
 
     session_manager = StreamableHTTPSessionManager(app=server, stateless=True)
 

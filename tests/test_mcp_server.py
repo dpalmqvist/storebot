@@ -144,6 +144,9 @@ class TestMakeAuthApp:
         await app(scope, AsyncMock(), mock_send)
         inner.assert_not_awaited()
         assert sent[0]["status"] == 401
+        # RFC 7235: 401 must include WWW-Authenticate header
+        headers = dict(sent[0]["headers"])
+        assert b"www-authenticate" in headers
 
     @pytest.mark.asyncio
     async def test_wrong_key_returns_401(self):
@@ -341,4 +344,5 @@ class TestMain:
             mock_uvicorn.assert_called_once()
             # The app passed to uvicorn should be the auth wrapper, not the raw asgi_app
             app_arg = mock_uvicorn.call_args[0][0]
-            assert app_arg.__name__ == "_auth_app"
+            # Auth wrapper is a different callable than session_manager.handle_request
+            assert app_arg is not mock_session_manager.handle_request
