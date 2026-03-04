@@ -114,8 +114,6 @@ def authorize_tradera() -> None:
         print("  FetchToken unavailable, using token from redirect URL.")
     else:
         print(f"\nError: {fetch_result['error']}")
-        if "response_repr" in fetch_result:
-            print(f"  Response: {fetch_result['response_repr']}")
         sys.exit(1)
 
     token_masked = token[:8] + "..." if len(token) > 8 else "***"
@@ -140,6 +138,8 @@ def authorize_tradera() -> None:
         print(f"  TRADERA_USER_TOKEN={token}")
         if user_id:
             print(f"  TRADERA_USER_ID={user_id}")
+        print()
+        print("Store these values securely — they will not be shown again.")
 
 
 def _extract_json_array(text: str) -> str:

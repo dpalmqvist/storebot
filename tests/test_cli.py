@@ -174,9 +174,10 @@ class TestAuthorizeTraderaCLI:
         authorize_tradera()
 
         output = capsys.readouterr().out
-        # "Not saved" path prints full token for manual copy
+        # Full token shown once for manual copy, with security warning
         assert "TRADERA_USER_TOKEN=fetched-real-token" in output
         assert "TRADERA_USER_ID=999" in output
+        assert "securely" in output
 
     @patch("storebot.cli.Settings")
     @patch("builtins.input")
@@ -436,19 +437,16 @@ class TestUpdateEnvFileCreatesNew:
         assert "NEW_KEY=new_value\n" in content
 
 
-class TestAuthorizeTraderaResponseRepr:
+class TestAuthorizeTraderaErrorOutput:
     @patch("storebot.cli.TraderaClient")
     @patch("storebot.cli.Settings")
     @patch("builtins.input")
-    def test_response_repr_displayed(
-        self, mock_input, mock_settings_cls, mock_tradera_cls, capsys
-    ):
+    def test_error_without_repr(self, mock_input, mock_settings_cls, mock_tradera_cls, capsys):
         mock_settings_cls.return_value = _mock_settings()
 
         mock_client = MagicMock()
         mock_client.fetch_token.return_value = {
-            "error": "FetchToken failed",
-            "response_repr": "SomeRepr()",
+            "error": "FetchToken response missing AuthToken — check logs for details",
         }
         mock_tradera_cls.return_value = mock_client
 
@@ -459,7 +457,9 @@ class TestAuthorizeTraderaResponseRepr:
             authorize_tradera()
 
         output = capsys.readouterr().out
-        assert "SomeRepr()" in output
+        assert "check logs for details" in output
+        # No raw repr should appear in user-facing output
+        assert "SomeRepr" not in output
 
 
 class TestAuthorizeTraderaSaveWithoutUserId:
