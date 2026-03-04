@@ -26,6 +26,11 @@ class TestBuildTools:
         assert "search_tradera" in names
         assert "create_draft_listing" in names
         assert "business_summary" in names
+        assert "list_price_proposals" in names
+        assert "approve_price_proposal" in names
+        assert "reject_price_proposal" in names
+        assert "end_tradera_listing" in names
+        assert "update_tradera_listing_price" in names
 
     def test_tool_has_description(self):
         tools = _build_tools()

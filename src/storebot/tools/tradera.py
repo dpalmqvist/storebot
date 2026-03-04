@@ -790,6 +790,84 @@ class TraderaClient:
             request={"OrderId": int(order_id)}, **headers
         )
 
+    @retry_on_transient()
+    def _end_item_api_call(self, item_id, headers):
+        return self.restricted_client.service.EndItem(itemId=int(item_id), **headers)
+
+    def end_item(self, item_id: int) -> dict:
+        """End a live listing on Tradera."""
+        try:
+            self._end_item_api_call(
+                item_id,
+                self._auth_headers(self.restricted_client, include_authorization=True),
+            )
+            return {"item_id": item_id, "ended": True}
+        except Exception as e:
+            logger.exception("Tradera end_item failed")
+            return {"error": str(e)}
+
+    @retry_on_transient()
+    def _set_prices_non_shop_api_call(self, params, headers):
+        return self.restricted_client.service.SetPricesOnNonShopItems(
+            nonShopItem=params, **headers
+        )
+
+    @retry_on_transient()
+    def _set_prices_shop_api_call(self, params, headers):
+        return self.restricted_client.service.SetPriceOnShopItems(shopItems=params, **headers)
+
+    def set_prices(
+        self,
+        item_id: int,
+        listing_type: str,
+        start_price: int | None = None,
+        buy_it_now_price: int | None = None,
+        reserve_price: int | None = None,
+    ) -> dict:
+        """Change prices on a live Tradera listing.
+
+        Routes to SetPricesOnNonShopItems for auctions,
+        SetPriceOnShopItems for buy-it-now listings.
+        All prices are integers (SEK).
+        """
+        try:
+            headers = self._auth_headers(self.restricted_client, include_authorization=True)
+
+            if listing_type == "buy_it_now":
+                if buy_it_now_price is None:
+                    return {"error": "buy_it_now_price is required for buy-it-now listings"}
+                params = {
+                    "SetPriceShopItem": [{"Id": int(item_id), "Price": int(buy_it_now_price)}]
+                }
+                self._set_prices_shop_api_call(params, headers)
+                return {
+                    "item_id": item_id,
+                    "updated": True,
+                    "buy_it_now_price": buy_it_now_price,
+                }
+            else:
+                # Auction: SetPricesOnNonShopItems
+                params = {"Id": int(item_id)}
+                if start_price is not None:
+                    params["OpeningPrice"] = int(start_price)
+                if reserve_price is not None:
+                    params["ReservedPrice"] = int(reserve_price)
+                if buy_it_now_price is not None:
+                    params["BinPrice"] = int(buy_it_now_price)
+                self._set_prices_non_shop_api_call(params, headers)
+                result = {"item_id": item_id, "updated": True}
+                if start_price is not None:
+                    result["start_price"] = start_price
+                if reserve_price is not None:
+                    result["reserve_price"] = reserve_price
+                if buy_it_now_price is not None:
+                    result["buy_it_now_price"] = buy_it_now_price
+                return result
+
+        except Exception as e:
+            logger.exception("Tradera set_prices failed")
+            return {"error": str(e)}
+
     def mark_order_shipped(self, order_id: int) -> dict:
         try:
             self._mark_order_shipped_api_call(

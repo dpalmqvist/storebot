@@ -1116,6 +1116,89 @@ TOOLS = [
         "strict": True,
         "input_schema": _EMPTY_SCHEMA,
     },
+    # --- Repricing (marketing category) ---
+    {
+        "name": "list_price_proposals",
+        "description": "Lista prisförslag för annonser. Kan filtreras på status (pending, approved, rejected, executed, failed).",
+        "category": "marketing",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "description": "Filter on proposal status (pending, approved, rejected, executed, failed). Omit to show all.",
+                },
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "approve_price_proposal",
+        "description": "Godkänn ett prisförslag och genomför prisändringen på Tradera direkt.",
+        "category": "marketing",
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "proposal_id": {
+                    "type": "integer",
+                    "description": "ID för prisförslaget att godkänna",
+                },
+            },
+            "required": ["proposal_id"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "reject_price_proposal",
+        "description": "Avvisa ett prisförslag med valfri motivering.",
+        "category": "marketing",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "proposal_id": {
+                    "type": "integer",
+                    "description": "ID för prisförslaget att avvisa",
+                },
+                "reason": {"type": "string", "description": "Anledning till avvisning (valfritt)"},
+            },
+            "required": ["proposal_id"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "end_tradera_listing",
+        "description": "Avsluta en aktiv annons på Tradera (EndItem SOAP) och uppdatera lokal status till cancelled.",
+        "category": "listing",
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "listing_id": {"type": "integer", "description": "ID för annonsen att avsluta"},
+            },
+            "required": ["listing_id"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "update_tradera_listing_price",
+        "description": "Ändra pris på en aktiv Tradera-annons (SetPrices SOAP). Stöder startpris, köp-nu-pris och reservationspris.",
+        "category": "listing",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "listing_id": {"type": "integer", "description": "ID för annonsen"},
+                "start_price": {"type": "integer", "description": "Nytt startpris (auktioner)"},
+                "buy_it_now_price": {"type": "integer", "description": "Nytt köp-nu-pris"},
+                "reserve_price": {
+                    "type": "integer",
+                    "description": "Nytt reservationspris (auktioner)",
+                },
+            },
+            "required": ["listing_id"],
+            "additionalProperties": False,
+        },
+    },
     # --- Analytics ---
     {
         "name": "business_summary",

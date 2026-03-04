@@ -1570,3 +1570,56 @@ class TestGetShippingTypesEdgeCases:
         client._public_client.service.GetShippingTypes.return_value = response
         result = client.get_shipping_types()
         assert result == {"shipping_types": []}
+
+
+class TestEndItem:
+    def test_success(self, client):
+        client._restricted_client.service.EndItem.return_value = None
+        result = client.end_item(12345)
+        assert result == {"item_id": 12345, "ended": True}
+        client._restricted_client.service.EndItem.assert_called_once()
+
+    def test_exception_returns_error(self, client):
+        client._restricted_client.service.EndItem.side_effect = Exception("SOAP fault")
+        result = client.end_item(12345)
+        assert "error" in result
+        assert "SOAP fault" in result["error"]
+
+
+class TestSetPrices:
+    def test_auction_set_start_price(self, client):
+        client._restricted_client.service.SetPricesOnNonShopItems.return_value = None
+        result = client.set_prices(item_id=100, listing_type="auction", start_price=300)
+        assert result["updated"] is True
+        assert result["start_price"] == 300
+        client._restricted_client.service.SetPricesOnNonShopItems.assert_called_once()
+
+    def test_auction_all_prices(self, client):
+        client._restricted_client.service.SetPricesOnNonShopItems.return_value = None
+        result = client.set_prices(
+            item_id=100,
+            listing_type="auction",
+            start_price=200,
+            reserve_price=500,
+            buy_it_now_price=800,
+        )
+        assert result["updated"] is True
+        assert result["start_price"] == 200
+        assert result["reserve_price"] == 500
+        assert result["buy_it_now_price"] == 800
+
+    def test_buy_it_now(self, client):
+        client._restricted_client.service.SetPriceOnShopItems.return_value = None
+        result = client.set_prices(item_id=200, listing_type="buy_it_now", buy_it_now_price=999)
+        assert result["updated"] is True
+        assert result["buy_it_now_price"] == 999
+        client._restricted_client.service.SetPriceOnShopItems.assert_called_once()
+
+    def test_buy_it_now_missing_price(self, client):
+        result = client.set_prices(item_id=200, listing_type="buy_it_now")
+        assert "error" in result
+
+    def test_exception_returns_error(self, client):
+        client._restricted_client.service.SetPricesOnNonShopItems.side_effect = Exception("fail")
+        result = client.set_prices(item_id=100, listing_type="auction", start_price=300)
+        assert "error" in result

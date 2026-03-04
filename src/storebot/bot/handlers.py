@@ -506,6 +506,39 @@ async def daily_listing_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         await _alert_admin(context, "Fel i annonsrapport-jobbet. Kontrollera loggarna.")
 
 
+async def repricing_check_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.info("Starting scheduled job: repricing_check", extra={"job_name": "repricing_check"})
+    agent: Agent = context.bot_data.get("agent")
+    if not agent or not agent.repricing:
+        return
+
+    try:
+        result = agent.repricing.generate_proposals()
+        proposals = result.get("proposals", [])
+        if not proposals:
+            return
+
+        chat_id = context.bot_data.get("owner_chat_id")
+        if not chat_id:
+            logger.warning("No owner_chat_id set — cannot send repricing proposals")
+            return
+
+        lines = [f"Prisförslag ({len(proposals)} st)\n"]
+        for p in proposals:
+            direction = "Sänk" if p["proposal_type"] == "reprice_lower" else "Höj"
+            lines.append(
+                f"{direction}: {p.get('listing_title', 'Annons #' + str(p['listing_id']))}"
+            )
+            lines.append(f"  {p['current_price']:.0f} kr \u2192 {p['suggested_price']:.0f} kr")
+            lines.append(f"  {p['reason']}\n")
+        lines.append("Godkänn eller avvisa med approve_price_proposal / reject_price_proposal.")
+        text = "\n".join(lines).strip()
+        await _send(context, chat_id, html_escape(text))
+    except Exception:
+        logger.exception("Error in repricing check job", extra={"job_name": "repricing_check"})
+        await _alert_admin(context, "Fel i prisförslags-jobbet. Kontrollera loggarna.")
+
+
 async def check_expired_listings_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.info(
         "Starting scheduled job: check_expired_listings",
@@ -657,6 +690,15 @@ def main() -> None:
         logger.info(
             "Listing dashboard report scheduled daily at %02d:00",
             settings.listing_report_hour,
+        )
+
+        app.job_queue.run_daily(
+            repricing_check_job,
+            time=dt_time(hour=settings.repricing_check_hour),
+        )
+        logger.info(
+            "Repricing check scheduled daily at %02d:00",
+            settings.repricing_check_hour,
         )
 
         app.job_queue.run_daily(

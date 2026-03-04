@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     # Marketing
     marketing_refresh_hour: int = 7  # Hour (0-23) for daily stats refresh
     listing_report_hour: int = 7  # Hour (0-23) for daily listing dashboard report
+    repricing_check_hour: int = 9  # Hour (0-23) for daily repricing proposal check
 
     # Database
     database_path: str = "data/storebot.db"

@@ -83,6 +83,18 @@ class TestDispatchMapping:
         assert "get_categories" in DISPATCH
         assert DISPATCH["get_categories"] == ("tradera", "get_categories")
 
+    def test_repricing_tools_in_dispatch(self):
+        assert "list_price_proposals" in DISPATCH
+        assert DISPATCH["list_price_proposals"] == ("repricing", "list_proposals")
+        assert "approve_price_proposal" in DISPATCH
+        assert "reject_price_proposal" in DISPATCH
+
+    def test_tradera_write_tools_in_dispatch(self):
+        assert "end_tradera_listing" in DISPATCH
+        assert DISPATCH["end_tradera_listing"] == ("listing", "end_tradera_listing")
+        assert "update_tradera_listing_price" in DISPATCH
+        assert DISPATCH["update_tradera_listing_price"] == ("listing", "update_live_listing_price")
+
 
 class TestCreateServices:
     def test_creates_all_services_with_engine(self, engine):
@@ -96,6 +108,7 @@ class TestCreateServices:
         assert "accounting" in services
         assert "scout" in services
         assert "marketing" in services
+        assert "repricing" in services
         assert "analytics" in services
 
     def test_db_services_none_without_engine(self):

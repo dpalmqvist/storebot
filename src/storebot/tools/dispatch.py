@@ -85,6 +85,11 @@ DISPATCH: dict[str, tuple[str, str]] = {
     "get_performance_report": ("marketing", "get_performance_report"),
     "get_recommendations": ("marketing", "get_recommendations"),
     "listing_dashboard": ("marketing", "get_listing_dashboard"),
+    "list_price_proposals": ("repricing", "list_proposals"),
+    "approve_price_proposal": ("repricing", "approve_proposal"),
+    "reject_price_proposal": ("repricing", "reject_proposal"),
+    "end_tradera_listing": ("listing", "end_tradera_listing"),
+    "update_tradera_listing_price": ("listing", "update_live_listing_price"),
     "business_summary": ("analytics", "business_summary"),
     "profitability_report": ("analytics", "profitability_report"),
     "inventory_report": ("analytics", "inventory_report"),
@@ -100,6 +105,7 @@ DB_SERVICES: dict[str, str] = {
     "accounting": "AccountingService",
     "scout": "ScoutService",
     "marketing": "MarketingService",
+    "repricing": "RepricingService",
     "analytics": "AnalyticsService",
 }
 
@@ -118,6 +124,7 @@ def create_services(settings: Settings, engine: sa.Engine | None) -> dict[str, o
     from storebot.tools.order import OrderService
     from storebot.tools.postnord import Address, PostNordClient
     from storebot.tools.pricing import PricingService
+    from storebot.tools.repricing import RepricingService
     from storebot.tools.scout import ScoutService
     from storebot.tools.tradera import TraderaClient
 
@@ -150,6 +157,8 @@ def create_services(settings: Settings, engine: sa.Engine | None) -> dict[str, o
             sandbox=settings.postnord_sandbox,
         )
 
+    marketing = MarketingService(engine=engine, tradera=tradera) if engine else None
+
     return {
         "tradera": tradera,
         "blocket": blocket,
@@ -174,7 +183,12 @@ def create_services(settings: Settings, engine: sa.Engine | None) -> dict[str, o
         "scout": (
             ScoutService(engine=engine, tradera=tradera, blocket=blocket) if engine else None
         ),
-        "marketing": (MarketingService(engine=engine, tradera=tradera) if engine else None),
+        "marketing": marketing,
+        "repricing": (
+            RepricingService(engine=engine, marketing=marketing, tradera=tradera)
+            if engine
+            else None
+        ),
         "analytics": AnalyticsService(engine=engine) if engine else None,
         # Not in DISPATCH (PostNord is accessed via OrderService internally),
         # but exposed here so Agent.__init__'s setattr loop sets agent.postnord.
