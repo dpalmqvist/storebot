@@ -436,6 +436,22 @@ class TestOwnerChatId:
         assert "owner_chat_id" not in bot_data
         assert bot_data["allowed_chat_ids"] == set()
 
+    @pytest.mark.asyncio
+    async def test_check_access_missing_allowed_chat_ids_allows_all(self):
+        """If allowed_chat_ids is absent from bot_data, treat as dev mode (allow all)."""
+        update = MagicMock()
+        update.effective_chat.id = 42
+        update.message.reply_text = AsyncMock()
+
+        settings = Settings(telegram_bot_token="x", claude_api_key="x")
+        context = MagicMock()
+        # Intentionally omit "allowed_chat_ids" to simulate uninitialized bot_data
+        context.bot_data = {"settings": settings}
+
+        result = await _check_access(update, context)
+        assert result is True
+        update.message.reply_text.assert_not_awaited()
+
 
 class TestNewConversation:
     @pytest.mark.asyncio

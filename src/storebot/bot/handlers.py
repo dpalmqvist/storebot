@@ -230,7 +230,7 @@ async def _alert_admin(context: ContextTypes.DEFAULT_TYPE, message: str) -> None
 async def _check_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Check authorization and rate limiting. Returns True if request should proceed."""
     chat_id = update.effective_chat.id
-    allowed = context.bot_data["allowed_chat_ids"]
+    allowed = context.bot_data.get("allowed_chat_ids", set())
     if allowed and chat_id not in allowed:
         logger.warning("Unauthorized access attempt", extra={"chat_id": str(chat_id)})
         await update.message.reply_text("Åtkomst nekad.")
