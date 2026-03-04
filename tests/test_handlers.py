@@ -1606,6 +1606,30 @@ class TestRepricingCheckJob:
         context.bot.send_message.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_missing_owner_chat_id(self):
+        repricing = MagicMock()
+        repricing.generate_proposals.return_value = {
+            "new_proposals": 1,
+            "proposals": [
+                {
+                    "proposal_type": "reprice_lower",
+                    "listing_id": 1,
+                    "listing_title": "Test",
+                    "current_price": 500,
+                    "suggested_price": 430,
+                    "reason": "test",
+                },
+            ],
+        }
+        agent = MagicMock()
+        agent.repricing = repricing
+        context = MagicMock()
+        context.bot_data = {"agent": agent}
+        context.bot.send_message = AsyncMock()
+        await repricing_check_job(context)
+        context.bot.send_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_error_alerts_admin(self):
         repricing = MagicMock()
         repricing.generate_proposals.side_effect = RuntimeError("fail")

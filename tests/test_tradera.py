@@ -1619,6 +1619,11 @@ class TestSetPrices:
         result = client.set_prices(item_id=200, listing_type="buy_it_now")
         assert "error" in result
 
+    def test_all_none_prices_returns_error(self, client):
+        result = client.set_prices(item_id=100, listing_type="auction")
+        assert "error" in result
+        assert "At least one price" in result["error"]
+
     def test_exception_returns_error(self, client):
         client._restricted_client.service.SetPricesOnNonShopItems.side_effect = Exception("fail")
         result = client.set_prices(item_id=100, listing_type="auction", start_price=300)

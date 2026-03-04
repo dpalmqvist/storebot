@@ -40,7 +40,11 @@ class RepricingService:
             return {"error": "MarketingService not available"}
 
         if not skip_refresh:
-            self.marketing.refresh_listing_stats()
+            try:
+                self.marketing.refresh_listing_stats()
+            except Exception:
+                logger.exception("refresh_listing_stats failed during proposal generation")
+                return {"error": "Failed to refresh listing stats"}
         recs_result = self.marketing.get_recommendations()
         recs = recs_result.get("recommendations", [])
 
@@ -139,6 +143,9 @@ class RepricingService:
 
     def list_proposals(self, status: str | None = None) -> dict:
         """List price proposals, optionally filtered by status."""
+        if status and status not in PROPOSAL_STATUSES:
+            return {"error": f"Invalid status '{status}'. Valid: {sorted(PROPOSAL_STATUSES)}"}
+
         with Session(self.engine) as session:
             q = session.query(PriceProposal).options(
                 selectinload(PriceProposal.listing).selectinload(PlatformListing.product)
@@ -175,7 +182,9 @@ class RepricingService:
     def approve_proposal(self, proposal_id: int) -> dict:
         """Approve a pending proposal and immediately execute the price change."""
         with Session(self.engine) as session:
-            proposal = session.get(PriceProposal, proposal_id)
+            proposal = session.get(
+                PriceProposal, proposal_id, options=[selectinload(PriceProposal.listing)]
+            )
             if proposal is None:
                 return {"error": f"Proposal {proposal_id} not found"}
 
@@ -240,20 +249,24 @@ class RepricingService:
         """Execute an approved price change via Tradera."""
         if not self.tradera:
             proposal.status = "failed"
+            proposal.executed_at = datetime.now(UTC)
             proposal.execution_error = "Tradera client not configured"
             return {"error": proposal.execution_error}
 
         listing = proposal.listing
         if not listing or listing.status != "active":
             proposal.status = "failed"
+            proposal.executed_at = datetime.now(UTC)
             proposal.execution_error = "Listing is no longer active"
             return {"error": proposal.execution_error}
 
         if not listing.external_id:
             proposal.status = "failed"
+            proposal.executed_at = datetime.now(UTC)
             proposal.execution_error = "Listing has no external_id"
             return {"error": proposal.execution_error}
 
+        # listing_type defaults to "auction" for older records without explicit type
         listing_type = listing.listing_type or "auction"
         suggested = int(proposal.suggested_price)
 
@@ -312,6 +325,7 @@ class RepricingService:
             raw = current_price * 0.85
             suggested = int(math.ceil(raw / 10) * 10)
             if product and product.acquisition_cost:
+                # acquisition_cost is the gross (VAT-inclusive) purchase price
                 floor = int(math.ceil(product.acquisition_cost * 1.1 / 10) * 10)
                 suggested = max(suggested, floor)
         else:

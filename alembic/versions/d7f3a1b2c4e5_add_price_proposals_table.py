@@ -27,7 +27,7 @@ def upgrade() -> None:
     sa.Column('current_price', sa.Float(), nullable=False),
     sa.Column('suggested_price', sa.Float(), nullable=False),
     sa.Column('reason', sa.Text(), nullable=False),
-    sa.Column('status', sa.String(), nullable=True),
+    sa.Column('status', sa.String(), nullable=False, server_default='pending'),
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.Column('decided_at', sa.DateTime(), nullable=True),
     sa.Column('executed_at', sa.DateTime(), nullable=True),

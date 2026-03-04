@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from storebot.db import PlatformListing, PriceProposal, Product
-from storebot.tools.repricing import RepricingService
+from storebot.tools.repricing import PROPOSAL_STATUSES, PROPOSAL_TYPES, RepricingService
 
 
 @pytest.fixture
@@ -151,6 +151,16 @@ class TestGenerateProposals:
         result = service.generate_proposals()
         assert result["new_proposals"] == 0
 
+    def test_skip_refresh(self, service, marketing, active_listing):
+        marketing.get_recommendations.return_value = {"recommendations": []}
+        service.generate_proposals(skip_refresh=True)
+        marketing.refresh_listing_stats.assert_not_called()
+
+    def test_refresh_failure_returns_error(self, service, marketing):
+        marketing.refresh_listing_stats.side_effect = RuntimeError("Tradera down")
+        result = service.generate_proposals()
+        assert "error" in result
+
 
 class TestListProposals:
     def test_lists_all_proposals(self, service, engine, active_listing):
@@ -198,6 +208,10 @@ class TestListProposals:
         result = service.list_proposals(status="pending")
         assert result["count"] == 1
         assert result["proposals"][0]["status"] == "pending"
+
+    def test_invalid_status_returns_error(self, service):
+        result = service.list_proposals(status="INVALID")
+        assert "error" in result
 
 
 class TestApproveProposal:
@@ -271,6 +285,36 @@ class TestApproveProposal:
 
         result = service.approve_proposal(pid)
         assert "error" in result
+
+    def test_listing_deactivated_after_proposal_created(self, service, engine, active_listing):
+        """Listing became inactive between proposal creation and approval."""
+        with Session(engine) as session:
+            proposal = PriceProposal(
+                listing_id=active_listing,
+                proposal_type="reprice_lower",
+                current_price=500.0,
+                suggested_price=430.0,
+                reason="test",
+                status="pending",
+            )
+            session.add(proposal)
+            session.commit()
+            pid = proposal.id
+
+        # Deactivate the listing
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, active_listing)
+            listing.status = "ended"
+            session.commit()
+
+        result = service.approve_proposal(pid)
+        assert "error" in result
+        assert "no longer active" in result["error"]
+
+        with Session(engine) as session:
+            p = session.get(PriceProposal, pid)
+            assert p.status == "failed"
+            assert p.executed_at is not None
 
     def test_tradera_error_marks_failed(self, service, engine, active_listing, tradera):
         tradera.set_prices.return_value = {"error": "Auction has bids"}
@@ -381,3 +425,11 @@ class TestComputeSuggestedPrice:
     def test_no_product_for_lower(self):
         result = RepricingService._compute_suggested_price(1000, "reprice_lower", None)
         assert result == 850
+
+
+class TestConstants:
+    def test_proposal_statuses(self):
+        assert PROPOSAL_STATUSES == {"pending", "approved", "rejected", "executed", "failed"}
+
+    def test_proposal_types(self):
+        assert PROPOSAL_TYPES == {"reprice_lower", "reprice_raise"}

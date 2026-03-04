@@ -830,6 +830,9 @@ class TraderaClient:
         SetPriceOnShopItems for buy-it-now listings.
         All prices are integers (SEK).
         """
+        if start_price is None and buy_it_now_price is None and reserve_price is None:
+            return {"error": "At least one price field must be provided"}
+
         try:
             headers = self._auth_headers(self.restricted_client, include_authorization=True)
 
