@@ -993,21 +993,7 @@ class ListingService:
             expired_info = []
             for listing in expired:
                 listing.status = "ended"
-
-                other_active = (
-                    session.query(PlatformListing)
-                    .filter(
-                        PlatformListing.product_id == listing.product_id,
-                        PlatformListing.id != listing.id,
-                        PlatformListing.status == "active",
-                    )
-                    .count()
-                )
-
-                product = session.get(Product, listing.product_id)
-                if product and other_active == 0 and product.status == "listed":
-                    product.status = "draft"
-
+                _maybe_revert_product_status(session, listing)
                 expired_info.append(
                     (listing.id, listing.product_id, listing.listing_title, listing.ends_at)
                 )
@@ -1039,8 +1025,114 @@ class ListingService:
                 "expired_listings": result_listings,
             }
 
+    def end_tradera_listing(self, listing_id: int) -> dict:
+        """End a live listing on Tradera and update local status."""
+        if not self.tradera:
+            return {"error": "Tradera client not configured"}
+
+        with Session(self.engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            if listing is None:
+                return {"error": f"Listing {listing_id} not found"}
+
+            if listing.status != "active":
+                return {
+                    "error": f"Cannot end listing with status '{listing.status}', must be 'active'"
+                }
+
+            if not listing.external_id:
+                return {"error": f"Listing {listing_id} has no external_id (not published)"}
+
+            result = self.tradera.end_item(int(listing.external_id))
+            if "error" in result:
+                return result
+
+            listing.status = "cancelled"
+            product = _maybe_revert_product_status(session, listing)
+
+            log_action(
+                session,
+                "listing",
+                "end_tradera_listing",
+                {"listing_id": listing_id, "external_id": listing.external_id},
+                product_id=listing.product_id,
+            )
+            session.commit()
+
+            return {
+                "listing_id": listing_id,
+                "status": "cancelled",
+                "product_status": product.status if product else None,
+            }
+
+    def update_live_listing_price(
+        self,
+        listing_id: int,
+        start_price: int | None = None,
+        buy_it_now_price: int | None = None,
+        reserve_price: int | None = None,
+    ) -> dict:
+        """Change prices on a live Tradera listing and update local DB."""
+        if not self.tradera:
+            return {"error": "Tradera client not configured"}
+
+        with Session(self.engine) as session:
+            listing = session.get(PlatformListing, listing_id)
+            if listing is None:
+                return {"error": f"Listing {listing_id} not found"}
+
+            if listing.status != "active":
+                return {
+                    "error": f"Cannot update price on listing with status '{listing.status}', "
+                    "must be 'active'"
+                }
+
+            if not listing.external_id:
+                return {"error": f"Listing {listing_id} has no external_id (not published)"}
+
+            result = self.tradera.set_prices(
+                item_id=int(listing.external_id),
+                listing_type=listing.listing_type or "auction",
+                start_price=start_price,
+                buy_it_now_price=buy_it_now_price,
+                reserve_price=reserve_price,
+            )
+            if "error" in result:
+                return result
+
+            if start_price is not None:
+                listing.start_price = float(start_price)
+            if buy_it_now_price is not None:
+                listing.buy_it_now_price = float(buy_it_now_price)
+
+            log_action(
+                session,
+                "listing",
+                "update_live_listing_price",
+                {
+                    "listing_id": listing_id,
+                    "external_id": listing.external_id,
+                    "start_price": start_price,
+                    "buy_it_now_price": buy_it_now_price,
+                    "reserve_price": reserve_price,
+                },
+                product_id=listing.product_id,
+            )
+            session.commit()
+
+            result = {
+                "listing_id": listing_id,
+                "updated": True,
+                "start_price": listing.start_price,
+                "buy_it_now_price": listing.buy_it_now_price,
+            }
+            # reserve_price has no local DB column but include if sent to Tradera
+            if reserve_price is not None:
+                result["reserve_price"] = reserve_price
+            return result
+
     def cancel_listing(self, listing_id: int) -> dict:
-        """Cancel an active listing locally. Tradera has no cancel API."""
+        """Cancel an active listing locally, attempting Tradera EndItem best-effort."""
         with Session(self.engine) as session:
             listing = session.get(PlatformListing, listing_id)
             if listing is None:
@@ -1052,21 +1144,23 @@ class ListingService:
                     "must be 'active'"
                 }
 
+            # Best-effort Tradera cancellation
+            tradera_warning = None
+            if self.tradera and listing.external_id:
+                tradera_result = self.tradera.end_item(int(listing.external_id))
+                if "error" in tradera_result:
+                    tradera_warning = (
+                        f"Tradera EndItem misslyckades: {tradera_result['error']}. "
+                        "Annonsen kan fortfarande vara aktiv på Tradera."
+                    )
+                    logger.warning(
+                        "Best-effort EndItem failed for listing %d: %s",
+                        listing_id,
+                        tradera_result["error"],
+                    )
+
             listing.status = "cancelled"
-
-            other_active = (
-                session.query(PlatformListing)
-                .filter(
-                    PlatformListing.product_id == listing.product_id,
-                    PlatformListing.id != listing_id,
-                    PlatformListing.status == "active",
-                )
-                .count()
-            )
-
-            product = session.get(Product, listing.product_id)
-            if product and other_active == 0 and product.status == "listed":
-                product.status = "draft"
+            product = _maybe_revert_product_status(session, listing)
 
             log_action(
                 session,
@@ -1074,20 +1168,42 @@ class ListingService:
                 "cancel_listing",
                 {
                     "listing_id": listing_id,
-                    "note": "Local cancel only — Tradera listing may still be active on platform",
+                    "tradera_warning": tradera_warning,
                 },
                 product_id=listing.product_id,
             )
             session.commit()
 
-            return {
+            result = {
                 "listing_id": listing_id,
                 "status": "cancelled",
                 "product_status": product.status if product else None,
-                "warning": "Annulleringen gäller bara lokalt. "
-                "Tradera har inget API för att avbryta en pågående annons — "
-                "gör det manuellt på Tradera om det behövs.",
             }
+            if tradera_warning:
+                result["warning"] = tradera_warning
+            return result
+
+
+def _maybe_revert_product_status(session: Session, listing: PlatformListing) -> Product | None:
+    """Revert product to 'draft' if no other active listings remain.
+
+    Returns the product if found, else None.
+    """
+    if not listing.product_id:
+        return None
+    other_active = (
+        session.query(PlatformListing)
+        .filter(
+            PlatformListing.product_id == listing.product_id,
+            PlatformListing.id != listing.id,
+            PlatformListing.status == "active",
+        )
+        .count()
+    )
+    product = session.get(Product, listing.product_id)
+    if product and other_active == 0 and product.status == "listed":
+        product.status = "draft"
+    return product
 
 
 def _validate_draft(

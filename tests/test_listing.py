@@ -1930,7 +1930,6 @@ class TestCancelListing:
         assert "error" not in result
         assert result["status"] == "cancelled"
         assert result["product_status"] == "draft"
-        assert "warning" in result
 
         with Session(engine) as session:
             listing = session.get(PlatformListing, draft["listing_id"])
@@ -2062,7 +2061,7 @@ class TestCancelListing:
             action = session.query(AgentAction).filter_by(action_type="cancel_listing").one()
             assert action.agent_name == "listing"
             assert action.product_id == product
-            assert "Local cancel only" in action.details["note"]
+            assert "listing_id" in action.details
 
 
 class TestCheckExpiredListings:
@@ -2486,3 +2485,348 @@ class TestFormatDraftPreviewEdgeCases:
         result = _format_draft_preview(listing, None)
         assert "Leveransvillkor" in result
         assert "Köparen betalar frakt" in result
+
+
+class TestEndTraderaListing:
+    def test_ends_active_listing(self, engine):
+        tradera = MagicMock()
+        tradera.end_item.return_value = {"item_id": 999, "ended": True}
+        svc = ListingService(engine=engine, tradera=tradera)
+
+        with Session(engine) as session:
+            p = Product(title="Test", status="listed")
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Test listing",
+                external_id="999",
+            )
+            session.add(listing)
+            session.commit()
+            lid, pid = listing.id, p.id
+
+        result = svc.end_tradera_listing(lid)
+
+        assert "error" not in result
+        assert result["status"] == "cancelled"
+        tradera.end_item.assert_called_once_with(999)
+
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, lid)
+            assert listing.status == "cancelled"
+            product = session.get(Product, pid)
+            assert product.status == "draft"
+
+    def test_not_active(self, engine):
+        svc = ListingService(engine=engine, tradera=MagicMock())
+
+        with Session(engine) as session:
+            p = Product(title="Test", status="draft")
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="draft",
+                listing_type="auction",
+                listing_title="Test",
+            )
+            session.add(listing)
+            session.commit()
+            lid = listing.id
+
+        result = svc.end_tradera_listing(lid)
+        assert "error" in result
+
+    def test_no_external_id(self, engine):
+        svc = ListingService(engine=engine, tradera=MagicMock())
+
+        with Session(engine) as session:
+            p = Product(title="Test", status="listed")
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Test",
+                external_id=None,
+            )
+            session.add(listing)
+            session.commit()
+            lid = listing.id
+
+        result = svc.end_tradera_listing(lid)
+        assert "error" in result
+
+    def test_tradera_error(self, engine):
+        tradera = MagicMock()
+        tradera.end_item.return_value = {"error": "SOAP fault"}
+        svc = ListingService(engine=engine, tradera=tradera)
+
+        with Session(engine) as session:
+            p = Product(title="Test", status="listed")
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Test",
+                external_id="999",
+            )
+            session.add(listing)
+            session.commit()
+            lid = listing.id
+
+        result = svc.end_tradera_listing(lid)
+        assert "error" in result
+
+    def test_no_tradera_client(self, engine):
+        svc = ListingService(engine=engine, tradera=None)
+        result = svc.end_tradera_listing(1)
+        assert "error" in result
+
+
+class TestUpdateLiveListingPrice:
+    def test_updates_auction_price(self, engine):
+        tradera = MagicMock()
+        tradera.set_prices.return_value = {"item_id": 999, "updated": True, "start_price": 200}
+        svc = ListingService(engine=engine, tradera=tradera)
+
+        with Session(engine) as session:
+            p = Product(title="Test", status="listed")
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Test",
+                start_price=300.0,
+                external_id="999",
+            )
+            session.add(listing)
+            session.commit()
+            lid = listing.id
+
+        result = svc.update_live_listing_price(lid, start_price=200)
+
+        assert "error" not in result
+        assert result["updated"] is True
+        tradera.set_prices.assert_called_once()
+
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, lid)
+            assert listing.start_price == 200.0
+
+    def test_updates_buy_it_now_price(self, engine):
+        tradera = MagicMock()
+        tradera.set_prices.return_value = {"item_id": 999, "updated": True}
+        svc = ListingService(engine=engine, tradera=tradera)
+
+        with Session(engine) as session:
+            p = Product(title="Test", status="listed")
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="buy_it_now",
+                listing_title="Test",
+                buy_it_now_price=800.0,
+                external_id="999",
+            )
+            session.add(listing)
+            session.commit()
+            lid = listing.id
+
+        result = svc.update_live_listing_price(lid, buy_it_now_price=700)
+
+        assert "error" not in result
+        with Session(engine) as session:
+            listing = session.get(PlatformListing, lid)
+            assert listing.buy_it_now_price == 700.0
+
+    def test_not_active(self, engine):
+        svc = ListingService(engine=engine, tradera=MagicMock())
+
+        with Session(engine) as session:
+            p = Product(title="Test", status="draft")
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="draft",
+                listing_type="auction",
+                listing_title="Test",
+            )
+            session.add(listing)
+            session.commit()
+            lid = listing.id
+
+        result = svc.update_live_listing_price(lid, start_price=200)
+        assert "error" in result
+
+    def test_tradera_error(self, engine):
+        tradera = MagicMock()
+        tradera.set_prices.return_value = {"error": "Cannot change price with bids"}
+        svc = ListingService(engine=engine, tradera=tradera)
+
+        with Session(engine) as session:
+            p = Product(title="Test", status="listed")
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Test",
+                start_price=300.0,
+                external_id="999",
+            )
+            session.add(listing)
+            session.commit()
+            lid = listing.id
+
+        result = svc.update_live_listing_price(lid, start_price=200)
+        assert "error" in result
+
+    def test_reserve_price_in_result(self, engine):
+        tradera = MagicMock()
+        tradera.set_prices.return_value = {
+            "item_id": 999,
+            "updated": True,
+            "start_price": 200,
+            "reserve_price": 400,
+        }
+        svc = ListingService(engine=engine, tradera=tradera)
+
+        with Session(engine) as session:
+            p = Product(title="Test", status="listed")
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Test",
+                start_price=300.0,
+                external_id="999",
+            )
+            session.add(listing)
+            session.commit()
+            lid = listing.id
+
+        result = svc.update_live_listing_price(lid, start_price=200, reserve_price=400)
+
+        assert "error" not in result
+        assert result["reserve_price"] == 400
+        tradera.set_prices.assert_called_once_with(
+            item_id=999,
+            listing_type="auction",
+            start_price=200,
+            buy_it_now_price=None,
+            reserve_price=400,
+        )
+
+    def test_no_reserve_price_omitted_from_result(self, engine):
+        tradera = MagicMock()
+        tradera.set_prices.return_value = {"item_id": 999, "updated": True, "start_price": 200}
+        svc = ListingService(engine=engine, tradera=tradera)
+
+        with Session(engine) as session:
+            p = Product(title="Test", status="listed")
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Test",
+                start_price=300.0,
+                external_id="999",
+            )
+            session.add(listing)
+            session.commit()
+            lid = listing.id
+
+        result = svc.update_live_listing_price(lid, start_price=200)
+
+        assert "error" not in result
+        assert "reserve_price" not in result
+
+    def test_no_tradera_client(self, engine):
+        svc = ListingService(engine=engine, tradera=None)
+        result = svc.update_live_listing_price(1, start_price=200)
+        assert "error" in result
+
+
+class TestCancelListingWithTradera:
+    def test_best_effort_end_item_success(self, engine):
+        tradera = MagicMock()
+        tradera.end_item.return_value = {"item_id": 999, "ended": True}
+        svc = ListingService(engine=engine, tradera=tradera)
+
+        with Session(engine) as session:
+            p = Product(title="Test", status="listed")
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Test",
+                external_id="999",
+            )
+            session.add(listing)
+            session.commit()
+            lid = listing.id
+
+        result = svc.cancel_listing(lid)
+
+        assert "error" not in result
+        assert result["status"] == "cancelled"
+        assert "warning" not in result
+        tradera.end_item.assert_called_once_with(999)
+
+    def test_best_effort_end_item_failure_still_cancels(self, engine):
+        tradera = MagicMock()
+        tradera.end_item.return_value = {"error": "SOAP error"}
+        svc = ListingService(engine=engine, tradera=tradera)
+
+        with Session(engine) as session:
+            p = Product(title="Test", status="listed")
+            session.add(p)
+            session.flush()
+            listing = PlatformListing(
+                product_id=p.id,
+                platform="tradera",
+                status="active",
+                listing_type="auction",
+                listing_title="Test",
+                external_id="999",
+            )
+            session.add(listing)
+            session.commit()
+            lid = listing.id
+
+        result = svc.cancel_listing(lid)
+
+        assert "error" not in result
+        assert result["status"] == "cancelled"
+        assert "warning" in result
+        assert "SOAP error" in result["warning"]

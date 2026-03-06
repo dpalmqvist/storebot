@@ -93,6 +93,7 @@ class PlatformListing(Base):
 
     product: Mapped["Product"] = relationship(back_populates="listings")
     snapshots: Mapped[list["ListingSnapshot"]] = relationship(back_populates="listing")
+    price_proposals: Mapped[list["PriceProposal"]] = relationship(back_populates="listing")
 
 
 class ListingSnapshot(Base):
@@ -239,6 +240,26 @@ class TraderaCategory(Base):
     depth: Mapped[int] = mapped_column(Integer, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     synced_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class PriceProposal(Base):
+    __tablename__ = "price_proposals"
+    __table_args__ = (sa.Index("ix_price_proposals_listing_status", "listing_id", "status"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    listing_id: Mapped[int] = mapped_column(ForeignKey("platform_listings.id"), nullable=False)
+    proposal_type: Mapped[str] = mapped_column(String, nullable=False)
+    current_price: Mapped[float] = mapped_column(Float, nullable=False)
+    suggested_price: Mapped[float] = mapped_column(Float, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime)
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    execution_error: Mapped[str | None] = mapped_column(Text)
+    details: Mapped[dict | None] = mapped_column(JSON)
+
+    listing: Mapped["PlatformListing"] = relationship(back_populates="price_proposals")
 
 
 class ApiUsage(Base):

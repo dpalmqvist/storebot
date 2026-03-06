@@ -80,18 +80,18 @@ Storebot includes local double-entry bookkeeping using the Swedish BAS-kontoplan
 
 ## Agent Tools
 
-The Claude agent has access to 57 tools organized by domain:
+The Claude agent has access to 63 tools organized by domain:
 
 | Domain | Count | Tools |
 |--------|-------|-------|
 | **Search** | 3 | `search_tradera`, `search_blocket`, `get_blocket_ad` |
 | **Products** | 9 | `create_product`, `update_product`, `get_product`, `save_product_image`, `delete_product_image`, `get_product_images`, `search_products`, `archive_product`, `unarchive_product` |
-| **Listings** | 15 | `create_draft_listing`, `list_draft_listings`, `get_draft_listing`, `update_draft_listing`, `approve_draft_listing`, `reject_draft_listing`, `revise_draft_listing`, `publish_listing`, `relist_product`, `cancel_listing`, `get_categories`, `get_shipping_options`, `get_shipping_types`, `get_tradera_item`, `get_attribute_definitions` |
+| **Listings** | 17 | `create_draft_listing`, `list_draft_listings`, `get_draft_listing`, `update_draft_listing`, `approve_draft_listing`, `reject_draft_listing`, `revise_draft_listing`, `publish_listing`, `relist_product`, `cancel_listing`, `end_tradera_listing`, `update_tradera_listing_price`, `get_categories`, `get_shipping_options`, `get_shipping_types`, `get_tradera_item`, `get_attribute_definitions` |
 | **Orders** | 8 | `check_new_orders`, `list_orders`, `get_order`, `create_sale_voucher`, `mark_order_shipped`, `create_shipping_label`, `list_orders_pending_feedback`, `leave_feedback` |
 | **Accounting** | 3 | `create_voucher`, `list_vouchers`, `export_vouchers` |
 | **Pricing** | 1 | `price_check` |
 | **Scout** | 6 | `create_saved_search`, `list_saved_searches`, `update_saved_search`, `delete_saved_search`, `run_saved_search`, `run_all_saved_searches` |
-| **Marketing** | 5 | `refresh_listing_stats`, `analyze_listing`, `get_performance_report`, `get_recommendations`, `listing_dashboard` |
+| **Marketing** | 8 | `refresh_listing_stats`, `analyze_listing`, `get_performance_report`, `get_recommendations`, `listing_dashboard`, `list_price_proposals`, `approve_price_proposal`, `reject_price_proposal` |
 | **Analytics** | 6 | `business_summary`, `profitability_report`, `inventory_report`, `period_comparison`, `sourcing_analysis`, `usage_report` |
 | **System** | 1 | `request_tools` |
 
@@ -105,6 +105,7 @@ All agent actions are logged to the `agent_actions` table for full audit trail.
 | Scout digest | Daily at 08:00 (configurable) | Runs all saved searches, sends digest of new finds |
 | Marketing refresh | Daily at 07:00 (configurable) | Refreshes listing stats, sends high-priority recommendations |
 | Listing dashboard | Daily at 07:00 (configurable) | Per-listing performance dashboard with views, watchers, bids, and trends |
+| Repricing check | Daily at 09:00 (configurable) | Generates price proposals from marketing recommendations, sends digest |
 | Weekly comparison | Sundays at 18:00 | Period comparison report (this week vs last) |
 
 Scheduled jobs require the bot to have received at least one `/start` command to register the owner chat ID for notifications.
