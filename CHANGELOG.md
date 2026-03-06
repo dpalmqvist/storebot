@@ -1,6 +1,60 @@
 # CHANGELOG
 
 
+## v0.15.0 (2026-03-06)
+
+### Bug Fixes
+
+- Address code review findings for repricing PR
+  ([`bec6202`](https://github.com/dpalmqvist/storebot/commit/bec620277696939ae4e03cfebd865a5f7006fed1))
+
+- Add selectinload for proposal.listing in approve_proposal (prevent lazy-load fragility) - Guard
+  set_prices against all-None price args (saves API quota) - Wrap refresh_listing_stats in
+  try/except (consistent error returns) - Set executed_at on all failure paths in _execute_proposal
+  - Add server_default='pending' to migration status column - Validate status argument in
+  list_proposals against PROPOSAL_STATUSES - Add tests: inactive listing race, all-None prices,
+  missing chat_id, skip_refresh, refresh failure, invalid status, constants
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+- Address second round of code review findings for repricing PR
+  ([`74eef5d`](https://github.com/dpalmqvist/storebot/commit/74eef5da4da38bc1ef36adb210648c3d73a71368))
+
+- Remove phantom "approved" from PROPOSAL_STATUSES (never persisted to DB) - Fix mixed auction+BIN
+  price baseline: use start_price for auctions, buy_it_now_price for BIN (matches what
+  _execute_proposal changes) - Include reserve_price in update_live_listing_price return dict - Add
+  tests: auction+BIN baseline, rejection_reason in details, reserve_price param, reserve_price
+  omitted when not provided - Update docs with current tool/test/table counts
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+- Address third round of code review findings for repricing PR
+  ([`ea55151`](https://github.com/dpalmqvist/storebot/commit/ea55151f7ed4c4b14d5a3723bce740982c939f02))
+
+- Remove ghost "approved" intermediate status assignment in approve_proposal; _execute_proposal sets
+  final status directly (prevents leak on exception) - Use round() instead of ceil() for price
+  rounding (nearest-10, not always-up) - Fix float imprecision in acquisition cost floor (round to
+  2dp before ceil) - Pass skip_refresh=True in repricing_check_job (stats already refreshed at
+  07:00) - Use PROPOSAL_TYPES constant for runtime filtering instead of inline literals - Cast
+  suggested_price to int in list_proposals for consistency with generate_proposals - Add type
+  annotations to _maybe_revert_product_status - Add reserve_price caveat to tool description -
+  Update test counts in docs
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+### Features
+
+- Add proactive repricing and Tradera live listing management
+  ([`d1a4dcf`](https://github.com/dpalmqvist/storebot/commit/d1a4dcfcddd52069cbf523e86edec39bfb819afc))
+
+Add RepricingService with daily price proposal workflow (generate, approve, reject, execute) and
+  Tradera SOAP write operations (EndItem, SetPrices) for managing live listings. Includes
+  PriceProposal model, Alembic migration, 5 new tools, scheduled Telegram digest, and comprehensive
+  tests.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.14.0 (2026-03-04)
 
 ### Bug Fixes
