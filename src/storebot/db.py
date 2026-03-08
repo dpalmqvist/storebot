@@ -252,7 +252,7 @@ class PriceProposal(Base):
     current_price: Mapped[float] = mapped_column(Float, nullable=False)
     suggested_price: Mapped[float] = mapped_column(Float, nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String, default="pending")
+    status: Mapped[str] = mapped_column(String, default="pending", server_default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime)
     executed_at: Mapped[datetime | None] = mapped_column(DateTime)
