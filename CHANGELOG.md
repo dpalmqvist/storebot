@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.15.1 (2026-03-08)
+
+### Bug Fixes
+
+- Address fourth round of code review findings for repricing
+  ([`a8a4c32`](https://github.com/dpalmqvist/storebot/commit/a8a4c3283f161e3589c7120489218bb1dd70aba5))
+
+- Add server_default="pending" to PriceProposal.status ORM model - Wrap get_recommendations() in
+  try/except for consistent error handling - Fix listing_title None fallback using `or` instead of
+  dict.get default - Add docstring note on _execute_proposal decided_at caller contract - Add
+  comment explaining round(..., 2) float precision guard - Add test for get_recommendations failure
+  path
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+
 ## v0.15.0 (2026-03-06)
 
 ### Bug Fixes
