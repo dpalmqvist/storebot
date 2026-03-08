@@ -45,7 +45,11 @@ class RepricingService:
             except Exception:
                 logger.exception("refresh_listing_stats failed during proposal generation")
                 return {"error": "Failed to refresh listing stats"}
-        recs_result = self.marketing.get_recommendations()
+        try:
+            recs_result = self.marketing.get_recommendations()
+        except Exception:
+            logger.exception("get_recommendations failed during proposal generation")
+            return {"error": "Failed to get recommendations"}
         recs = recs_result.get("recommendations", [])
 
         reprice_recs = [r for r in recs if r["type"] in PROPOSAL_TYPES]
@@ -248,7 +252,10 @@ class RepricingService:
             }
 
     def _execute_proposal(self, proposal: PriceProposal, session: Session) -> dict:
-        """Execute an approved price change via Tradera."""
+        """Execute an approved price change via Tradera.
+
+        Caller must set ``proposal.decided_at`` before calling this method.
+        """
         if not self.tradera:
             proposal.status = "failed"
             proposal.executed_at = datetime.now(UTC)
@@ -327,7 +334,8 @@ class RepricingService:
             raw = current_price * 0.85
             suggested = int(round(raw / 10) * 10)
             if product and product.acquisition_cost:
-                # acquisition_cost is the gross (VAT-inclusive) purchase price
+                # acquisition_cost is the gross (VAT-inclusive) purchase price;
+                # round(..., 2) avoids IEEE 754 noise (e.g. 400*1.1 = 440.00000006)
                 floor = int(math.ceil(round(product.acquisition_cost * 1.1, 2) / 10) * 10)
                 suggested = max(suggested, floor)
         else:

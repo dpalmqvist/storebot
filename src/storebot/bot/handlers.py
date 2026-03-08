@@ -527,7 +527,7 @@ async def repricing_check_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         for p in proposals:
             direction = "Sänk" if p["proposal_type"] == "reprice_lower" else "Höj"
             lines.append(
-                f"{direction}: {p.get('listing_title', 'Annons #' + str(p['listing_id']))}"
+                f"{direction}: {p.get('listing_title') or 'Annons #' + str(p['listing_id'])}"
             )
             lines.append(f"  {p['current_price']:.0f} kr \u2192 {p['suggested_price']:.0f} kr")
             lines.append(f"  {p['reason']}\n")

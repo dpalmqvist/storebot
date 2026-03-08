@@ -161,6 +161,12 @@ class TestGenerateProposals:
         result = service.generate_proposals()
         assert "error" in result
 
+    def test_get_recommendations_failure_returns_error(self, service, marketing):
+        marketing.get_recommendations.side_effect = RuntimeError("DB error")
+        result = service.generate_proposals(skip_refresh=True)
+        assert "error" in result
+        assert "recommendations" in result["error"]
+
     def test_auction_with_bin_uses_start_price_as_baseline(self, service, marketing, engine):
         """For auction listings with BIN set, baseline must be start_price (not BIN)."""
         with Session(engine) as session:
